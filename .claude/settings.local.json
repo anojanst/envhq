@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk -F= '/^[A-Z]/ {print $1\": \"\\(length\\($2\\)>0?\"set \\(\"length\\($2\\)\" chars\\)\":\"EMPTY\"\\)}' .env)"
+    ]
+  }
+}
