@@ -11,6 +11,7 @@ import {
   writeLinkConfig,
   DEFAULT_URL,
   LINK_FILENAME,
+  CLI_VERSION,
   type LinkConfig,
 } from "./config.ts";
 import { apiClient, ApiError, type Environment } from "./api.ts";
@@ -32,7 +33,7 @@ const program = new Command();
 program
   .name("envsync")
   .description("Sync your environment variables from the terminal.")
-  .version("0.1.0");
+  .version(CLI_VERSION);
 
 function fail(message: string): never {
   console.error(`✖ ${message}`);
