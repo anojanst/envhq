@@ -9,6 +9,14 @@ files in bulk, copy them back out, and sync from your terminal with the CLI.
 - **Encryption** — values are AES-256-GCM encrypted at rest; the DB never stores plaintext
 - **Access** — personal-only (v1): every row is scoped to the signed-in user
 
+## Documentation
+
+Full design and reference docs live in [`docs/`](./docs):
+
+- [**System Design**](./docs/SYSTEM_DESIGN.md) — as-built architecture, data model, API, CLI (start here)
+- [**Plan**](./docs/PLAN.md) — design spec for decided-but-unbuilt features
+- [**Roadmap**](./docs/ROADMAP.md) — phased milestones (M1–M6)
+
 ## Monorepo layout
 
 ```
@@ -55,24 +63,52 @@ pnpm dev            # http://localhost:3000
 
 ## Using the CLI
 
-Build it, then create a token in the web app under **CLI Tokens**.
+Once published, users install it from npm and never need to know a URL — the
+deployment URL is baked into the build:
 
 ```bash
-pnpm --filter @env-sync/cli build
+npm install -g @envsyncdev/cli    # installs the `envsync` command
+# or run without installing: npx @envsyncdev/cli <command>
 
-# point the CLI at your deployment (defaults to http://localhost:3000)
-export ENVSYNC_URL=https://your-app.vercel.app
-
-node packages/cli/dist/index.js login --token <token>
+envsync login --token <token> # token from the web app → CLI Tokens
 cd ~/code/my-project
-envsync link                 # pick project + environment (writes .envsync.json)
-envsync pull                 # write remote vars to ./.env
-envsync push                 # upload ./.env to the remote (upsert/merge)
-envsync status               # show login + link state
+envsync link                  # pick project + environment (writes .envsync.json)
+envsync pull                  # write remote vars to ./.env
+envsync push                  # upload ./.env to the remote (upsert/merge)
+envsync status                # show login + link state (and target URL)
 ```
 
 `envsync push`/`pull` accept `--env <name>` to target a different environment and
-`--file <path>` to use a different file.
+`--file <path>` to use a different file. Override the server with
+`--url <url>` on `login` or the `ENVSYNC_URL` env var (for local dev or
+self-hosting).
+
+### Publishing the CLI
+
+Release builds bake in the production URL (`https://envsync.dev`) by default,
+so publishing is just:
+
+```bash
+cd packages/cli
+pnpm build
+npm login                              # one-time
+pnpm publish --access public --no-git-checks
+```
+
+Use `pnpm publish` (not `npm publish`) so the bundled `@env-sync/parser`
+workspace reference is rewritten correctly. Published as `@envsyncdev/cli`;
+the installed command is still `envsync`.
+
+The `@env-sync/parser` package is bundled into the CLI, so the published package
+is self-contained (no workspace dependency to resolve).
+
+To test the built artifact against a **local** server, build with an override
+(or just use `pnpm dev`, which always targets localhost):
+
+```bash
+ENVSYNC_DEFAULT_URL=http://localhost:3000 pnpm build
+# or override at runtime: ENVSYNC_URL=http://localhost:3000 envsync status
+```
 
 ## Data model
 

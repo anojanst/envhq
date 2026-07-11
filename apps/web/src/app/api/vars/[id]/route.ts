@@ -2,9 +2,9 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { envVars } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
-import { getOwnedVar } from "@/lib/access";
+import { getOwnedVar, isReadOnly } from "@/lib/access";
 import { encrypt } from "@/lib/crypto";
-import { json, badRequest, unauthorized, notFound, conflict } from "@/lib/api";
+import { json, badRequest, unauthorized, tokenExpired, notFound, conflict, forbidden } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -13,11 +13,13 @@ const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: Request, { params }: Params) {
-  const userId = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
+  if (expired) return tokenExpired();
   if (!userId) return unauthorized();
+  if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const owned = await getOwnedVar(userId, id);
+  const owned = await getOwnedVar(userId, id, scope);
   if (!owned) return notFound("Variable not found");
 
   const body = await req.json().catch(() => null);
@@ -49,11 +51,13 @@ export async function PATCH(req: Request, { params }: Params) {
 }
 
 export async function DELETE(req: Request, { params }: Params) {
-  const userId = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
+  if (expired) return tokenExpired();
   if (!userId) return unauthorized();
+  if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const owned = await getOwnedVar(userId, id);
+  const owned = await getOwnedVar(userId, id, scope);
   if (!owned) return notFound("Variable not found");
 
   await db.delete(envVars).where(eq(envVars.id, id));

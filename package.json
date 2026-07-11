@@ -11,6 +11,6 @@
     "build": "pnpm --filter @env-sync/web build",
     "db:generate": "pnpm --filter @env-sync/web db:generate",
     "db:migrate": "pnpm --filter @env-sync/web db:migrate",
-    "cli": "pnpm --filter @env-sync/cli start"
+    "cli": "pnpm --filter @envsyncdev/cli start"
   }
 }

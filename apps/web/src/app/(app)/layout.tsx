@@ -1,24 +1,15 @@
-import Link from "next/link";
-import { UserButton } from "@clerk/nextjs";
-import { Button } from "@/components/ui/button";
+import { cookies } from "next/headers";
+import { AppShell } from "@/components/app-shell";
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-1 flex-col">
-      <header className="flex items-center justify-between border-b px-6 py-3">
-        <nav className="flex items-center gap-4">
-          <Link href="/dashboard" className="font-semibold tracking-tight">
-            env-sync
-          </Link>
-        </nav>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" render={<Link href="/settings/tokens" />}>
-            CLI Tokens
-          </Button>
-          <UserButton />
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">{children}</main>
-    </div>
-  );
+export default async function AppLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  // Persisted sidebar state (shadcn cookie) — read server-side so the sidebar
+  // renders in the right state on first paint (no expand/collapse flash).
+  const cookieStore = await cookies();
+  const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
+
+  return <AppShell defaultOpen={defaultOpen}>{children}</AppShell>;
 }

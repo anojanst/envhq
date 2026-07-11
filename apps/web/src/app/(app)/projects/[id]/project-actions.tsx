@@ -20,11 +20,23 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { api } from "@/lib/client";
 
-export function ProjectActions({ project }: { project: { id: string; name: string } }) {
+export function ProjectActions({
+  project,
+  environmentCount,
+  variableCount,
+  hasProdEnv,
+}: {
+  project: { id: string; name: string };
+  environmentCount: number;
+  variableCount: number;
+  hasProdEnv: boolean;
+}) {
   const router = useRouter();
   const [renameOpen, setRenameOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [name, setName] = useState(project.name);
   const [saving, setSaving] = useState(false);
 
@@ -47,14 +59,9 @@ export function ProjectActions({ project }: { project: { id: string; name: strin
   }
 
   async function remove() {
-    if (!confirm(`Delete project "${project.name}" and everything in it?`)) return;
-    try {
-      await api(`/api/projects/${project.id}`, { method: "DELETE" });
-      toast.success("Project deleted");
-      router.push("/dashboard");
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
+    await api(`/api/projects/${project.id}`, { method: "DELETE" });
+    toast.success("Project deleted");
+    router.push("/dashboard");
   }
 
   return (
@@ -67,7 +74,7 @@ export function ProjectActions({ project }: { project: { id: string; name: strin
           <DropdownMenuItem onClick={() => setRenameOpen(true)}>
             <Pencil className="size-4" /> Rename
           </DropdownMenuItem>
-          <DropdownMenuItem variant="destructive" onClick={remove}>
+          <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="size-4" /> Delete project
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -96,6 +103,27 @@ export function ProjectActions({ project }: { project: { id: string; name: strin
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={`Delete project "${project.name}"`}
+        description={
+          <>
+            This permanently deletes{" "}
+            <span className="font-medium text-foreground">
+              {environmentCount} environment{environmentCount === 1 ? "" : "s"}
+            </span>{" "}
+            and{" "}
+            <span className="font-medium text-foreground">
+              {variableCount} variable{variableCount === 1 ? "" : "s"}
+            </span>
+            . This can&rsquo;t be undone.
+          </>
+        }
+        confirmationText={hasProdEnv ? project.name : undefined}
+        onConfirm={remove}
+      />
     </>
   );
 }

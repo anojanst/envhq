@@ -202,13 +202,17 @@ function VarRow({
   if (editing) {
     return (
       <TableRow>
-        <TableCell>
+        <TableCell className="align-top">
           <Input value={key} onChange={(e) => setKey(e.target.value)} className="font-mono" />
         </TableCell>
-        <TableCell>
-          <Input value={value} onChange={(e) => setValue(e.target.value)} className="font-mono" />
+        <TableCell className="align-top">
+          <Textarea
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="min-h-9 field-sizing-content resize-y font-mono text-sm"
+          />
         </TableCell>
-        <TableCell className="text-right">
+        <TableCell className="text-right align-top">
           <div className="flex justify-end gap-1">
             <Button size="sm" onClick={save} disabled={busy || !key.trim()}>
               Save
@@ -232,13 +236,13 @@ function VarRow({
 
   return (
     <TableRow>
-      <TableCell className="font-mono font-medium break-all">{row.key}</TableCell>
-      <TableCell className="font-mono text-muted-foreground">
-        <span className="break-all">
+      <TableCell className="font-mono font-medium break-all align-top">{row.key}</TableCell>
+      <TableCell className="font-mono text-muted-foreground align-top">
+        <span className="block max-w-xl whitespace-pre-wrap break-all">
           {revealed ? row.value || <em className="not-italic opacity-50">(empty)</em> : "••••••••••••"}
         </span>
       </TableCell>
-      <TableCell className="text-right">
+      <TableCell className="text-right align-top">
         <div className="flex justify-end gap-0.5">
           <Button variant="ghost" size="icon" className="size-7" onClick={onToggleReveal}>
             {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -289,7 +293,7 @@ function AddRow({
 
   return (
     <TableRow className="bg-muted/30">
-      <TableCell>
+      <TableCell className="align-top">
         <Input
           value={key}
           onChange={(e) => setKey(e.target.value)}
@@ -298,16 +302,15 @@ function AddRow({
           onKeyDown={(e) => e.key === "Enter" && add()}
         />
       </TableCell>
-      <TableCell>
-        <Input
+      <TableCell className="align-top">
+        <Textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="value"
-          className="font-mono"
-          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="value (multi-line ok)"
+          className="min-h-9 field-sizing-content resize-y font-mono text-sm"
         />
       </TableCell>
-      <TableCell className="text-right">
+      <TableCell className="text-right align-top">
         <Button size="sm" onClick={add} disabled={busy || !key.trim()}>
           <Plus className="size-4" /> Add
         </Button>
