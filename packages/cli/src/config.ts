@@ -77,3 +77,10 @@ const BAKED_URL =
  */
 export const DEFAULT_URL = process.env.ENVSYNC_URL ?? BAKED_URL;
 export const LINK_FILENAME = LINK_FILE;
+
+// Baked from package.json at build time (see tsup.config.ts) so `--version`
+// can never drift from what's actually published. `tsx` dev runs fall back to
+// a marker since nothing is baked.
+declare const __ENVSYNC_VERSION__: string;
+export const CLI_VERSION =
+  typeof __ENVSYNC_VERSION__ !== "undefined" ? __ENVSYNC_VERSION__ : "0.0.0-dev";

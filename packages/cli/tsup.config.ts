@@ -1,4 +1,5 @@
 import { defineConfig } from "tsup";
+import pkg from "./package.json" with { type: "json" };
 
 export default defineConfig({
   entry: ["src/index.ts"],
@@ -19,5 +20,8 @@ export default defineConfig({
     __ENVSYNC_DEFAULT_URL__: JSON.stringify(
       process.env.ENVSYNC_DEFAULT_URL ?? "https://envsync.dev",
     ),
+    // Bake package.json's version so `--version` can't drift from what's
+    // actually published — bumping the version is the only thing to remember.
+    __ENVSYNC_VERSION__: JSON.stringify(pkg.version),
   },
 });

@@ -1,6 +1,6 @@
 {
   "name": "@envsyncdev/cli",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Sync your environment variables from the terminal — push/pull secrets to your env-sync projects.",
   "keywords": ["env", "dotenv", "environment-variables", "secrets", "cli", "sync"],
   "license": "MIT",
