@@ -2,20 +2,21 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
-import { getOwnedEnvironment } from "@/lib/access";
+import { getOwnedEnvironment, isReadOnly } from "@/lib/access";
 import { listVarRows } from "@/lib/env-store";
-import { json, badRequest, unauthorized, notFound, conflict } from "@/lib/api";
+import { json, badRequest, unauthorized, tokenExpired, notFound, conflict, forbidden } from "@/lib/api";
 
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, { params }: Params) {
-  const userId = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
+  if (expired) return tokenExpired();
   if (!userId) return unauthorized();
   const { id } = await params;
 
-  const owned = await getOwnedEnvironment(userId, id);
+  const owned = await getOwnedEnvironment(userId, id, scope);
   if (!owned) return notFound("Environment not found");
 
   const vars = await listVarRows(id);
@@ -23,11 +24,13 @@ export async function GET(req: Request, { params }: Params) {
 }
 
 export async function PATCH(req: Request, { params }: Params) {
-  const userId = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
+  if (expired) return tokenExpired();
   if (!userId) return unauthorized();
+  if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const owned = await getOwnedEnvironment(userId, id);
+  const owned = await getOwnedEnvironment(userId, id, scope);
   if (!owned) return notFound("Environment not found");
 
   const body = await req.json().catch(() => null);
@@ -47,11 +50,13 @@ export async function PATCH(req: Request, { params }: Params) {
 }
 
 export async function DELETE(req: Request, { params }: Params) {
-  const userId = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
+  if (expired) return tokenExpired();
   if (!userId) return unauthorized();
+  if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const owned = await getOwnedEnvironment(userId, id);
+  const owned = await getOwnedEnvironment(userId, id, scope);
   if (!owned) return notFound("Environment not found");
 
   await db.delete(environments).where(eq(environments.id, id));

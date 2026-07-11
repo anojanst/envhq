@@ -14,6 +14,18 @@ import {
   type LinkConfig,
 } from "./config.ts";
 import { apiClient, ApiError, type Environment } from "./api.ts";
+import { runLoginFlow } from "./auth/login.ts";
+import {
+  storeSession,
+  clearSession,
+  resolveToken,
+  keychainAvailable,
+} from "./token-store.ts";
+
+/** Whole days until an ISO timestamp (never negative). */
+function daysUntil(iso: string): number {
+  return Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 86_400_000));
+}
 
 const program = new Command();
 
@@ -63,15 +75,41 @@ async function resolveEnvId(link: LinkConfig, override?: string): Promise<{ id: 
 // ---- login ----
 program
   .command("login")
-  .description("Authenticate with a personal token from the web app.")
-  .requiredOption("-t, --token <token>", "personal access token")
+  .description("Authenticate via your browser (or --token for CI).")
+  .option("-t, --token <token>", "personal access token (headless / CI)")
   .option("-u, --url <url>", "API base url", DEFAULT_URL)
-  .action(async (opts: { token: string; url: string }) => {
+  .action(async (opts: { token?: string; url: string }) => {
     const url = opts.url.replace(/\/$/, "");
     try {
-      const { userId } = await apiClient.me({ url, token: opts.token });
-      await writeGlobalConfig({ url, token: opts.token });
-      console.log(`✔ Logged in to ${url} (user ${userId}).`);
+      // CI / headless: validate the provided PAT, then store it.
+      if (opts.token) {
+        const { userId } = await apiClient.me({ url, token: opts.token });
+        storeSession(url, { token: opts.token });
+        await writeGlobalConfig({ url });
+        console.log(`✔ Logged in to ${url} (user ${userId}).`);
+        return;
+      }
+
+      // Interactive: the token lands in the OS keychain, so require one up front.
+      if (!keychainAvailable()) {
+        fail(
+          "No OS keychain is available to store your login securely.\n" +
+            "Set ENVSYNC_TOKEN=<token> in your environment instead (recommended for CI).",
+        );
+      }
+
+      const session = await runLoginFlow(url);
+      storeSession(url, {
+        token: session.token,
+        expiresAt: session.expiresAt,
+        userId: session.userId,
+      });
+      await writeGlobalConfig({ url });
+      console.log(
+        `✔ Logged in to ${url} (user ${session.userId}). Session valid for ${daysUntil(
+          session.expiresAt,
+        )} days.`,
+      );
     } catch (err) {
       fail(err instanceof ApiError ? err.message : String(err));
     }
@@ -82,6 +120,8 @@ program
   .command("logout")
   .description("Remove stored credentials.")
   .action(async () => {
+    const config = await readGlobalConfig();
+    if (config) clearSession(config.url);
     await clearGlobalConfig();
     console.log("✔ Logged out.");
   });
@@ -227,7 +267,24 @@ program
   .action(async () => {
     const global = await readGlobalConfig();
     const link = await readLinkConfig();
-    console.log(global ? `Logged in:  ${global.url}` : "Logged in:  no (run `envsync login`)");
+
+    if (!global) {
+      console.log(`Logged in:  no (login would target ${DEFAULT_URL})`);
+    } else {
+      const resolved = resolveToken(global.url);
+      if (!resolved) {
+        console.log(`Logged in:  no token stored for ${global.url} (run \`envsync login\`)`);
+      } else {
+        const via = resolved.source === "env" ? "ENVSYNC_TOKEN" : "keychain";
+        let suffix = ` (via ${via})`;
+        if (resolved.expiresAt) {
+          const days = daysUntil(resolved.expiresAt);
+          suffix += days > 0 ? `, expires in ${days}d` : `, expired`;
+        }
+        console.log(`Logged in:  ${global.url}${suffix}`);
+      }
+    }
+
     console.log(
       link
         ? `Linked to:  ${link.projectName} / ${link.environmentName}`

@@ -1,66 +1,88 @@
-import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { desc, eq, count } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
+import { FolderTree } from "lucide-react";
 import { db } from "@/db";
 import { projects, environments } from "@/db/schema";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { CreateProjectDialog } from "./create-project-dialog";
-import { FolderTree } from "lucide-react";
+import { ProjectsBrowser, type ProjectListItem } from "./projects-browser";
 
 export default async function DashboardPage() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
+  // One pass: projects (newest first) with their environment names (oldest first).
   const rows = await db
     .select({
       id: projects.id,
       name: projects.name,
       createdAt: projects.createdAt,
-      envCount: count(environments.id),
+      envName: environments.name,
     })
     .from(projects)
     .leftJoin(environments, eq(environments.projectId, projects.id))
     .where(eq(projects.userId, userId))
-    .groupBy(projects.id)
-    .orderBy(desc(projects.createdAt));
+    .orderBy(desc(projects.createdAt), asc(environments.createdAt));
+
+  const byId = new Map<string, ProjectListItem>();
+  for (const r of rows) {
+    let p = byId.get(r.id);
+    if (!p) {
+      // timeAgo is computed server-side so the client render matches (no hydration drift).
+      p = { id: r.id, name: r.name, createdLabel: timeAgo(r.createdAt), envs: [] };
+      byId.set(r.id, p);
+    }
+    if (r.envName) p.envs.push(r.envName);
+  }
+  const projectList = [...byId.values()];
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2.5">
           <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-          <p className="text-sm text-muted-foreground">
-            Each project groups its own set of environments.
-          </p>
+          {projectList.length > 0 ? (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground tabular-nums">
+              {projectList.length}
+            </span>
+          ) : null}
         </div>
-        <CreateProjectDialog />
+        <p className="text-sm text-muted-foreground">
+          Each project groups its own set of environments.
+        </p>
       </div>
 
-      {rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed py-16 text-center">
-          <FolderTree className="size-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            No projects yet. Create your first one to get started.
-          </p>
+      {projectList.length === 0 ? (
+        <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed py-16 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-brand/10 text-brand">
+            <FolderTree className="size-6" />
+          </div>
+          <div className="space-y-1">
+            <p className="font-medium">No projects yet</p>
+            <p className="mx-auto max-w-sm text-sm text-muted-foreground text-pretty">
+              Create your first project to start grouping and syncing environment
+              variables across dev, staging, and prod.
+            </p>
+          </div>
           <CreateProjectDialog />
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {rows.map((project) => (
-            <Link key={project.id} href={`/projects/${project.id}`}>
-              <Card className="h-full transition-colors hover:border-primary">
-                <CardHeader>
-                  <CardTitle>{project.name}</CardTitle>
-                  <CardDescription>
-                    {project.envCount} environment{project.envCount === 1 ? "" : "s"}
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            </Link>
-          ))}
-        </div>
+        <ProjectsBrowser projects={projectList} />
       )}
     </div>
   );
+}
+
+function timeAgo(date: Date): string {
+  const s = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.floor(d / 365)}y ago`;
 }

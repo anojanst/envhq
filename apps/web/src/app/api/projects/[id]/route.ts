@@ -2,19 +2,20 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { projects, environments } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
-import { getOwnedProject } from "@/lib/access";
-import { json, badRequest, unauthorized, notFound } from "@/lib/api";
+import { getOwnedProject, isReadOnly } from "@/lib/access";
+import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
 
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, { params }: Params) {
-  const userId = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
+  if (expired) return tokenExpired();
   if (!userId) return unauthorized();
   const { id } = await params;
 
-  const project = await getOwnedProject(userId, id);
+  const project = await getOwnedProject(userId, id, scope);
   if (!project) return notFound("Project not found");
 
   const envs = await db
@@ -27,11 +28,13 @@ export async function GET(req: Request, { params }: Params) {
 }
 
 export async function PATCH(req: Request, { params }: Params) {
-  const userId = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
+  if (expired) return tokenExpired();
   if (!userId) return unauthorized();
+  if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const project = await getOwnedProject(userId, id);
+  const project = await getOwnedProject(userId, id, scope);
   if (!project) return notFound("Project not found");
 
   const body = await req.json().catch(() => null);
@@ -48,11 +51,13 @@ export async function PATCH(req: Request, { params }: Params) {
 }
 
 export async function DELETE(req: Request, { params }: Params) {
-  const userId = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
+  if (expired) return tokenExpired();
   if (!userId) return unauthorized();
+  if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const project = await getOwnedProject(userId, id);
+  const project = await getOwnedProject(userId, id, scope);
   if (!project) return notFound("Project not found");
 
   await db.delete(projects).where(eq(projects.id, id));

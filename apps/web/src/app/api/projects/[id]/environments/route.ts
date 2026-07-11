@@ -1,19 +1,21 @@
 import { getUserId } from "@/lib/auth";
-import { getOwnedProject } from "@/lib/access";
+import { getOwnedProject, isReadOnly } from "@/lib/access";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
-import { json, badRequest, unauthorized, notFound, conflict } from "@/lib/api";
+import { json, badRequest, unauthorized, tokenExpired, notFound, conflict, forbidden } from "@/lib/api";
 
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(req: Request, { params }: Params) {
-  const userId = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
+  if (expired) return tokenExpired();
   if (!userId) return unauthorized();
+  if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id: projectId } = await params;
 
-  const project = await getOwnedProject(userId, projectId);
+  const project = await getOwnedProject(userId, projectId, scope);
   if (!project) return notFound("Project not found");
 
   const body = await req.json().catch(() => null);

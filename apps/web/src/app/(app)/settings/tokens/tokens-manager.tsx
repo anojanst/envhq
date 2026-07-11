@@ -23,22 +23,70 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { api } from "@/lib/client";
 
 interface TokenMeta {
   id: string;
   name: string;
+  kind: string;
+  capability: string;
+  projectId: string | null;
+  projectName: string | null;
+  expiresAt: string | null;
   lastUsedAt: string | null;
   createdAt: string;
 }
 
-export function TokensManager({ initialTokens }: { initialTokens: TokenMeta[] }) {
+interface ProjectOption {
+  id: string;
+  name: string;
+}
+
+const EXPIRY_OPTIONS = [
+  { label: "30 days", value: "30" },
+  { label: "90 days", value: "90" },
+  { label: "1 year", value: "365" },
+  { label: "Never", value: "0" },
+];
+
+const selectClass =
+  "h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+
+function isExpired(t: TokenMeta): boolean {
+  return !!t.expiresAt && new Date(t.expiresAt).getTime() <= Date.now();
+}
+
+function expiryLabel(t: TokenMeta): string {
+  if (!t.expiresAt) return "never";
+  const d = new Date(t.expiresAt);
+  if (d.getTime() <= Date.now()) return "expired";
+  return d.toLocaleDateString();
+}
+
+export function TokensManager({
+  initialTokens,
+  projects,
+}: {
+  initialTokens: TokenMeta[];
+  projects: ProjectOption[];
+}) {
   const [tokens, setTokens] = useState<TokenMeta[]>(initialTokens);
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [capability, setCapability] = useState("write");
+  const [expiresInDays, setExpiresInDays] = useState("90");
   const [busy, setBusy] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  function resetForm() {
+    setName("");
+    setProjectId("");
+    setCapability("write");
+    setExpiresInDays("90");
+  }
 
   async function reload() {
     const data = await api<{ tokens: TokenMeta[] }>("/api/tokens");
@@ -51,10 +99,15 @@ export function TokensManager({ initialTokens }: { initialTokens: TokenMeta[] })
     try {
       const data = await api<{ token: string }>("/api/tokens", {
         method: "POST",
-        body: { name: name.trim() },
+        body: {
+          name: name.trim(),
+          projectId: projectId || undefined,
+          capability,
+          expiresInDays: Number(expiresInDays),
+        },
       });
       setNewToken(data.token);
-      setName("");
+      resetForm();
       setCreateOpen(false);
       await reload();
     } catch (err) {
@@ -94,18 +147,65 @@ export function TokensManager({ initialTokens }: { initialTokens: TokenMeta[] })
               <DialogHeader>
                 <DialogTitle>Create CLI token</DialogTitle>
                 <DialogDescription>
-                  Give it a name so you can recognize it later (e.g. “laptop”).
+                  Scope it to a project and access level, and pick when it expires.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-2 py-4">
-                <Label htmlFor="token-name">Token name</Label>
-                <Input
-                  id="token-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="laptop"
-                  autoFocus
-                />
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="token-name">Token name</Label>
+                  <Input
+                    id="token-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="ci-deploy"
+                    autoFocus
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="token-project">Project</Label>
+                  <select
+                    id="token-project"
+                    className={selectClass}
+                    value={projectId}
+                    onChange={(e) => setProjectId(e.target.value)}
+                  >
+                    <option value="">All projects</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="token-capability">Access</Label>
+                    <select
+                      id="token-capability"
+                      className={selectClass}
+                      value={capability}
+                      onChange={(e) => setCapability(e.target.value)}
+                    >
+                      <option value="write">Read &amp; write</option>
+                      <option value="read">Read-only</option>
+                    </select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="token-expiry">Expires</Label>
+                    <select
+                      id="token-expiry"
+                      className={selectClass}
+                      value={expiresInDays}
+                      onChange={(e) => setExpiresInDays(e.target.value)}
+                    >
+                      {EXPIRY_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
               <DialogFooter>
                 <Button type="submit" disabled={busy || !name.trim()}>
@@ -135,7 +235,7 @@ export function TokensManager({ initialTokens }: { initialTokens: TokenMeta[] })
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Use it with: <code>envsync login --token &lt;token&gt;</code>
+            Use it in CI with: <code>ENVSYNC_TOKEN=&lt;token&gt;</code>
           </p>
           <DialogFooter>
             <Button onClick={() => setNewToken(null)}>Done</Button>
@@ -148,28 +248,36 @@ export function TokensManager({ initialTokens }: { initialTokens: TokenMeta[] })
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Scope</TableHead>
+              <TableHead>Access</TableHead>
+              <TableHead>Expires</TableHead>
               <TableHead>Last used</TableHead>
-              <TableHead>Created</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {tokens.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                   <KeyRound className="mx-auto mb-2 size-6" />
                   No tokens yet. Create one to use the CLI.
                 </TableCell>
               </TableRow>
             ) : (
               tokens.map((t) => (
-                <TableRow key={t.id}>
+                <TableRow key={t.id} className={cn(isExpired(t) && "opacity-50")}>
                   <TableCell className="font-medium">{t.name}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleString() : "never"}
+                    {t.projectId ? (t.projectName ?? "—") : "All projects"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(t.createdAt).toLocaleDateString()}
+                    {t.capability === "read" ? "Read-only" : "Read & write"}
+                  </TableCell>
+                  <TableCell className={cn("text-muted-foreground", isExpired(t) && "text-destructive")}>
+                    {expiryLabel(t)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleString() : "never"}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" className="size-7" onClick={() => revoke(t)}>

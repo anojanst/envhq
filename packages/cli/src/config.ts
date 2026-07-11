@@ -4,7 +4,8 @@ import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 
 /**
  * Two config files:
- *   - Global auth (~/.envsync/config.json): the API url + personal token.
+ *   - Global config (~/.envsync/config.json): the API url only. The secret token
+ *     lives in the OS keychain (see token-store.ts), never on disk.
  *   - Project link (./.envsync.json): which project/environment this folder maps
  *     to, so `pull`/`push` need no arguments.
  */
@@ -15,7 +16,11 @@ const LINK_FILE = ".envsync.json";
 
 export interface GlobalConfig {
   url: string;
-  token: string;
+  /**
+   * @deprecated Legacy plaintext token from pre-keychain versions. Still read so
+   * we can migrate it into the OS keychain on first use, then strip it.
+   */
+  token?: string;
 }
 
 export interface LinkConfig {
@@ -39,7 +44,9 @@ export function readGlobalConfig(): Promise<GlobalConfig | null> {
 
 export async function writeGlobalConfig(config: GlobalConfig): Promise<void> {
   await mkdir(GLOBAL_DIR, { recursive: true });
-  await writeFile(GLOBAL_FILE, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+  // Persist url only — never write the token back to disk.
+  const { url } = config;
+  await writeFile(GLOBAL_FILE, JSON.stringify({ url }, null, 2) + "\n", { mode: 0o600 });
 }
 
 export async function clearGlobalConfig(): Promise<void> {
@@ -54,5 +61,19 @@ export async function writeLinkConfig(config: LinkConfig, cwd = process.cwd()): 
   await writeFile(join(cwd, LINK_FILE), JSON.stringify(config, null, 2) + "\n");
 }
 
-export const DEFAULT_URL = process.env.ENVSYNC_URL ?? "http://localhost:3000";
+// Baked in at build time by tsup's `define` (see tsup.config.ts). For `tsx`
+// dev runs the identifier is undeclared, so `typeof` safely yields "undefined"
+// and we fall back to localhost.
+declare const __ENVSYNC_DEFAULT_URL__: string;
+const BAKED_URL =
+  typeof __ENVSYNC_DEFAULT_URL__ !== "undefined"
+    ? __ENVSYNC_DEFAULT_URL__
+    : "http://localhost:3000";
+
+/**
+ * Precedence: ENVSYNC_URL env var → URL baked at build → localhost.
+ * Note this only matters for the first `login`; after that the URL that was
+ * used is persisted in the global config and reused by every command.
+ */
+export const DEFAULT_URL = process.env.ENVSYNC_URL ?? BAKED_URL;
 export const LINK_FILENAME = LINK_FILE;

@@ -9,6 +9,10 @@ export function apiError(message: string, status: number) {
 }
 
 export const unauthorized = () => apiError("Unauthorized", 401);
+// Distinct from `unauthorized`: signals the CLI to transparently re-run its
+// browser login instead of treating the token as permanently invalid.
+export const tokenExpired = () => apiError("token_expired", 401);
+export const forbidden = (message = "Forbidden") => apiError(message, 403);
 export const notFound = (what = "Not found") => apiError(what, 404);
 export const badRequest = (message: string) => apiError(message, 400);
 export const conflict = (message: string) => apiError(message, 409);

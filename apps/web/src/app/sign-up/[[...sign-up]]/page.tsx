@@ -1,9 +1,13 @@
 import { SignUp } from "@clerk/nextjs";
+import { AuthShell } from "@/components/auth-shell";
 
 export default function SignUpPage() {
   return (
-    <div className="flex flex-1 items-center justify-center p-6">
+    <AuthShell
+      title="Create your account"
+      subtitle="Start storing and syncing your environment variables in minutes."
+    >
       <SignUp />
-    </div>
+    </AuthShell>
   );
 }

@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
-import { asc, eq, count } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
+import { Layers } from "lucide-react";
 import { db } from "@/db";
-import { environments, envVars } from "@/db/schema";
+import { environments } from "@/db/schema";
 import { getOwnedProject } from "@/lib/access";
+import { ProjectAvatar } from "@/components/project-visuals";
 import { CreateEnvironmentDialog } from "./create-environment-dialog";
 import { ProjectActions } from "./project-actions";
-import { EnvironmentList } from "./environment-list";
 
 export default async function ProjectPage({
   params,
@@ -21,18 +22,21 @@ export default async function ProjectPage({
   const project = await getOwnedProject(userId, id);
   if (!project) notFound();
 
-  const envs = await db
-    .select({
-      id: environments.id,
-      name: environments.name,
-      varCount: count(envVars.id),
-    })
+  const [firstEnv] = await db
+    .select({ id: environments.id })
     .from(environments)
-    .leftJoin(envVars, eq(envVars.environmentId, environments.id))
     .where(eq(environments.projectId, id))
-    .groupBy(environments.id)
-    .orderBy(asc(environments.createdAt));
+    .orderBy(asc(environments.createdAt))
+    .limit(1);
 
+  // A project opens straight into its default (first) environment — the env
+  // editor is the real destination, so there's no contentless overview page.
+  if (firstEnv) {
+    redirect(`/projects/${id}/environments/${firstEnv.id}`);
+  }
+
+  // No environments yet (only reachable by deleting the last one) — nothing to
+  // redirect to, so show the project header + a create prompt.
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -43,18 +47,29 @@ export default async function ProjectPage({
           ← Projects
         </Link>
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
+          <div className="flex items-center gap-3">
+            <ProjectAvatar name={project.name} />
+            <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
+          </div>
           <div className="flex items-center gap-2">
             <CreateEnvironmentDialog projectId={project.id} />
-            <ProjectActions project={{ id: project.id, name: project.name }} />
+            <ProjectActions
+              project={{ id: project.id, name: project.name }}
+              environmentCount={0}
+              variableCount={0}
+              hasProdEnv={false}
+            />
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Environments hold the actual key/value pairs. Add as many as you need.
-        </p>
       </div>
 
-      <EnvironmentList projectId={project.id} environments={envs} />
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
+        <Layers className="size-8 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">
+          No environments yet. Add one like <code>dev</code> or <code>prod</code>.
+        </p>
+        <CreateEnvironmentDialog projectId={project.id} />
+      </div>
     </div>
   );
 }

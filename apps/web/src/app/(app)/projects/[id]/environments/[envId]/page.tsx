@@ -1,8 +1,15 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
+import { asc, eq, count } from "drizzle-orm";
+import { db } from "@/db";
+import { environments, envVars } from "@/db/schema";
 import { getOwnedEnvironment } from "@/lib/access";
 import { listVarRows } from "@/lib/env-store";
+import { ProjectAvatar, isProdEnv } from "@/components/project-visuals";
+import { EnvironmentTabs } from "@/components/environment-tabs";
+import { CreateEnvironmentDialog } from "../../create-environment-dialog";
+import { ProjectActions } from "../../project-actions";
 import { EnvEditor } from "./env-editor";
 
 export default async function EnvironmentPage({
@@ -17,22 +24,57 @@ export default async function EnvironmentPage({
   const owned = await getOwnedEnvironment(userId, envId);
   if (!owned || owned.project.id !== projectId) notFound();
 
-  const vars = await listVarRows(envId);
+  const [vars, siblingEnvs] = await Promise.all([
+    listVarRows(envId),
+    db
+      .select({
+        id: environments.id,
+        name: environments.name,
+        varCount: count(envVars.id),
+      })
+      .from(environments)
+      .leftJoin(envVars, eq(envVars.environmentId, environments.id))
+      .where(eq(environments.projectId, projectId))
+      .groupBy(environments.id)
+      .orderBy(asc(environments.createdAt)),
+  ]);
+
+  const totalVars = siblingEnvs.reduce((sum, e) => sum + e.varCount, 0);
+  const hasProdEnv = siblingEnvs.some((e) => isProdEnv(e.name));
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <Link
-          href={`/projects/${projectId}`}
+          href="/dashboard"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← {owned.project.name}
+          ← Projects
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {owned.project.name}{" "}
-          <span className="text-muted-foreground">/ {owned.env.name}</span>
-        </h1>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <ProjectAvatar name={owned.project.name} />
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {owned.project.name}
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <CreateEnvironmentDialog projectId={projectId} />
+            <ProjectActions
+              project={{ id: projectId, name: owned.project.name }}
+              environmentCount={siblingEnvs.length}
+              variableCount={totalVars}
+              hasProdEnv={hasProdEnv}
+            />
+          </div>
+        </div>
       </div>
+
+      <EnvironmentTabs
+        projectId={projectId}
+        environments={siblingEnvs}
+        activeEnvId={envId}
+      />
 
       <EnvEditor environmentId={envId} initialVars={vars} envName={owned.env.name} />
     </div>
