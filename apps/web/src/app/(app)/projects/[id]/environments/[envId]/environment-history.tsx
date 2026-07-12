@@ -32,13 +32,7 @@ interface VersionEntry {
   createdAt: string;
 }
 
-export function EnvironmentHistory({
-  environmentId,
-  currentVersion,
-}: {
-  environmentId: string;
-  currentVersion: number;
-}) {
+export function EnvironmentHistory({ environmentId }: { environmentId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [versions, setVersions] = useState<VersionEntry[] | null>(null);
@@ -61,11 +55,18 @@ export function EnvironmentHistory({
   }
 
   async function rollback(version: number) {
+    // Use the newest entry from the versions list we just loaded when the
+    // sheet opened — not a version number captured once at page load, which
+    // would go stale the moment any other edit (e.g. via the var editor)
+    // bumps the real server version without a full page reload.
+    const liveVersion = versions?.[0]?.version;
+    if (liveVersion === undefined) return;
+
     setRollingBack(true);
     try {
       await api(`/api/environments/${environmentId}/versions/${version}/rollback`, {
         method: "POST",
-        body: { baseVersion: currentVersion },
+        body: { baseVersion: liveVersion },
       });
       toast.success(`Rolled back to v${version}`);
       setRollbackTarget(null);

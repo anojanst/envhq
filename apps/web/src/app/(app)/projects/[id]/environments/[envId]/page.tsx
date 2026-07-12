@@ -81,7 +81,7 @@ export default async function EnvironmentPage({
       />
 
       <div className="flex justify-end">
-        <EnvironmentHistory environmentId={envId} currentVersion={owned.env.version} />
+        <EnvironmentHistory environmentId={envId} />
       </div>
 
       <EnvEditor environmentId={envId} initialVars={vars} envName={owned.env.name} />
