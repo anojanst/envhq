@@ -60,6 +60,6 @@ export async function DELETE(req: Request, { params }: Params) {
   const owned = await getOwnedVar(userId, id, scope);
   if (!owned) return notFound("Variable not found");
 
-  await db.delete(envVars).where(eq(envVars.id, id));
+  await db.update(envVars).set({ deletedAt: new Date() }).where(eq(envVars.id, id));
   return json({ ok: true });
 }

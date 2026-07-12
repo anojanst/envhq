@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -6,6 +6,7 @@ import {
   integer,
   timestamp,
   unique,
+  uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
 
@@ -68,9 +69,14 @@ export const envVars = pgTable(
     authTag: text("auth_tag").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (t) => [
-    unique("env_vars_environment_key_uq").on(t.environmentId, t.key),
+    // Partial: only active (non-deleted) rows are constrained, so a
+    // soft-deleted key can be re-created without colliding with its tombstone.
+    uniqueIndex("env_vars_environment_key_uq")
+      .on(t.environmentId, t.key)
+      .where(sql`${t.deletedAt} is null`),
     index("env_vars_environment_id_idx").on(t.environmentId),
   ],
 );

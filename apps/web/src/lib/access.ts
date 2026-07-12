@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { projects, environments, envVars } from "@/db/schema";
 import type { TokenScope } from "@/lib/auth";
@@ -61,7 +61,14 @@ export async function getOwnedVar(userId: string, varId: string, scope?: TokenSc
     .from(envVars)
     .innerJoin(environments, eq(envVars.environmentId, environments.id))
     .innerJoin(projects, eq(environments.projectId, projects.id))
-    .where(and(eq(envVars.id, varId), eq(projects.userId, userId), projectFilter(scope)))
+    .where(
+      and(
+        eq(envVars.id, varId),
+        isNull(envVars.deletedAt),
+        eq(projects.userId, userId),
+        projectFilter(scope),
+      ),
+    )
     .limit(1);
   return rows[0];
 }

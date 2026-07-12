@@ -3,7 +3,7 @@ import { readFile, writeFile, appendFile, access } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { basename } from "node:path";
-import { parseEnv } from "@envhq/parser";
+import { parseEnv, serializeEnv } from "@envhq/parser";
 import {
   readGlobalConfig,
   writeGlobalConfig,
@@ -15,6 +15,8 @@ import {
   CLI_VERSION,
   type LinkConfig,
 } from "./config.ts";
+import { readBase, writeBase } from "./base.ts";
+import { computeThreeWayDiff } from "./sync.ts";
 import { apiClient, ApiError, type Environment } from "./api.ts";
 import { runLoginFlow } from "./auth/login.ts";
 import {
@@ -128,6 +130,21 @@ const PROD_NAME_RE = /^prod(uction)?$/i;
 async function confirmProdIfNeeded(envName: string, yes: boolean): Promise<void> {
   if (!PROD_NAME_RE.test(envName) || yes) return;
   const answer = await prompt(`⚠ "${envName}" looks like production. Continue? [y/N] `);
+  if (answer.toLowerCase() !== "y") fail("Aborted.");
+}
+
+/**
+ * Confirm before a three-way push deletes remote keys. Extra warning if
+ * deleting over half of what the base tracks — a stale/partial local file is
+ * the most likely cause of an unexpectedly large delete set.
+ */
+async function confirmDeletions(toDelete: string[], baseKeyCount: number, yes: boolean): Promise<void> {
+  if (toDelete.length === 0 || yes) return;
+  const pct = baseKeyCount > 0 ? toDelete.length / baseKeyCount : 0;
+  const warning = pct > 0.5 ? ` ⚠ that's over half of the ${baseKeyCount} tracked keys.` : "";
+  const answer = await prompt(
+    `This will delete ${toDelete.length} key(s) remotely: ${toDelete.join(", ")}.${warning} Continue? [y/N] `,
+  );
   if (answer.toLowerCase() !== "y") fail("Aborted.");
 }
 
@@ -415,16 +432,56 @@ program
         await confirmProdIfNeeded(env.name, opts.yes);
         const { content, count } = await apiClient.exportEnv(env.id);
 
-        if ((await fileExists(file)) && !opts.force) {
-          const answer = await prompt(`${file} exists. Overwrite? [y/N] `);
-          if (answer.toLowerCase() !== "y") {
-            console.log(`Skipped ${env.name}.`);
-            continue;
+        const exists = await fileExists(file);
+        let localRaw: string | null = null;
+        if (exists) {
+          localRaw = await readFile(file, "utf8");
+
+          if (!opts.force) {
+            // Non-clobbering check: if the local file's key set has drifted
+            // from what was last synced, pulling now would silently discard
+            // local additions/removals — refuse instead of overwriting.
+            // (Key-set only — a value edited in place without adding or
+            // removing a key isn't detectable from the base, which stores
+            // names only; the unconditional .bak below is the safety net for
+            // that case.)
+            const base = await readBase(env.id);
+            if (base) {
+              const localKeys = parseEnv(localRaw).map((p) => p.key).sort();
+              const baseKeys = [...base.keys].sort();
+              if (JSON.stringify(localKeys) !== JSON.stringify(baseKeys)) {
+                fail(
+                  `${file} has local changes that don't match the last sync for ${env.name} ` +
+                    `(keys differ from the last known set) — push first, or re-run with --force to overwrite anyway.`,
+                );
+              }
+            }
+
+            const answer = await prompt(`${file} exists. Overwrite? [y/N] `);
+            if (answer.toLowerCase() !== "y") {
+              console.log(`Skipped ${env.name}.`);
+              continue;
+            }
           }
         }
 
+        if (localRaw !== null) {
+          await writeFile(`${file}.bak`, localRaw);
+        }
         await writeFile(file, content);
-        console.log(`✔ Pulled ${count} variable${count === 1 ? "" : "s"} from ${env.name} → ${file}`);
+
+        // Refresh the base from what was just pulled — pull is "cloud wins,"
+        // so the base becomes exactly the remote's key set.
+        const base = await readBase(env.id);
+        const remoteKeys = parseEnv(content)
+          .map((p) => p.key)
+          .sort();
+        await writeBase(env.id, { version: (base?.version ?? 0) + 1, keys: remoteKeys });
+
+        const backupNote = localRaw !== null ? ` (backed up previous ${file} → ${file}.bak)` : "";
+        console.log(
+          `✔ Pulled ${count} variable${count === 1 ? "" : "s"} from ${env.name} → ${file}${backupNote}.`,
+        );
       }
     } catch (err) {
       fail(err instanceof ApiError ? err.message : String(err));
@@ -463,10 +520,105 @@ program
         const parsed = parseEnv(raw);
         if (parsed.length === 0) fail(`No valid KEY=value lines found in ${file}.`);
 
-        const res = await apiClient.importEnv(env.id, raw);
+        const base = await readBase(env.id);
+
+        if (!base) {
+          // No sync record (never pushed/pulled, or the base was lost) —
+          // degrade to the old merge-only behavior: upsert everything, delete
+          // nothing, then start tracking a base from here on.
+          const res = await apiClient.importEnv(env.id, raw);
+          await writeBase(env.id, { version: 1, keys: parsed.map((p) => p.key).sort() });
+          console.log(
+            `✔ Pushed to ${env.name}: ${res.created} new, ${res.updated} updated (merge-only — no sync record found).`,
+          );
+          continue;
+        }
+
+        const { content: remoteContent } = await apiClient.exportEnv(env.id);
+        const remotePairs = parseEnv(remoteContent);
+        const { toUpsert, toDelete } = computeThreeWayDiff(parsed, base.keys, remotePairs);
+
+        await confirmDeletions(toDelete, base.keys.length, opts.yes);
+
+        let created = 0;
+        let updated = 0;
+        if (toUpsert.length > 0) {
+          const res = await apiClient.importEnv(env.id, serializeEnv(toUpsert));
+          created = res.created;
+          updated = res.updated;
+        }
+        let deleted = 0;
+        if (toDelete.length > 0) {
+          const res = await apiClient.deleteKeys(env.id, toDelete);
+          deleted = res.deleted;
+        }
+
+        await writeBase(env.id, {
+          version: base.version + 1,
+          keys: parsed.map((p) => p.key).sort(),
+        });
+
         console.log(
-          `✔ Pushed to ${env.name}: ${res.created} new, ${res.updated} updated (${res.total} total).`,
+          `✔ Pushed to ${env.name}: ${created} new, ${updated} updated, ${deleted} deleted.`,
         );
+      }
+    } catch (err) {
+      fail(err instanceof ApiError ? err.message : String(err));
+    }
+  });
+
+// ---- diff ----
+program
+  .command("diff")
+  .description("Preview what `push` would change, without applying it.")
+  .argument("[env]", "environment to diff (defaults to linked default; with --all, ignored)")
+  .option("-f, --file <path>", "input file (overrides the linked mapping)")
+  .option("--all", "diff every linked environment against its mapped file", false)
+  .action(async (envArg: string | undefined, opts: { file?: string; all: boolean }) => {
+    try {
+      const link = await requireLink();
+      if (opts.all && envArg) fail("Pass either an environment or --all, not both.");
+      if (opts.all && opts.file) fail("--file can't be combined with --all.");
+
+      const targets = opts.all
+        ? Object.keys(link.environments).map((name) => resolveLinkedEnv(link, name))
+        : [resolveLinkedEnv(link, envArg)];
+
+      for (const env of targets) {
+        const file = opts.file ?? env.file;
+
+        let raw: string;
+        try {
+          raw = await readFile(file, "utf8");
+        } catch {
+          fail(`Could not read ${file}.`);
+        }
+        const parsed = parseEnv(raw);
+
+        const base = await readBase(env.id);
+        if (!base) {
+          console.log(`${env.name}: no sync record yet — \`push\` would merge-only (no deletions).`);
+          continue;
+        }
+
+        const { content: remoteContent } = await apiClient.exportEnv(env.id);
+        const remotePairs = parseEnv(remoteContent);
+        const { toUpsert, toDelete } = computeThreeWayDiff(parsed, base.keys, remotePairs);
+
+        if (toUpsert.length === 0 && toDelete.length === 0) {
+          console.log(`${env.name}: no changes.`);
+          continue;
+        }
+
+        console.log(`${env.name}:`);
+        const baseSet = new Set(base.keys);
+        for (const { key } of toUpsert) {
+          console.log(`  ${baseSet.has(key) ? "~" : "+"} ${key}`);
+        }
+        for (const key of toDelete) {
+          console.log(`  - ${key}`);
+        }
+        console.log(`  ${toUpsert.length} to push, ${toDelete.length} to delete.`);
       }
     } catch (err) {
       fail(err instanceof ApiError ? err.message : String(err));

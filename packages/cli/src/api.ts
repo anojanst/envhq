@@ -145,6 +145,12 @@ export const apiClient = {
       `/api/environments/${envId}/import`,
       { method: "POST", body: { content } },
     ),
+
+  deleteKeys: (envId: string, keys: string[]) =>
+    request<{ deleted: number }>(`/api/environments/${envId}/vars`, {
+      method: "DELETE",
+      body: { keys },
+    }),
 };
 
 // Re-exported so index.ts can surface auth state without reaching into the store.

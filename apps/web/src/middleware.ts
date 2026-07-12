@@ -1,7 +1,13 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 // Routes anyone can reach without a session.
-const isPublicRoute = createRouteMatcher(["/", "/sign-in(.*)", "/sign-up(.*)"]);
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  "/terms",
+  "/docs(.*)",
+]);
 
 export default clerkMiddleware(async (auth, req) => {
   // API routes authenticate themselves (Clerk session OR CLI bearer token),

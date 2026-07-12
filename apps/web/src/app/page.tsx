@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { PublicFooter } from "@/components/public-footer";
 import { KeyRound, FolderTree, TerminalSquare, ShieldCheck } from "lucide-react";
 
 export default async function LandingPage() {
@@ -68,7 +69,21 @@ export default async function LandingPage() {
             Push and pull secrets straight from your terminal.
           </Feature>
         </div>
+
+        <p className="mt-2 text-xs text-muted-foreground">
+          EnvHQ is a free, personal-use tool. See the{" "}
+          <Link href="/docs/security" className="underline hover:text-foreground">
+            security model
+          </Link>{" "}
+          and{" "}
+          <Link href="/terms" className="underline hover:text-foreground">
+            Terms &amp; Conditions
+          </Link>{" "}
+          before storing production secrets.
+        </p>
       </section>
+
+      <PublicFooter />
     </main>
   );
 }

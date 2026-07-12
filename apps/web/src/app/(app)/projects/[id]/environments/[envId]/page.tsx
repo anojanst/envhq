@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
-import { asc, eq, count } from "drizzle-orm";
+import { and, asc, eq, count, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { environments, envVars } from "@/db/schema";
 import { getOwnedEnvironment } from "@/lib/access";
@@ -33,7 +33,10 @@ export default async function EnvironmentPage({
         varCount: count(envVars.id),
       })
       .from(environments)
-      .leftJoin(envVars, eq(envVars.environmentId, environments.id))
+      .leftJoin(
+        envVars,
+        and(eq(envVars.environmentId, environments.id), isNull(envVars.deletedAt)),
+      )
       .where(eq(environments.projectId, projectId))
       .groupBy(environments.id)
       .orderBy(asc(environments.createdAt)),
