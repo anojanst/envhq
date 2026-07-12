@@ -94,3 +94,23 @@ export async function deletePairByKey(environmentId: string, key: string) {
     .delete(envVars)
     .where(and(eq(envVars.environmentId, environmentId), eq(envVars.key, key)));
 }
+
+/**
+ * Clone every var from one environment into another by copying ciphertext
+ * directly — no decrypt/re-encrypt needed since values aren't keyed per-env.
+ */
+export async function cloneVars(fromEnvironmentId: string, toEnvironmentId: string): Promise<number> {
+  const rows = await db.select().from(envVars).where(eq(envVars.environmentId, fromEnvironmentId));
+  if (rows.length === 0) return 0;
+
+  await db.insert(envVars).values(
+    rows.map((row) => ({
+      environmentId: toEnvironmentId,
+      key: row.key,
+      valueCiphertext: row.valueCiphertext,
+      iv: row.iv,
+      authTag: row.authTag,
+    })),
+  );
+  return rows.length;
+}

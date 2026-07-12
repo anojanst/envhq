@@ -72,16 +72,16 @@ npm install -g @envsyncdev/cli    # installs the `envsync` command
 
 envsync login --token <token> # token from the web app → CLI Tokens
 cd ~/code/my-project
-envsync link                  # pick project + environment (writes .envsync.json)
-envsync pull                  # write remote vars to ./.env
-envsync push                  # upload ./.env to the remote (upsert/merge)
+envsync link                  # pick a project, map every environment to a file
+envsync pull                  # write the default environment to its mapped file
+envsync push                  # upload the default environment from its mapped file
 envsync status                # show login + link state (and target URL)
 ```
 
-`envsync push`/`pull` accept `--env <name>` to target a different environment and
-`--file <path>` to use a different file. Override the server with
-`--url <url>` on `login` or the `ENVSYNC_URL` env var (for local dev or
-self-hosting).
+`envsync push`/`pull` accept a positional `[env]` to target a different
+environment, `--file <path>` to use a different file, and `--all` to act on
+every linked environment at once. Override the server with `--url <url>` on
+`login` or the `ENVSYNC_URL` env var (for local dev or self-hosting).
 
 ### Publishing the CLI
 

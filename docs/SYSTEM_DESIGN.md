@@ -231,12 +231,18 @@ into the CLI by tsup). Runs on server and client.
 ## 11. CLI (`packages/cli`, published `@envsyncdev/cli`, command `envsync`)
 
 - **Commands:** `login --token <t> [--url]`, `logout`, `whoami`, `projects`,
-  `link [--project --env]`, `pull [--env --file --force]`, `push [--env --file]`,
-  `status`. `--env` and `--file` are independent.
+  `link [--project]`, `env map <env> <file>`, `pull [env --file --all --force
+  --yes]`, `push [env --file --all --yes]`, `status`. Positional `[env]`
+  defaults to the link's default environment; `--file` overrides the linked
+  mapping for one run; `--all` acts on every linked environment (mutually
+  exclusive with an explicit env or `--file`); `prod`/`production` envs prompt
+  for confirmation unless `--yes`.
 - **Config files:**
-  - `~/.envsync/config.json` — `{ url, token }` (global auth), mode 0600.
-  - `./.envsync.json` — per-folder link `{ projectId, projectName,
-    environmentId, environmentName }` (gitignored).
+  - `~/.envsync/config.json` — `{ url }` (global auth url; token lives in the
+    OS keychain, see PLAN §7).
+  - `./.envsync/config.json` — per-folder link `{ projectId, projectName,
+    environments: { name → { id, file } }, default }` (gitignored). A pre-M2
+    `./.envsync.json` single-env link is auto-migrated on first read.
 - **URL resolution:** `ENVSYNC_URL` → **URL baked at build** (tsup `define`
   `__ENVSYNC_DEFAULT_URL__`, default `https://envsync.dev`) → localhost. Dev runs
   (tsx) fall back to localhost.
@@ -246,8 +252,6 @@ into the CLI by tsup). Runs on server and client.
   --no-git-checks`. Parser is bundled, so the package is self-contained. `bin`
   name is `envsync` regardless of package name.
 
-> Note: the **current** CLI uses paste-a-token + a 0600 file. The browser-login /
-> keychain / 7-day-expiry design (PLAN §7) is planned, **not yet built**.
 
 ## 12. Deployment & environment variables
 

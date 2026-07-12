@@ -90,17 +90,39 @@ escalation attempts 403).
 
 </details>
 
-## M2 — CLI-first project & env lifecycle  🔜
+## M2 — CLI-first project & env lifecycle  ✅ (shipped)
 
 *Self-contained; unlocks the CLI-first workflow. Depends on M1 for auth UX only.*
 
-- `envsync init` + `projects create` (PLAN §2); unique project names + migration
-- `env create --from` clone, `env list`, no auto-link / `--link` (PLAN §4)
-- Multi-env workspace link (`push <env>`, env→file mapping, `--all`, prod guard)
-- Web project-create `409` handling for parity
+- ✅ Unique project names + migration + `409` (PLAN §2) — `projects_user_id_name_uq`
+  on `(userId, name)`, migration dedupes existing collisions first
+  ([0002_public_whistler.sql](../apps/web/src/db/migrations/0002_public_whistler.sql)),
+  API pre-checks + catches the race via Postgres `23505`, web project-create
+  dialog already surfaces the message (no UI change needed)
+- ✅ Multi-env workspace link (PLAN §4) — `.envsync/config.json` now holds
+  `{ projectId, projectName, environments: { name → { id, file } }, default }`;
+  `link` maps every environment in one go (default → `.env`, others →
+  `.env.<name>`); `env map <env> <file>` adjusts one mapping; `push`/`pull`
+  take a positional `[env]` (default → linked default) + `--all` (mutually
+  exclusive with an explicit env or `--file`); `prod`/`production` envs prompt
+  for confirmation unless `--yes`. Old single-env `.envsync.json` auto-migrates
+  on first read.
+- ✅ `envsync init` + `projects create <name>` (PLAN §2) — `--env dev,staging`
+  (comma-separated, default `dev`), `--no-link` on `projects create` (default
+  links); `init` defaults the name to the folder's basename, is idempotent
+  (no-ops if already linked), and both write a `.envsync/` entry to
+  `.gitignore` via `ensureGitignored()`
+- ✅ `env create <name> [--from <env>]` clone + `env list` (PLAN §4) —
+  `POST /api/projects/:id/environments` gained an optional `from` (source env
+  id in the same project); `cloneVars()` ([env-store.ts](../apps/web/src/lib/env-store.ts))
+  copies ciphertext/iv/authTag directly, no decrypt/re-encrypt. CLI: no
+  auto-link, `--link` opts in (merges into the current link config if it's the
+  same project, otherwise starts a fresh one); `--project <name>` targets a
+  project other than the linked one without linking to it; `env list` shows
+  the linked file mapping when applicable
 
 **Done when:** you can `envsync init` a fresh folder and manage multiple
-environments + files entirely from the terminal.
+environments + files entirely from the terminal. — **Met.**
 
 ## M3 — Sync engine: cloud as source of truth  ⏳
 
@@ -174,6 +196,12 @@ M3/M4 if there's capacity, since it's on the access layer rather than the sync
 engine. M6 is deliberately last — it's the biggest commitment and benefits from
 M5's key model.
 
-**Next up: M2** (see above for scope). M1 is fully shipped and published
-(`@envsyncdev/cli@0.2.1`) — a fresh agent picking up M2 only needs this doc's
-M1 approach summary for context, not the original M1 conversation.
+**Next up: M3** (see above for scope) — cloud-as-source-of-truth sync engine,
+building on M2's multi-env link config. M1 and M2 are fully shipped; M2's CLI
+work hasn't been published to npm yet (`packages/cli/package.json` is at
+`0.2.2` locally but the last *published* `@envsyncdev/cli` is `0.2.1`, which
+predates `init`/`projects create`/`env create`/`env list` and the
+`.envsync/config.json` format) — verify the version, build, spot-check, then
+publish before relying on it externally (see M1's publish checklist above). A
+fresh agent picking up M3 only needs this doc's M1/M2 summaries for context,
+not the original conversations.

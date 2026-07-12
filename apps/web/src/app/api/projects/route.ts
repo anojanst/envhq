@@ -3,7 +3,10 @@ import { db } from "@/db";
 import { projects, environments } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
 import { isFullAccess } from "@/lib/access";
-import { json, badRequest, unauthorized, tokenExpired, forbidden } from "@/lib/api";
+import { json, badRequest, unauthorized, tokenExpired, forbidden, conflict } from "@/lib/api";
+
+/** Postgres unique_violation error code. */
+const UNIQUE_VIOLATION = "23505";
 
 export const runtime = "nodejs";
 
@@ -46,10 +49,22 @@ export async function POST(req: Request) {
       )
     : ["dev"];
 
-  const [project] = await db
-    .insert(projects)
-    .values({ userId, name })
-    .returning();
+  const existing = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.userId, userId), eq(projects.name, name)))
+    .limit(1);
+  if (existing.length > 0) return conflict(`A project named "${name}" already exists.`);
+
+  let project;
+  try {
+    [project] = await db.insert(projects).values({ userId, name }).returning();
+  } catch (err) {
+    if (typeof err === "object" && err !== null && "code" in err && err.code === UNIQUE_VIOLATION) {
+      return conflict(`A project named "${name}" already exists.`);
+    }
+    throw err;
+  }
 
   const createdEnvs =
     envNames.length > 0

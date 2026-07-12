@@ -1,7 +1,8 @@
 import { Command } from "commander";
-import { readFile, writeFile, access } from "node:fs/promises";
+import { readFile, writeFile, appendFile, access } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { basename } from "node:path";
 import { parseEnv } from "@env-sync/parser";
 import {
   readGlobalConfig,
@@ -64,13 +65,70 @@ async function requireLink(): Promise<LinkConfig> {
   return link;
 }
 
-/** Resolve which environment id to act on, honouring a --env override by name. */
-async function resolveEnvId(link: LinkConfig, override?: string): Promise<{ id: string; name: string }> {
-  if (!override) return { id: link.environmentId, name: link.environmentName };
-  const { environments } = await apiClient.getProject(link.projectId);
-  const env = environments.find((e) => e.name === override);
-  if (!env) fail(`No environment named "${override}" in project "${link.projectName}".`);
-  return { id: env.id, name: env.name };
+/** Default local file for an environment name (default env → .env, others → .env.<name>). */
+function defaultFileFor(name: string, defaultName: string): string {
+  return name === defaultName ? ".env" : `.env.${name}`;
+}
+
+/** Build a link config mapping every environment to its default file. */
+function buildLinkConfig(
+  project: { id: string; name: string },
+  environments: Environment[],
+): LinkConfig {
+  const defaultName = environments.find((e) => e.name === "dev")?.name ?? environments[0].name;
+  const envMap: LinkConfig["environments"] = {};
+  for (const env of environments) {
+    envMap[env.name] = { id: env.id, file: defaultFileFor(env.name, defaultName) };
+  }
+  return { projectId: project.id, projectName: project.name, environments: envMap, default: defaultName };
+}
+
+function describeLinkMapping(link: LinkConfig): string {
+  return Object.entries(link.environments)
+    .map(([name, e]) => `${name} → ${e.file}`)
+    .join(", ");
+}
+
+/** Add `.envsync/` to .gitignore if it isn't already covered (idempotent). */
+async function ensureGitignored(cwd = process.cwd()): Promise<void> {
+  const path = `${cwd}/.gitignore`;
+  const existing = (await fileExists(path)) ? await readFile(path, "utf8") : "";
+  if (existing.split("\n").some((line) => line.trim() === ".envsync/")) return;
+  const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+  await appendFile(path, `${prefix}.envsync/\n`);
+}
+
+/** Resolve an env name (or the link's default) to its id + mapped local file. */
+function resolveLinkedEnv(link: LinkConfig, name?: string): { name: string; id: string; file: string } {
+  const envName = name ?? link.default;
+  const env = link.environments[envName];
+  if (!env) {
+    fail(
+      `No environment named "${envName}" linked in this folder. Linked: ${Object.keys(link.environments).join(", ")}.`,
+    );
+  }
+  return { name: envName, ...env };
+}
+
+/** Resolve the target project: --project <name> looks it up, else the linked project. */
+async function resolveProject(opts: { project?: string }): Promise<{ id: string; name: string }> {
+  if (opts.project) {
+    const { projects } = await apiClient.listProjects();
+    const project = projects.find((p) => p.name === opts.project);
+    if (!project) fail(`No project named "${opts.project}".`);
+    return project;
+  }
+  const link = await requireLink();
+  return { id: link.projectId, name: link.projectName };
+}
+
+const PROD_NAME_RE = /^prod(uction)?$/i;
+
+/** Extra confirmation before writing to an environment that looks like production. */
+async function confirmProdIfNeeded(envName: string, yes: boolean): Promise<void> {
+  if (!PROD_NAME_RE.test(envName) || yes) return;
+  const answer = await prompt(`⚠ "${envName}" looks like production. Continue? [y/N] `);
+  if (answer.toLowerCase() !== "y") fail("Aborted.");
 }
 
 // ---- login ----
@@ -141,7 +199,7 @@ program
   });
 
 // ---- projects ----
-program
+const projectsCommand = program
   .command("projects")
   .description("List your projects.")
   .action(async () => {
@@ -157,10 +215,9 @@ program
 // ---- link ----
 program
   .command("link")
-  .description("Link this folder to a project + environment.")
+  .description("Link this folder to a project, mapping every environment to a local file.")
   .option("-p, --project <name>", "project name")
-  .option("-e, --env <name>", "environment name")
-  .action(async (opts: { project?: string; env?: string }) => {
+  .action(async (opts: { project?: string }) => {
     try {
       const { projects } = await apiClient.listProjects();
       if (projects.length === 0) fail("You have no projects yet. Create one in the web app.");
@@ -181,26 +238,154 @@ program
       const { environments } = await apiClient.getProject(project.id);
       if (environments.length === 0) fail(`Project "${project.name}" has no environments yet.`);
 
-      let env: Environment | undefined = opts.env
-        ? environments.find((e) => e.name === opts.env)
-        : undefined;
-      if (opts.env && !env) fail(`No environment named "${opts.env}" in "${project.name}".`);
+      const link = buildLinkConfig(project, environments);
+      await writeLinkConfig(link);
+      console.log(`✔ Linked to ${project.name} (${describeLinkMapping(link)}). Default: ${link.default}.`);
+      console.log(`  Wrote ${LINK_FILENAME}. Adjust a mapping with \`envsync env map <env> <file>\`.`);
+    } catch (err) {
+      fail(err instanceof ApiError ? err.message : String(err));
+    }
+  });
 
-      if (!env) {
-        console.log("Environments:");
-        environments.forEach((e, i) => console.log(`  ${i + 1}. ${e.name}`));
-        const choice = Number(await prompt("Select an environment number: "));
-        env = environments[choice - 1];
-        if (!env) fail("Invalid selection.");
+// ---- projects create ----
+projectsCommand
+  .command("create")
+  .description("Create a new project (and dev environment) and link this folder to it.")
+  .argument("<name>", "project name")
+  .option("-e, --env <names>", "comma-separated environment names", "dev")
+  .option("--no-link", "don't link this folder to the new project")
+  .action(async (name: string, opts: { env: string; link: boolean }) => {
+    try {
+      const envNames = opts.env
+        .split(",")
+        .map((n) => n.trim())
+        .filter(Boolean);
+      const { project, environments } = await apiClient.createProject(name, envNames);
+      console.log(`✔ Created project "${project.name}" (${environments.map((e) => e.name).join(", ")}).`);
+
+      if (opts.link) {
+        const link = buildLinkConfig(project, environments);
+        await writeLinkConfig(link);
+        await ensureGitignored();
+        console.log(`✔ Linked (${describeLinkMapping(link)}). Default: ${link.default}.`);
+      }
+    } catch (err) {
+      fail(err instanceof ApiError ? err.message : String(err));
+    }
+  });
+
+// ---- init ----
+program
+  .command("init")
+  .description("Bootstrap this folder: create a project, environment(s), and link it.")
+  .argument("[name]", "project name (defaults to the folder name)")
+  .option("-e, --env <names>", "comma-separated environment names", "dev")
+  .action(async (name: string | undefined, opts: { env: string }) => {
+    try {
+      const existing = await readLinkConfig();
+      if (existing) {
+        return console.log(
+          `Already linked to ${existing.projectName} (${LINK_FILENAME}). Nothing to do.`,
+        );
       }
 
-      await writeLinkConfig({
-        projectId: project.id,
-        projectName: project.name,
-        environmentId: env.id,
-        environmentName: env.name,
-      });
-      console.log(`✔ Linked to ${project.name} / ${env.name} (wrote ${LINK_FILENAME}).`);
+      const projectName = name ?? basename(process.cwd());
+      const envNames = opts.env
+        .split(",")
+        .map((n) => n.trim())
+        .filter(Boolean);
+
+      const { project, environments } = await apiClient.createProject(projectName, envNames);
+      console.log(`✔ Created project "${project.name}" (${environments.map((e) => e.name).join(", ")}).`);
+
+      const link = buildLinkConfig(project, environments);
+      await writeLinkConfig(link);
+      await ensureGitignored();
+      console.log(`✔ Linked (${describeLinkMapping(link)}). Default: ${link.default}.`);
+    } catch (err) {
+      fail(err instanceof ApiError ? err.message : String(err));
+    }
+  });
+
+// ---- env ----
+const envCommand = program.command("env").description("Manage environments and their file mappings.");
+
+envCommand
+  .command("map")
+  .description("Change which local file an environment maps to.")
+  .argument("<env>", "environment name")
+  .argument("<file>", "local file to map it to")
+  .action(async (envName: string, file: string) => {
+    const link = await requireLink();
+    if (!link.environments[envName]) {
+      fail(`No environment named "${envName}" linked. Linked: ${Object.keys(link.environments).join(", ")}.`);
+    }
+    link.environments[envName] = { ...link.environments[envName], file };
+    await writeLinkConfig(link);
+    console.log(`✔ ${envName} → ${file}`);
+  });
+
+// ---- env create ----
+envCommand
+  .command("create")
+  .description("Create an environment (optionally cloning another) in a project.")
+  .argument("<name>", "environment name")
+  .option("-p, --project <name>", "project name (defaults to the linked project)")
+  .option("--from <env>", "clone variables from this existing environment")
+  .option("--link", "link this folder to the new environment", false)
+  .action(async (name: string, opts: { project?: string; from?: string; link: boolean }) => {
+    try {
+      const project = await resolveProject(opts);
+
+      let fromId: string | undefined;
+      if (opts.from) {
+        const { environments } = await apiClient.getProject(project.id);
+        const source = environments.find((e) => e.name === opts.from);
+        if (!source) fail(`No environment named "${opts.from}" in "${project.name}".`);
+        fromId = source.id;
+      }
+
+      const { environment } = await apiClient.createEnvironment(project.id, name, fromId);
+      console.log(
+        `✔ Created environment "${environment.name}"${opts.from ? ` (cloned from ${opts.from})` : ""} in ${project.name}.`,
+      );
+
+      if (opts.link) {
+        const existing = await readLinkConfig();
+        const link: LinkConfig =
+          existing && existing.projectId === project.id
+            ? existing
+            : { projectId: project.id, projectName: project.name, environments: {}, default: environment.name };
+        link.environments[environment.name] = {
+          id: environment.id,
+          file: defaultFileFor(environment.name, link.default),
+        };
+        await writeLinkConfig(link);
+        console.log(`✔ Linked ${environment.name} → ${link.environments[environment.name].file}.`);
+      }
+    } catch (err) {
+      fail(err instanceof ApiError ? err.message : String(err));
+    }
+  });
+
+// ---- env list ----
+envCommand
+  .command("list")
+  .description("List environments in a project.")
+  .option("-p, --project <name>", "project name (defaults to the linked project)")
+  .action(async (opts: { project?: string }) => {
+    try {
+      const project = await resolveProject(opts);
+      const { environments } = await apiClient.getProject(project.id);
+      if (environments.length === 0) return console.log(`No environments in "${project.name}".`);
+
+      const link = await readLinkConfig();
+      const linkedHere = link?.projectId === project.id ? link : undefined;
+      for (const e of environments) {
+        const mapped = linkedHere?.environments[e.name];
+        const marker = mapped && linkedHere!.default === e.name ? "*" : " ";
+        console.log(`  ${marker} ${e.name}${mapped ? ` → ${mapped.file}` : ""}`);
+      }
     } catch (err) {
       fail(err instanceof ApiError ? err.message : String(err));
     }
@@ -209,23 +394,38 @@ program
 // ---- pull ----
 program
   .command("pull")
-  .description("Write remote variables to a local .env file.")
-  .option("-e, --env <name>", "environment to pull (defaults to linked)")
-  .option("-f, --file <path>", "output file", ".env")
+  .description("Write remote variables to a local file.")
+  .argument("[env]", "environment to pull (defaults to linked default; with --all, ignored)")
+  .option("-f, --file <path>", "output file (overrides the linked mapping)")
+  .option("--all", "pull every linked environment to its mapped file", false)
   .option("--force", "overwrite without prompting", false)
-  .action(async (opts: { env?: string; file: string; force: boolean }) => {
+  .option("--yes", "skip the production confirmation", false)
+  .action(async (envArg: string | undefined, opts: { file?: string; all: boolean; force: boolean; yes: boolean }) => {
     try {
       const link = await requireLink();
-      const env = await resolveEnvId(link, opts.env);
-      const { content, count } = await apiClient.exportEnv(env.id);
+      if (opts.all && envArg) fail("Pass either an environment or --all, not both.");
+      if (opts.all && opts.file) fail("--file can't be combined with --all.");
 
-      if ((await fileExists(opts.file)) && !opts.force) {
-        const answer = await prompt(`${opts.file} exists. Overwrite? [y/N] `);
-        if (answer.toLowerCase() !== "y") return console.log("Aborted.");
+      const targets = opts.all
+        ? Object.keys(link.environments).map((name) => resolveLinkedEnv(link, name))
+        : [resolveLinkedEnv(link, envArg)];
+
+      for (const env of targets) {
+        const file = opts.file ?? env.file;
+        await confirmProdIfNeeded(env.name, opts.yes);
+        const { content, count } = await apiClient.exportEnv(env.id);
+
+        if ((await fileExists(file)) && !opts.force) {
+          const answer = await prompt(`${file} exists. Overwrite? [y/N] `);
+          if (answer.toLowerCase() !== "y") {
+            console.log(`Skipped ${env.name}.`);
+            continue;
+          }
+        }
+
+        await writeFile(file, content);
+        console.log(`✔ Pulled ${count} variable${count === 1 ? "" : "s"} from ${env.name} → ${file}`);
       }
-
-      await writeFile(opts.file, content);
-      console.log(`✔ Pulled ${count} variable${count === 1 ? "" : "s"} from ${env.name} → ${opts.file}`);
     } catch (err) {
       fail(err instanceof ApiError ? err.message : String(err));
     }
@@ -234,28 +434,40 @@ program
 // ---- push ----
 program
   .command("push")
-  .description("Upload a local .env file to the remote (upsert/merge).")
-  .option("-e, --env <name>", "environment to push to (defaults to linked)")
-  .option("-f, --file <path>", "input file", ".env")
-  .action(async (opts: { env?: string; file: string }) => {
+  .description("Upload a local file to the remote (upsert/merge).")
+  .argument("[env]", "environment to push to (defaults to linked default; with --all, ignored)")
+  .option("-f, --file <path>", "input file (overrides the linked mapping)")
+  .option("--all", "push every linked environment from its mapped file", false)
+  .option("--yes", "skip the production confirmation", false)
+  .action(async (envArg: string | undefined, opts: { file?: string; all: boolean; yes: boolean }) => {
     try {
       const link = await requireLink();
-      const env = await resolveEnvId(link, opts.env);
+      if (opts.all && envArg) fail("Pass either an environment or --all, not both.");
+      if (opts.all && opts.file) fail("--file can't be combined with --all.");
 
-      let raw: string;
-      try {
-        raw = await readFile(opts.file, "utf8");
-      } catch {
-        fail(`Could not read ${opts.file}.`);
+      const targets = opts.all
+        ? Object.keys(link.environments).map((name) => resolveLinkedEnv(link, name))
+        : [resolveLinkedEnv(link, envArg)];
+
+      for (const env of targets) {
+        const file = opts.file ?? env.file;
+        await confirmProdIfNeeded(env.name, opts.yes);
+
+        let raw: string;
+        try {
+          raw = await readFile(file, "utf8");
+        } catch {
+          fail(`Could not read ${file}.`);
+        }
+
+        const parsed = parseEnv(raw);
+        if (parsed.length === 0) fail(`No valid KEY=value lines found in ${file}.`);
+
+        const res = await apiClient.importEnv(env.id, raw);
+        console.log(
+          `✔ Pushed to ${env.name}: ${res.created} new, ${res.updated} updated (${res.total} total).`,
+        );
       }
-
-      const parsed = parseEnv(raw);
-      if (parsed.length === 0) fail(`No valid KEY=value lines found in ${opts.file}.`);
-
-      const res = await apiClient.importEnv(env.id, raw);
-      console.log(
-        `✔ Pushed to ${env.name}: ${res.created} new, ${res.updated} updated (${res.total} total).`,
-      );
     } catch (err) {
       fail(err instanceof ApiError ? err.message : String(err));
     }
@@ -286,11 +498,15 @@ program
       }
     }
 
-    console.log(
-      link
-        ? `Linked to:  ${link.projectName} / ${link.environmentName}`
-        : `Linked to:  no (run \`envsync link\`)`,
-    );
+    if (!link) {
+      console.log(`Linked to:  no (run \`envsync link\`)`);
+    } else {
+      console.log(`Linked to:  ${link.projectName}`);
+      for (const [name, env] of Object.entries(link.environments)) {
+        const marker = name === link.default ? "*" : " ";
+        console.log(`  ${marker} ${name} → ${env.file}`);
+      }
+    }
   });
 
 program.parseAsync().catch((err) => fail(String(err)));

@@ -6,13 +6,16 @@ import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
  * Two config files:
  *   - Global config (~/.envsync/config.json): the API url only. The secret token
  *     lives in the OS keychain (see token-store.ts), never on disk.
- *   - Project link (./.envsync.json): which project/environment this folder maps
- *     to, so `pull`/`push` need no arguments.
+ *   - Project link (./.envsync/config.json): which project this folder maps to,
+ *     and the per-environment file mapping, so `pull`/`push` need no arguments.
  */
 
 const GLOBAL_DIR = join(homedir(), ".envsync");
 const GLOBAL_FILE = join(GLOBAL_DIR, "config.json");
-const LINK_FILE = ".envsync.json";
+const LINK_DIR = ".envsync";
+const LINK_FILE = join(LINK_DIR, "config.json");
+/** Pre-M2 single-env link file, auto-migrated into LINK_FILE on first read. */
+const LEGACY_LINK_FILE = ".envsync.json";
 
 export interface GlobalConfig {
   url: string;
@@ -23,7 +26,21 @@ export interface GlobalConfig {
   token?: string;
 }
 
+export interface EnvLink {
+  id: string;
+  file: string;
+}
+
 export interface LinkConfig {
+  projectId: string;
+  projectName: string;
+  /** Environment name → { id, local file }. */
+  environments: Record<string, EnvLink>;
+  /** Name of the environment `push`/`pull` target when none is given. */
+  default: string;
+}
+
+interface LegacyLinkConfig {
   projectId: string;
   projectName: string;
   environmentId: string;
@@ -53,11 +70,31 @@ export async function clearGlobalConfig(): Promise<void> {
   await rm(GLOBAL_FILE, { force: true });
 }
 
-export function readLinkConfig(cwd = process.cwd()): Promise<LinkConfig | null> {
-  return readJson<LinkConfig>(join(cwd, LINK_FILE));
+export async function readLinkConfig(cwd = process.cwd()): Promise<LinkConfig | null> {
+  const current = await readJson<LinkConfig>(join(cwd, LINK_FILE));
+  if (current) return current;
+
+  // Auto-migrate the old single-env `.envsync.json` into the new
+  // `.envsync/config.json` environments map, then remove the legacy file.
+  const legacy = await readJson<LegacyLinkConfig>(join(cwd, LEGACY_LINK_FILE));
+  if (!legacy) return null;
+
+  const migrated: LinkConfig = {
+    projectId: legacy.projectId,
+    projectName: legacy.projectName,
+    environments: {
+      [legacy.environmentName]: { id: legacy.environmentId, file: ".env" },
+    },
+    default: legacy.environmentName,
+  };
+  await writeLinkConfig(migrated, cwd);
+  await rm(join(cwd, LEGACY_LINK_FILE), { force: true });
+  console.error(`✔ Migrated ${LEGACY_LINK_FILE} → ${LINK_FILE}.`);
+  return migrated;
 }
 
 export async function writeLinkConfig(config: LinkConfig, cwd = process.cwd()): Promise<void> {
+  await mkdir(join(cwd, LINK_DIR), { recursive: true });
   await writeFile(join(cwd, LINK_FILE), JSON.stringify(config, null, 2) + "\n");
 }
 

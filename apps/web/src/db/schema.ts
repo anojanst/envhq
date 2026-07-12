@@ -11,7 +11,8 @@ import {
 
 /**
  * A project owned by a single Clerk user (v1 is personal-only — every row is
- * scoped by `userId` and access checks always filter on it).
+ * scoped by `userId` and access checks always filter on it). Name is unique
+ * per owner.
  */
 export const projects = pgTable(
   "projects",
@@ -22,7 +23,10 @@ export const projects = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index("projects_user_id_idx").on(t.userId)],
+  (t) => [
+    unique("projects_user_id_name_uq").on(t.userId, t.name),
+    index("projects_user_id_idx").on(t.userId),
+  ],
 );
 
 /**

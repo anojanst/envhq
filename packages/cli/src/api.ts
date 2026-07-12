@@ -125,6 +125,18 @@ export const apiClient = {
   getProject: (id: string) =>
     request<{ project: Project; environments: Environment[] }>(`/api/projects/${id}`),
 
+  createProject: (name: string, environments?: string[]) =>
+    request<{ project: Project; environments: Environment[] }>("/api/projects", {
+      method: "POST",
+      body: { name, ...(environments ? { environments } : {}) },
+    }),
+
+  createEnvironment: (projectId: string, name: string, from?: string) =>
+    request<{ environment: Environment }>(`/api/projects/${projectId}/environments`, {
+      method: "POST",
+      body: { name, ...(from ? { from } : {}) },
+    }),
+
   exportEnv: (envId: string) =>
     request<{ content: string; count: number }>(`/api/environments/${envId}/export`),
 

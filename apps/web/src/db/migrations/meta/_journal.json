@@ -15,6 +15,13 @@
       "when": 1783596160411,
       "tag": "0001_serious_valkyrie",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783813988043,
+      "tag": "0002_public_whistler",
+      "breakpoints": true
     }
   ]
 }
