@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apiTokens } from "@/db/schema";
@@ -17,11 +17,16 @@ export interface TokenScope {
  *                     should return a distinct `token_expired` 401 so the CLI
  *                     knows to re-run the browser login rather than give up
  *   - `scope`       → present only for CLI tokens; used to enforce PAT scoping
+ *   - `orgId`       → the org currently active in a Clerk session (set via
+ *                     `<OrganizationSwitcher>`'s `setActive()`, M5 PR4);
+ *                     `undefined` for CLI bearer tokens, which have no
+ *                     session-level "active org" concept
  */
 export interface AuthResult {
   userId: string | null;
   expired?: boolean;
   scope?: TokenScope;
+  orgId?: string | null;
 }
 
 /**
@@ -60,6 +65,31 @@ export async function getUserId(req: Request): Promise<AuthResult> {
     };
   }
 
-  const { userId } = await auth();
-  return { userId: userId ?? null };
+  const { userId, orgId } = await auth();
+  return { userId: userId ?? null, orgId };
+}
+
+/**
+ * Resolve Clerk user ids to a display name for history/blame UI — same
+ * fallback chain already established in `lib/orgs.ts`'s
+ * `getOrCreatePersonalOrg` (`firstName || username || <id>`). A lookup
+ * failure for one id (e.g. a deleted account) falls back to the raw id
+ * rather than failing the whole batch.
+ */
+export async function resolveDisplayNames(userIds: string[]): Promise<Record<string, string>> {
+  const unique = [...new Set(userIds)];
+  if (unique.length === 0) return {};
+
+  const client = await clerkClient();
+  const entries = await Promise.all(
+    unique.map(async (id): Promise<[string, string]> => {
+      try {
+        const user = await client.users.getUser(id);
+        return [id, user.firstName || user.username || id];
+      } catch {
+        return [id, id];
+      }
+    }),
+  );
+  return Object.fromEntries(entries);
 }

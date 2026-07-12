@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Eye,
@@ -39,6 +40,7 @@ import {
 import { api } from "@/lib/client";
 import { formatRelativeTime } from "@/lib/utils";
 import { isProdEnv } from "@/components/project-visuals";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 
 interface Row {
   id: string;
@@ -49,13 +51,16 @@ interface Row {
 
 export function EnvEditor({
   environmentId,
+  projectId,
   initialVars,
   envName,
 }: {
   environmentId: string;
+  projectId: string;
   initialVars: Row[];
   envName: string;
 }) {
+  const router = useRouter();
   const [vars, setVars] = useState<Row[]>(initialVars);
   // Resync when the server component re-renders with fresh vars (e.g. after
   // a version rollback triggers router.refresh() from a sibling component) —
@@ -66,6 +71,7 @@ export function EnvEditor({
   const [revealAll, setRevealAll] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
   const isProd = isProdEnv(envName);
   const filtered = query
     ? vars.filter((v) => v.key.toLowerCase().includes(query.toLowerCase()))
@@ -74,6 +80,12 @@ export function EnvEditor({
   async function reload() {
     const data = await api<{ vars: Row[] }>(`/api/environments/${environmentId}`);
     setVars(data.vars);
+  }
+
+  async function deleteEnvironment() {
+    await api(`/api/environments/${environmentId}`, { method: "DELETE" });
+    toast.success(`Deleted "${envName}"`);
+    router.push(`/projects/${projectId}`);
   }
 
   function isRevealed(id: string) {
@@ -120,27 +132,45 @@ export function EnvEditor({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search keys"
-              className="w-48 pl-8"
-            />
-          </div>
-          <Button variant="outline" size="sm" onClick={() => setRevealAll((v) => !v)}>
-            {revealAll ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-            {revealAll ? "Hide all" : "Reveal all"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={copyAll}>
-            <Download className="size-4" /> Copy all as .env
-          </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-40 flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search keys"
+            className="w-full pl-8"
+          />
         </div>
+        <Button variant="outline" size="sm" onClick={() => setRevealAll((v) => !v)}>
+          {revealAll ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          {revealAll ? "Hide all" : "Reveal all"}
+        </Button>
+        <Button variant="outline" size="sm" onClick={copyAll}>
+          <Download className="size-4" /> Copy all as .env
+        </Button>
         <PasteDialog environmentId={environmentId} onDone={reload} />
+        <Button variant="destructive" size="sm" onClick={() => setDeleteEnvOpen(true)}>
+          <Trash2 className="size-4" /> Delete environment
+        </Button>
       </div>
+
+      <ConfirmDeleteDialog
+        open={deleteEnvOpen}
+        onOpenChange={setDeleteEnvOpen}
+        title={`Delete environment "${envName}"`}
+        description={
+          <>
+            This permanently deletes{" "}
+            <span className="font-medium text-foreground">
+              {vars.length} variable{vars.length === 1 ? "" : "s"}
+            </span>
+            . This can&rsquo;t be undone.
+          </>
+        }
+        confirmationText={isProd ? envName : undefined}
+        onConfirm={deleteEnvironment}
+      />
 
       <div className="rounded-lg border">
         <Table>

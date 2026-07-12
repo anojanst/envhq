@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apiTokens, projects } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
-import { getOwnedProject, isFullAccess } from "@/lib/access";
+import { getAccessibleProject, isFullAccess } from "@/lib/access";
 import { generateToken, hashToken } from "@/lib/crypto";
 import { json, badRequest, unauthorized, tokenExpired, forbidden } from "@/lib/api";
 
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
 
   const projectId =
     typeof body?.projectId === "string" && body.projectId ? body.projectId : null;
-  if (projectId && !(await getOwnedProject(userId, projectId))) {
+  if (projectId && !(await getAccessibleProject(userId, projectId, "viewer"))) {
     return badRequest("Unknown project");
   }
 

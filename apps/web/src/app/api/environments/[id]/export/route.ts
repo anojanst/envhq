@@ -1,6 +1,6 @@
 import { serializeEnv } from "@envhq/parser";
 import { getUserId } from "@/lib/auth";
-import { getOwnedEnvironment } from "@/lib/access";
+import { getAccessibleEnvironment } from "@/lib/access";
 import { listPairs } from "@/lib/env-store";
 import { json, unauthorized, tokenExpired, notFound } from "@/lib/api";
 
@@ -15,7 +15,7 @@ export async function GET(req: Request, { params }: Params) {
   if (!userId) return unauthorized();
   const { id } = await params;
 
-  const owned = await getOwnedEnvironment(userId, id, scope);
+  const owned = await getAccessibleEnvironment(userId, id, "viewer", scope);
   if (!owned) return notFound("Environment not found");
 
   const pairs = await listPairs(id);

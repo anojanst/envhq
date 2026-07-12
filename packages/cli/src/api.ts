@@ -161,7 +161,13 @@ export const apiClient = {
 
   listVersions: (envId: string) =>
     request<{
-      versions: { version: number; message: string | null; createdBy: string; createdAt: string }[];
+      versions: {
+        version: number;
+        message: string | null;
+        createdBy: string;
+        createdByName: string;
+        createdAt: string;
+      }[];
     }>(`/api/environments/${envId}/versions`),
 
   rollback: (envId: string, version: number, body: { baseVersion: number; message?: string }) =>

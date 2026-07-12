@@ -5,7 +5,7 @@ import { asc, eq } from "drizzle-orm";
 import { Layers } from "lucide-react";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
-import { getOwnedProject } from "@/lib/access";
+import { getAccessibleProject } from "@/lib/access";
 import { ProjectAvatar } from "@/components/project-visuals";
 import { CreateEnvironmentDialog } from "./create-environment-dialog";
 import { ProjectActions } from "./project-actions";
@@ -19,8 +19,9 @@ export default async function ProjectPage({
   if (!userId) redirect("/sign-in");
   const { id } = await params;
 
-  const project = await getOwnedProject(userId, id);
-  if (!project) notFound();
+  const owned = await getAccessibleProject(userId, id);
+  if (!owned) notFound();
+  const { project } = owned;
 
   const [firstEnv] = await db
     .select({ id: environments.id })

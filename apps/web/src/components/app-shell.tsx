@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton, OrganizationSwitcher } from "@clerk/nextjs";
 import { Folder, Settings, Users, type LucideIcon } from "lucide-react";
 import { BrandMark } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -47,7 +47,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Settings,
     matchPrefixes: ["/settings"],
   },
-  { label: "Teams", icon: Users, matchPrefixes: [], soon: true },
+  { label: "Teams", href: "/teams", icon: Users, matchPrefixes: ["/teams"] },
 ];
 
 function isActive(pathname: string, prefixes: string[]): boolean {
@@ -140,6 +140,14 @@ function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
+        <div className="flex items-center gap-2 px-1 group-data-[collapsible=icon]:hidden">
+          <OrganizationSwitcher
+            hidePersonal
+            afterSelectOrganizationUrl="/dashboard"
+            organizationProfileUrl="/teams"
+            organizationProfileMode="navigation"
+          />
+        </div>
         <div className="flex items-center justify-between gap-2 px-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-2">
           <UserButton />
           <ThemeToggle />

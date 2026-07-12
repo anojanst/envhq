@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
-import { getOwnedEnvironment, isReadOnly } from "@/lib/access";
+import { getAccessibleEnvironment, isReadOnly } from "@/lib/access";
 import { listVarRows } from "@/lib/env-store";
 import { json, badRequest, unauthorized, tokenExpired, notFound, conflict, forbidden } from "@/lib/api";
 
@@ -16,7 +16,7 @@ export async function GET(req: Request, { params }: Params) {
   if (!userId) return unauthorized();
   const { id } = await params;
 
-  const owned = await getOwnedEnvironment(userId, id, scope);
+  const owned = await getAccessibleEnvironment(userId, id, "viewer", scope);
   if (!owned) return notFound("Environment not found");
 
   const vars = await listVarRows(id);
@@ -30,7 +30,7 @@ export async function PATCH(req: Request, { params }: Params) {
   if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const owned = await getOwnedEnvironment(userId, id, scope);
+  const owned = await getAccessibleEnvironment(userId, id, "editor", scope);
   if (!owned) return notFound("Environment not found");
 
   const body = await req.json().catch(() => null);
@@ -56,7 +56,7 @@ export async function DELETE(req: Request, { params }: Params) {
   if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const owned = await getOwnedEnvironment(userId, id, scope);
+  const owned = await getAccessibleEnvironment(userId, id, "editor", scope);
   if (!owned) return notFound("Environment not found");
 
   await db.delete(environments).where(eq(environments.id, id));

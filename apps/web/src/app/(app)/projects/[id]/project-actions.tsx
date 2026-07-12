@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { MoreVertical, Pencil, Trash2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { ShareDialog } from "./share-dialog";
 import { api } from "@/lib/client";
 
 export function ProjectActions({
@@ -37,6 +38,7 @@ export function ProjectActions({
   const router = useRouter();
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [name, setName] = useState(project.name);
   const [saving, setSaving] = useState(false);
 
@@ -74,6 +76,9 @@ export function ProjectActions({
           <DropdownMenuItem onClick={() => setRenameOpen(true)}>
             <Pencil className="size-4" /> Rename
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setShareOpen(true)}>
+            <Users className="size-4" /> Manage access
+          </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="size-4" /> Delete project
           </DropdownMenuItem>
@@ -103,6 +108,8 @@ export function ProjectActions({
           </form>
         </DialogContent>
       </Dialog>
+
+      <ShareDialog projectId={project.id} open={shareOpen} onOpenChange={setShareOpen} />
 
       <ConfirmDeleteDialog
         open={deleteOpen}

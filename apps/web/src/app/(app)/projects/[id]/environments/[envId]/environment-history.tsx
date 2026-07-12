@@ -30,6 +30,7 @@ interface VersionEntry {
   version: number;
   message: string | null;
   createdBy: string;
+  createdByName: string;
   createdAt: string;
 }
 
@@ -100,7 +101,7 @@ export function EnvironmentHistory({ environmentId }: { environmentId: string })
               {" · updated "}
               {formatRelativeTime(latest.createdAt)}
               {" by "}
-              {latest.createdBy}
+              {latest.createdByName}
             </>
           ) : versions ? (
             "No history yet"

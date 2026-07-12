@@ -1,5 +1,5 @@
-import { getUserId } from "@/lib/auth";
-import { getOwnedEnvironment } from "@/lib/access";
+import { getUserId, resolveDisplayNames } from "@/lib/auth";
+import { getAccessibleEnvironment } from "@/lib/access";
 import { listVersions } from "@/lib/version-store";
 import { json, unauthorized, tokenExpired, notFound } from "@/lib/api";
 
@@ -14,9 +14,12 @@ export async function GET(req: Request, { params }: Params) {
   if (!userId) return unauthorized();
   const { id } = await params;
 
-  const owned = await getOwnedEnvironment(userId, id, scope);
+  const owned = await getAccessibleEnvironment(userId, id, "viewer", scope);
   if (!owned) return notFound("Environment not found");
 
   const versions = await listVersions(id);
-  return json({ versions });
+  const names = await resolveDisplayNames(versions.map((v) => v.createdBy));
+  return json({
+    versions: versions.map((v) => ({ ...v, createdByName: names[v.createdBy] })),
+  });
 }

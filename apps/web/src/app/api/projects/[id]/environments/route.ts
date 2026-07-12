@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getUserId } from "@/lib/auth";
-import { getOwnedProject, isReadOnly } from "@/lib/access";
+import { getAccessibleProject, isReadOnly } from "@/lib/access";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
 import { cloneVars } from "@/lib/env-store";
@@ -17,8 +17,8 @@ export async function POST(req: Request, { params }: Params) {
   if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id: projectId } = await params;
 
-  const project = await getOwnedProject(userId, projectId, scope);
-  if (!project) return notFound("Project not found");
+  const owned = await getAccessibleProject(userId, projectId, "editor", scope);
+  if (!owned) return notFound("Project not found");
 
   const body = await req.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";

@@ -4,7 +4,7 @@ import { redirect, notFound } from "next/navigation";
 import { and, asc, eq, count, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { environments, envVars } from "@/db/schema";
-import { getOwnedEnvironment } from "@/lib/access";
+import { getAccessibleEnvironment } from "@/lib/access";
 import { listVarRows } from "@/lib/env-store";
 import { ProjectAvatar, isProdEnv } from "@/components/project-visuals";
 import { EnvironmentTabs } from "@/components/environment-tabs";
@@ -22,7 +22,7 @@ export default async function EnvironmentPage({
   if (!userId) redirect("/sign-in");
   const { id: projectId, envId } = await params;
 
-  const owned = await getOwnedEnvironment(userId, envId);
+  const owned = await getAccessibleEnvironment(userId, envId);
   if (!owned || owned.project.id !== projectId) notFound();
 
   const [vars, siblingEnvs] = await Promise.all([
@@ -55,14 +55,19 @@ export default async function EnvironmentPage({
         >
           ← Projects
         </Link>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <ProjectAvatar name={owned.project.name} />
             <h1 className="text-2xl font-semibold tracking-tight">
               {owned.project.name}
             </h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <EnvironmentTabs
+              projectId={projectId}
+              environments={siblingEnvs}
+              activeEnvId={envId}
+            />
             <CreateEnvironmentDialog projectId={projectId} />
             <ProjectActions
               project={{ id: projectId, name: owned.project.name }}
@@ -74,16 +79,11 @@ export default async function EnvironmentPage({
         </div>
       </div>
 
-      <EnvironmentTabs
-        projectId={projectId}
-        environments={siblingEnvs}
-        activeEnvId={envId}
-      />
-
       <EnvironmentHistory environmentId={envId} />
 
       <EnvEditor
         environmentId={envId}
+        projectId={projectId}
         initialVars={vars.map((v) => ({ ...v, updatedAt: v.updatedAt.toISOString() }))}
         envName={owned.env.name}
       />

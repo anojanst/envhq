@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { envVars } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
-import { getOwnedVar, isReadOnly } from "@/lib/access";
+import { getAccessibleVar, isReadOnly } from "@/lib/access";
 import { encrypt } from "@/lib/crypto";
 import { commitVersion } from "@/lib/version-store";
 import {
@@ -29,7 +29,7 @@ export async function PATCH(req: Request, { params }: Params) {
   if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const owned = await getOwnedVar(userId, id, scope);
+  const owned = await getAccessibleVar(userId, id, "editor", scope);
   if (!owned) return notFound("Variable not found");
 
   const body = await req.json().catch(() => null);
@@ -89,7 +89,7 @@ export async function DELETE(req: Request, { params }: Params) {
   if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const owned = await getOwnedVar(userId, id, scope);
+  const owned = await getAccessibleVar(userId, id, "editor", scope);
   if (!owned) return notFound("Variable not found");
 
   const outcome = await commitVersion(

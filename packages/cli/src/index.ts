@@ -668,7 +668,7 @@ program
         }
         for (const v of versions) {
           const msg = v.message ? `  ${v.message}` : "";
-          console.log(`  v${v.version}  ${v.createdAt}  ${v.createdBy}${msg}`);
+          console.log(`  v${v.version}  ${v.createdAt}  ${v.createdByName}${msg}`);
         }
       }
     } catch (err) {

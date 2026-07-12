@@ -1,28 +1,20 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { asc, desc, eq } from "drizzle-orm";
 import { FolderTree } from "lucide-react";
-import { db } from "@/db";
-import { projects, environments } from "@/db/schema";
+import { listAccessibleProjectsWithEnvs } from "@/lib/access";
+import { resolveRequestedOrgId } from "@/lib/orgs";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ProjectsBrowser, type ProjectListItem } from "./projects-browser";
 
 export default async function DashboardPage() {
-  const { userId } = await auth();
+  const { userId, orgId: activeOrgId } = await auth();
   if (!userId) redirect("/sign-in");
 
+  // Prefer whichever org is active in the sidebar switcher (M5 PR4); falls
+  // back to the personal org if none is active yet (e.g. first-ever load).
   // One pass: projects (newest first) with their environment names (oldest first).
-  const rows = await db
-    .select({
-      id: projects.id,
-      name: projects.name,
-      createdAt: projects.createdAt,
-      envName: environments.name,
-    })
-    .from(projects)
-    .leftJoin(environments, eq(environments.projectId, projects.id))
-    .where(eq(projects.userId, userId))
-    .orderBy(desc(projects.createdAt), asc(environments.createdAt));
+  const orgId = await resolveRequestedOrgId(userId, activeOrgId);
+  const rows = orgId ? await listAccessibleProjectsWithEnvs(userId, orgId) : [];
 
   const byId = new Map<string, ProjectListItem>();
   for (const r of rows) {

@@ -12,24 +12,42 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
- * A project owned by a single Clerk user (v1 is personal-only — every row is
- * scoped by `userId` and access checks always filter on it). Name is unique
- * per owner.
+ * A project owned by an org (M5 — every user has a Clerk-Organization-backed
+ * personal org; `orgId` is the auth scope). `userId` is kept as the creator,
+ * audit-only now. Name is unique per org (was per creator, pre-M5).
  */
 export const projects = pgTable(
   "projects",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(),
+    orgId: text("org_id").notNull(),
     name: text("name").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    unique("projects_user_id_name_uq").on(t.userId, t.name),
-    index("projects_user_id_idx").on(t.userId),
+    unique("projects_org_id_name_uq").on(t.orgId, t.name),
+    index("projects_org_id_idx").on(t.orgId),
   ],
 );
+
+/**
+ * Maps a Clerk userId to their auto-provisioned personal Clerk Organization
+ * (M5). `userId` is the primary key so `INSERT ... ON CONFLICT (user_id) DO
+ * NOTHING RETURNING org_id` is the atomic get-or-create primitive — this
+ * table exists specifically because the app's Postgres driver
+ * (`neon-http`, stateless HTTP, no session) can't support
+ * `db.transaction()` or session-scoped advisory locks, so the usual
+ * check-then-create race guard isn't available; a unique-constrained insert
+ * is. Also avoids a Clerk membership-list API round trip on every request
+ * that needs org context.
+ */
+export const personalOrgs = pgTable("personal_orgs", {
+  userId: text("user_id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
 /**
  * An environment under a project (dev, qa, staging, uat, prod, ...).
@@ -171,6 +189,73 @@ export const cliAuthRequests = pgTable(
   },
 );
 
+/**
+ * An org-scoped named group of users (M5). No CRUD/routes yet — the schema
+ * ships ahead of the group-management UI so `access_grants` can target a
+ * group from day one.
+ */
+export const groups = pgTable(
+  "groups",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("groups_org_id_name_uq").on(t.orgId, t.name),
+    index("groups_org_id_idx").on(t.orgId),
+  ],
+);
+
+/** Membership of a Clerk user in a `groups` row. */
+export const groupMembers = pgTable(
+  "group_members",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("group_members_group_id_user_id_uq").on(t.groupId, t.userId),
+    index("group_members_group_id_idx").on(t.groupId),
+    index("group_members_user_id_idx").on(t.userId),
+  ],
+);
+
+/**
+ * Project-level access grant (M5), to a user or a group. Effective role is
+ * the highest-ranked grant across direct + group membership, unioned with
+ * automatic admin access for Clerk org owner/admin (resolved in
+ * `lib/access.ts`, not stored here). `envScope` exists per PLAN.md §8 but is
+ * not read or enforced anywhere yet — project-level role is the only gate
+ * until a later milestone phases it in.
+ */
+export const accessGrants = pgTable(
+  "access_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id").notNull(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    subjectType: text("subject_type").notNull(),
+    subjectId: text("subject_id").notNull(),
+    role: text("role").notNull(),
+    envScope: text("env_scope"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("access_grants_project_subject_uq").on(t.projectId, t.subjectType, t.subjectId),
+    index("access_grants_org_id_idx").on(t.orgId),
+  ],
+);
+
 export const projectsRelations = relations(projects, ({ many }) => ({
   environments: many(environments),
 }));
@@ -204,3 +289,7 @@ export type EnvVar = typeof envVars.$inferSelect;
 export type EnvironmentVersion = typeof environmentVersions.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type CliAuthRequest = typeof cliAuthRequests.$inferSelect;
+export type Group = typeof groups.$inferSelect;
+export type GroupMember = typeof groupMembers.$inferSelect;
+export type AccessGrant = typeof accessGrants.$inferSelect;
+export type PersonalOrg = typeof personalOrgs.$inferSelect;

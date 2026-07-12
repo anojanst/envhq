@@ -191,17 +191,129 @@ through `f2df816`).
 **Done when:** every change is a versioned, message-tagged revision you can diff
 and roll back, and concurrent pushes conflict safely at the key level. — **Met.**
 
-## M5 — Teams & access control  🧊
+## M5 — Teams & access control  🧊 (in progress, shipping as staged PRs)
 
 *Foundational epic; access-layer refactor touches every route. Independent of the
 sync milestones but large.*
 
-- Org-owned projects; personal-org migration (PLAN §8)
-- Clerk Organizations (membership + email invites + org roles)
-- `access_grants` + `groups` + `group_members`; `getAccessibleProject(...)`
-- Web: org switcher, members/groups admin, per-project Share dialog
-- CLI + all routes honor grants; `env_scope` enforcement phased (prod-protection
-  first)
+- ✅ **PR1 — org-owned data model + access-layer rewrite.** Every user gets a
+  real Clerk Organization as their personal org (`getOrCreatePersonalOrg` /
+  `resolveDefaultOrgId` in [lib/orgs.ts](../apps/web/src/lib/orgs.ts), raced
+  via a `personal_orgs(user_id PK, org_id)` mapping table + `INSERT ...
+  ON CONFLICT DO NOTHING` — plain Postgres advisory locks / `db.transaction()`
+  aren't available on the `neon-http` driver, see
+  [version-store.ts](../apps/web/src/lib/version-store.ts)'s CAS comment for
+  why). `projects.orgId` is now the auth scope (`NOT NULL`, unique per org,
+  migrated via `0005`/`0006`/`0007` +
+  [scripts/backfill-personal-orgs.ts](../apps/web/scripts/backfill-personal-orgs.ts)).
+  New `groups`/`group_members`/`access_grants` tables exist (schema only, no
+  CRUD yet). `lib/access.ts`'s `getOwnedProject/Environment/Var` are replaced
+  by `getAccessibleProject/Environment/Var(userId, id, requiredRole, scope)` —
+  Clerk org admin/owner ⇒ automatic `"admin"`, else the highest direct/group
+  `access_grants` role; `undefined` (→404) covers both "doesn't exist" and
+  "role too low," same as before. Every route that used to check
+  `eq(projects.userId, userId)` now resolves org role instead, including the
+  three hand-rolled leak sites found during the access-layer audit
+  (`api/projects/route.ts` list+create, `dashboard/page.tsx` — the one real
+  isolation bug this PR fixes, since that page bypassed the access layer
+  entirely and would have shown every user the same project list post-org-
+  migration if left unfixed).
+- ✅ **PR2 — direct user sharing.** Scoped down from the original "groups CRUD
+  + Share dialog" plan to **direct user grants only** — group-based sharing
+  is deferred so this PR ships a complete, testable vertical slice rather
+  than growing groups + grants + UI together (`groups`/`group_members` stay
+  schema-only). New `lib/grants.ts` (`listGrants`/`upsertGrant`/`deleteGrant`,
+  the last two built on `access_grants`'s `(projectId, subjectType,
+  subjectId)` unique constraint from PR1 via `ON CONFLICT DO UPDATE`).
+  Three new admin-gated routes under `api/projects/[id]/access/*`: list +
+  upsert grants, revoke a grant, and list org members (via Clerk's
+  org-scoped `getOrganizationMembershipList`, distinct from the user-scoped
+  version PR1 already uses for personal-org lookup) to populate the picker.
+  A `POST` validates the target is actually an org member
+  (`getClerkOrgRole`) before granting — grants can't reach outside the org.
+  Web: a "Manage access" entry on the project page's dropdown opens
+  `share-dialog.tsx` (list current grants with inline role change + revoke,
+  plus an add-member form). Verified live end-to-end by a second, brand-new
+  Clerk account signing up, its personal org auto-provisioning inline
+  (no backfill needed), creating a project, and opening Manage access
+  successfully — the first real multi-tenant proof since PR1 (which could
+  only be reasoned about statically, having no second account to test with).
+- ✅ **PR3 — groups CRUD.** Scoped down again, same reasoning as PR2: groups
+  are now a real, manageable thing (create/delete, add/remove members) but
+  **not yet wired into project sharing** — `access_grants.subjectType:
+  'group'` still has no writer (`resolveGrantRole` in `lib/access.ts`
+  already reads it, forward-compatible since PR1). New `lib/groups.ts`
+  (`listGroups`/`createGroup`/`deleteGroup`/`listGroupMembers`/
+  `addGroupMember`/`removeGroupMember`). Five new routes: `api/groups`
+  (list/create), `api/groups/[id]` (delete), `api/groups/[id]/members`
+  (list/add), `api/groups/[id]/members/[userId]` (remove), and
+  `api/orgs/members` — the first genuinely org-scoped (non-project)
+  endpoint, distinct from PR2's project-scoped member picker. Every group
+  route is gated on **Clerk org admin**, not a project `access_grants`
+  role — groups are org-level, there's no project in scope (same gate
+  `api/projects/route.ts` POST already uses for project creation). Web: a
+  new Settings > Groups page (`groups-manager.tsx`, mirrors
+  `tokens-manager.tsx`'s list-with-inline-mutation shape) plus a small
+  `settings/layout.tsx` tab strip (Tokens / Groups) so it's reachable —
+  `/settings` previously had exactly one destination and no way to get to a
+  second. Verified live end-to-end: created a group, opened the org-members
+  picker, added a real second member, confirmed the list refreshed.
+- ✅ **PR3b — grant to group in the Share dialog.** `access_grants.subjectType:
+  'group'` finally gets a writer. `lib/grants.ts`'s `GrantRow`/`upsertGrant`
+  now carry `subjectType`; `listGrants` returns both kinds. New
+  `getGroupNames` batch lookup in `lib/groups.ts` mirrors `resolveDisplayNames`
+  so `api/projects/[id]/access/route.ts`'s GET can resolve a grant's display
+  name the same way regardless of subject kind; its POST validates a group
+  target via `getGroup(orgId, subjectId)` (the group-grant equivalent of
+  "can't reach outside the org"). New project-scoped
+  `api/projects/[id]/access/groups` route feeds the Share dialog's group
+  picker — **not** the generic `api/groups` (deliberately: that route
+  resolves org via the caller's own context, which can differ from the
+  *project's* org once more than one org is in play, so it would silently
+  list the wrong org's groups; this route resolves from
+  `owned.project.orgId` instead, same pattern as PR2's `.../access/members`).
+  `share-dialog.tsx`'s picker is now one `<select>` with "People"/"Groups"
+  `<optgroup>`s. **Found and fixed during live testing**: `api/groups/*`,
+  `api/orgs/members`, and `settings/groups/page.tsx` (all from PR3) still
+  hardcoded `resolveDefaultOrgId` (personal org only), never updated for
+  PR4's active-org switcher — so groups management was silently stuck on
+  your personal org regardless of which org was actually active, which is
+  what made a just-created group invisible to a project living in a
+  different org. Fixed by switching all of them to the same
+  `resolveRequestedOrgId(userId, activeOrgId)` pattern PR4 established.
+  Verified live end-to-end: granted a group access to a project, confirmed
+  it listed distinctly from user grants, revoked it — the first live proof
+  of `resolveGrantRole`'s `viaGroup` join (built in PR1, unexercised until
+  now).
+- ✅ **PR4 — org switcher + Clerk-hosted invite UI.** No custom invite form
+  or email-sending code — entirely Clerk's own hosted components, per
+  PLAN.md §8's "we build only resource access." `<OrganizationSwitcher
+  hidePersonal>` added to the sidebar footer (`hidePersonal` hides Clerk's
+  native org-less "Personal account" context, which has no equivalent in
+  this app's data model — every project always has a real `orgId`, via the
+  auto-created personal org). The "Teams" nav stub is now live, pointing at
+  a new `/teams` catch-all route mounting `<OrganizationProfile
+  routing="path">` — invites, pending-invitation status, member roles, and
+  removal are all handled by Clerk's own permission-aware UI (a non-admin
+  member sees a read-only view with zero code on our side enforcing that).
+  `lib/auth.ts`'s `getUserId` now threads through `orgId` — the org
+  currently active in a Clerk session (set via the switcher's `setActive()`,
+  no `organizationSyncOptions` middleware needed since this app doesn't do
+  URL-synced org routing). `dashboard/page.tsx` and `api/projects/route.ts`
+  GET/POST now prefer that active org over always defaulting to the
+  personal one, using the exact `resolveRequestedOrgId` fallback chain
+  PR1 built and left unused pending this PR. Every other route
+  (`getAccessibleProject/Environment/Var`, groups, grants) is unaffected —
+  those all resolve org from the target resource's own `orgId`, not from
+  "what's active right now," so project URLs work regardless of switcher
+  state. Verified live end-to-end across two real accounts: invited via
+  `/teams`, accepted, switched active org, created a project under the
+  newly-active org (confirmed via a real `POST /api/projects` → 201),
+  added an env var, committed, and granted access via the PR2 Share dialog
+  — the full stack composing correctly across PR1–PR4 in one live session.
+- ⏳ PR5 — CLI `--org` support (flows into the same `orgId` param
+  `/api/projects` already accepts from PR1)
+- ⏳ `env_scope` enforcement (prod-protection first) — column exists, inert
 
 **Done when:** an org admin can invite people, put them in groups, and grant
 group/user access to specific projects with roles.

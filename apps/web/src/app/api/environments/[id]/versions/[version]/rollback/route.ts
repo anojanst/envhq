@@ -1,5 +1,5 @@
 import { getUserId } from "@/lib/auth";
-import { getOwnedEnvironment, isReadOnly } from "@/lib/access";
+import { getAccessibleEnvironment, isReadOnly } from "@/lib/access";
 import { commitVersion, getVersionSnapshot, restoreSnapshot } from "@/lib/version-store";
 import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
 
@@ -20,7 +20,7 @@ export async function POST(req: Request, { params }: Params) {
   if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id, version: versionParam } = await params;
 
-  const owned = await getOwnedEnvironment(userId, id, scope);
+  const owned = await getAccessibleEnvironment(userId, id, "editor", scope);
   if (!owned) return notFound("Environment not found");
 
   const targetVersion = Number(versionParam);

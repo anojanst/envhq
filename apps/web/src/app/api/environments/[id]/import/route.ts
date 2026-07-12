@@ -1,6 +1,6 @@
 import { parseEnv } from "@envhq/parser";
 import { getUserId } from "@/lib/auth";
-import { getOwnedEnvironment, isReadOnly } from "@/lib/access";
+import { getAccessibleEnvironment, isReadOnly } from "@/lib/access";
 import { upsertMany } from "@/lib/env-store";
 import { commitVersion } from "@/lib/version-store";
 import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden, versionConflict } from "@/lib/api";
@@ -17,7 +17,7 @@ export async function POST(req: Request, { params }: Params) {
   if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
-  const owned = await getOwnedEnvironment(userId, id, scope);
+  const owned = await getAccessibleEnvironment(userId, id, "editor", scope);
   if (!owned) return notFound("Environment not found");
 
   const body = await req.json().catch(() => null);
