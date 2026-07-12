@@ -1,27 +1,46 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { FolderTree } from "lucide-react";
-import { listAccessibleProjectsWithEnvs } from "@/lib/access";
+import { listAccessibleProjectsWithEnvs, listAccessibleProjectsWithEnvsAcrossOrgs } from "@/lib/access";
 import { resolveRequestedOrgId } from "@/lib/orgs";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ProjectsBrowser, type ProjectListItem } from "./projects-browser";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ all?: string }>;
+}) {
   const { userId, orgId: activeOrgId } = await auth();
   if (!userId) redirect("/sign-in");
+
+  const { all } = await searchParams;
+  const showAll = all === "1";
 
   // Prefer whichever org is active in the sidebar switcher (M5 PR4); falls
   // back to the personal org if none is active yet (e.g. first-ever load).
   // One pass: projects (newest first) with their environment names (oldest first).
-  const orgId = await resolveRequestedOrgId(userId, activeOrgId);
-  const rows = orgId ? await listAccessibleProjectsWithEnvs(userId, orgId) : [];
+  type Row = { id: string; name: string; createdAt: Date; envName: string | null; orgName?: string };
+  const rows: Row[] = showAll
+    ? await listAccessibleProjectsWithEnvsAcrossOrgs(userId)
+    : await (async () => {
+        const orgId = await resolveRequestedOrgId(userId, activeOrgId);
+        return orgId ? listAccessibleProjectsWithEnvs(userId, orgId) : [];
+      })();
 
   const byId = new Map<string, ProjectListItem>();
   for (const r of rows) {
     let p = byId.get(r.id);
     if (!p) {
       // timeAgo is computed server-side so the client render matches (no hydration drift).
-      p = { id: r.id, name: r.name, createdLabel: timeAgo(r.createdAt), envs: [] };
+      p = {
+        id: r.id,
+        name: r.name,
+        createdLabel: timeAgo(r.createdAt),
+        envs: [],
+        orgName: r.orgName,
+      };
       byId.set(r.id, p);
     }
     if (r.envName) p.envs.push(r.envName);
@@ -38,6 +57,12 @@ export default async function DashboardPage() {
               {projectList.length}
             </span>
           ) : null}
+          <Link
+            href={showAll ? "/dashboard" : "/dashboard?all=1"}
+            className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            {showAll ? "Show current org only" : "Show all my orgs"}
+          </Link>
         </div>
         <p className="text-sm text-muted-foreground">
           Each project groups its own set of environments.

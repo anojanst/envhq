@@ -67,6 +67,23 @@ export async function getClerkOrgRole(userId: string, orgId: string): Promise<"a
 }
 
 /**
+ * Every org a user belongs to, with their role in each. Shared by
+ * `api/orgs/route.ts` (CLI `envhq orgs` / `--org` resolution, M5 PR5) and
+ * `listAccessibleProjectsAcrossOrgs` in `lib/access.ts` (the dashboard's
+ * cross-org "all my projects" view) — both need the same membership list,
+ * just presented differently.
+ */
+export async function listMyOrgs(userId: string): Promise<{ id: string; name: string; role: "admin" | "member" }[]> {
+  const client = await clerkClient();
+  const { data: memberships } = await client.users.getOrganizationMembershipList({ userId });
+  return memberships.map((m) => ({
+    id: m.organization.id,
+    name: m.organization.name,
+    role: m.role === ADMIN_ROLE ? "admin" : "member",
+  }));
+}
+
+/**
  * Resolves which org an org-context-less request (project list/create) acts
  * on: an explicit `requestedOrgId` if the caller names one and is a Clerk
  * member of it, else the caller's personal org. Shared by both the web

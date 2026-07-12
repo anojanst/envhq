@@ -36,6 +36,8 @@ export interface ProjectListItem {
   name: string;
   createdLabel: string;
   envs: string[];
+  /** Only present in the cross-org "all my orgs" view — disambiguates same-named projects across orgs. */
+  orgName?: string;
 }
 
 const PAGE_SIZE = 9;
@@ -50,7 +52,8 @@ export function ProjectsBrowser({ projects }: { projects: ProjectListItem[] }) {
     return projects.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
-        p.envs.some((e) => e.toLowerCase().includes(q)),
+        p.envs.some((e) => e.toLowerCase().includes(q)) ||
+        (p.orgName?.toLowerCase().includes(q) ?? false),
     );
   }, [projects, query]);
 
@@ -210,6 +213,9 @@ function ProjectCard({ project }: { project: ProjectListItem }) {
                 <span className="truncate font-medium">{project.name}</span>
                 <ArrowUpRight className="size-4 shrink-0 -translate-x-1 text-muted-foreground opacity-0 transition-all group-hover:translate-x-0 group-hover:text-brand group-hover:opacity-100" />
               </div>
+              {project.orgName ? (
+                <p className="truncate text-xs text-muted-foreground">{project.orgName}</p>
+              ) : null}
               <p className="text-sm text-muted-foreground">
                 {project.envs.length} environment
                 {project.envs.length === 1 ? "" : "s"}

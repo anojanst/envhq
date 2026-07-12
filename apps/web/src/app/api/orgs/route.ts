@@ -1,10 +1,8 @@
-import { clerkClient } from "@clerk/nextjs/server";
 import { getUserId } from "@/lib/auth";
+import { listMyOrgs } from "@/lib/orgs";
 import { json, unauthorized, tokenExpired } from "@/lib/api";
 
 export const runtime = "nodejs";
-
-const ADMIN_ROLE = "org:admin";
 
 // Orgs the caller belongs to — harmless "which orgs am I in" info, no
 // scope/role gate beyond being authenticated (same triviality as /api/me).
@@ -14,14 +12,6 @@ export async function GET(req: Request) {
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();
 
-  const client = await clerkClient();
-  const { data: memberships } = await client.users.getOrganizationMembershipList({ userId });
-
-  const orgs = memberships.map((m) => ({
-    id: m.organization.id,
-    name: m.organization.name,
-    role: m.role === ADMIN_ROLE ? "admin" : "member",
-  }));
-
+  const orgs = await listMyOrgs(userId);
   return json({ orgs });
 }

@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { projects, environments, envVars, accessGrants, groupMembers, type Project } from "@/db/schema";
 import type { TokenScope } from "@/lib/auth";
-import { getClerkOrgRole } from "@/lib/orgs";
+import { getClerkOrgRole, listMyOrgs } from "@/lib/orgs";
 
 /**
  * Org-role-scoped lookups (M5). Every read/write path goes through one of
@@ -212,4 +212,22 @@ export async function listAccessibleProjectsWithEnvs(userId: string, orgId: stri
     .leftJoin(environments, eq(environments.projectId, projects.id))
     .where(and(eq(projects.orgId, orgId), ids === "all" ? undefined : inArray(projects.id, ids)))
     .orderBy(desc(projects.createdAt), asc(environments.createdAt));
+}
+
+/**
+ * Every project the caller can access across every org they belong to —
+ * the dashboard's cross-org "all my projects" view. Orchestrates
+ * `listAccessibleProjectsWithEnvs` once per org membership (no new query
+ * shape, just run per org and merged) and tags each row with its org's id
+ * + name so same-named projects across orgs stay distinguishable.
+ */
+export async function listAccessibleProjectsWithEnvsAcrossOrgs(userId: string) {
+  const orgs = await listMyOrgs(userId);
+  const perOrg = await Promise.all(
+    orgs.map(async (org) => {
+      const rows = await listAccessibleProjectsWithEnvs(userId, org.id);
+      return rows.map((r) => ({ ...r, orgId: org.id, orgName: org.name }));
+    }),
+  );
+  return perOrg.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
