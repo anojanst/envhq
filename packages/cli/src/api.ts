@@ -150,18 +150,6 @@ export const apiClient = {
   exportEnv: (envId: string) =>
     request<{ content: string; count: number; version: number }>(`/api/environments/${envId}/export`),
 
-  importEnv: (envId: string, content: string) =>
-    request<{ created: number; updated: number; total: number }>(
-      `/api/environments/${envId}/import`,
-      { method: "POST", body: { content } },
-    ),
-
-  deleteKeys: (envId: string, keys: string[]) =>
-    request<{ deleted: number }>(`/api/environments/${envId}/vars`, {
-      method: "DELETE",
-      body: { keys },
-    }),
-
   commit: (
     envId: string,
     body: { baseVersion: number; upsert?: EnvPair[]; delete?: string[]; message?: string },
