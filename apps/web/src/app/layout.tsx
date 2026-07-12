@@ -16,25 +16,25 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://envsync.dev"),
+  metadataBase: new URL("https://envhq.dev"),
   title: {
-    default: "envsync — sync your environment variables",
-    template: "%s · envsync",
+    default: "EnvHQ — sync your environment variables",
+    template: "%s · EnvHQ",
   },
   description:
     "Store, organize, and sync your environment variables. Group secrets by project and environment, encrypted at rest, and push or pull from your terminal.",
-  applicationName: "envsync",
+  applicationName: "EnvHQ",
   openGraph: {
-    title: "envsync — sync your environment variables",
+    title: "EnvHQ — sync your environment variables",
     description:
       "Store, organize, and sync your environment variables. Encrypted at rest, CLI-native.",
-    url: "https://envsync.dev",
-    siteName: "envsync",
+    url: "https://envhq.dev",
+    siteName: "EnvHQ",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "envsync — sync your environment variables",
+    title: "EnvHQ — sync your environment variables",
     description: "Store, organize, and sync your environment variables. CLI-native.",
   },
 };

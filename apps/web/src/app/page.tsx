@@ -50,7 +50,7 @@ export default async function LandingPage() {
 
         <div className="mt-2 w-full max-w-md rounded-lg border bg-card p-4 text-left font-mono text-sm shadow-sm">
           <div className="text-muted-foreground">
-            <span className="text-brand">$</span> envsync push prod
+            <span className="text-brand">$</span> envhq push prod
           </div>
           <div className="text-muted-foreground">
             <span className="text-brand">✔</span> Pushed to prod: 2 new, 1 updated

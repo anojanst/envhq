@@ -1,11 +1,21 @@
-# env-sync — System Design (as-built)
+# EnvHQ — System Design (as-built)
 
 Canonical reference for the **currently implemented** system. Read this first in
 new sessions to avoid re-deriving context. Future/planned work lives in
 [PLAN.md](./PLAN.md) and [ROADMAP.md](./ROADMAP.md); this document describes only
 what exists today.
 
-Last updated: v1 + UX pass (theme, brand, multiline editor, top-center toasts).
+> **Rebrand note:** this project was originally named **envsync** (domain
+> `envsync.dev`, CLI package `@envsyncdev/cli`, command `envsync`, config dir
+> `.envsync/`, env vars `ENVSYNC_*`, token prefix `envsync_`). It was rebranded
+> to **EnvHQ** — domain `envhq.dev`, CLI package `envhq` (unscoped), command
+> `envhq`, config dir `.envhq/`, env vars `ENVHQ_*`, token prefix `envhq_`. The
+> CLI auto-migrates old `.envsync/` config and keychain entries on first run.
+> This document describes the **current, post-rebrand** system only; historical
+> milestone notes in [ROADMAP.md](./ROADMAP.md) may still reference the old name
+> where they describe what was literally shipped at the time.
+
+Last updated: v1 + UX pass (theme, brand, multiline editor, top-center toasts) + rebrand to EnvHQ.
 
 ---
 
@@ -13,14 +23,14 @@ Last updated: v1 + UX pass (theme, brand, multiline editor, top-center toasts).
 
 Store, organize, and sync environment variables. Secrets are grouped by
 **project → environment → key/value**, encrypted at rest, editable in a web UI,
-and pushable/pullable from a terminal via the `envsync` CLI. **The cloud is the
+and pushable/pullable from a terminal via the `envhq` CLI. **The cloud is the
 source of truth.** v1 is **personal-only** — every row is scoped to a Clerk user.
 
 ## 2. High-level architecture
 
 ```
         ┌──────────────┐         ┌──────────────┐
-        │   Web UI      │        │   envsync CLI │
+        │   Web UI      │        │   envhq CLI   │
         │ (browser)     │        │  (terminal)   │
         └──────┬───────┘         └──────┬───────┘
                │ Clerk session cookie    │ Bearer token
@@ -54,13 +64,14 @@ source of truth.** v1 is **personal-only** — every row is scoped to a Clerk us
 | ORM | Drizzle **0.45.2** + drizzle-kit 0.31 |
 | UI | Tailwind CSS v4, shadcn (**base-nova** style, built on `@base-ui/react`), lucide-react, next-themes 0.4.6 |
 | CLI | TypeScript, commander **14**, bundled with tsup, run via tsx in dev |
-| Hosting | Vercel (web), npm (`@envsyncdev/cli`), domain `envsync.dev` |
+| Hosting | Vercel (web), npm (`envhq`), domain `envhq.dev` |
 
 ## 4. Repository layout
 
 ```
-env-sync/                      (git repo root; pnpm workspace)
-├── apps/web/                  @env-sync/web — Next.js app (UI + API)
+envhq/                         (git repo root; pnpm workspace — the on-disk
+│                                folder is still literally named env-sync/)
+├── apps/web/                  @envhq/web — Next.js app (UI + API)
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── (app)/         authenticated shell (header, nav)
@@ -91,8 +102,8 @@ env-sync/                      (git repo root; pnpm workspace)
 │   │   └── middleware.ts      Clerk route protection
 │   ├── drizzle.config.ts
 │   └── .env.local            (gitignored) — secrets
-├── packages/parser/          @env-sync/parser — shared .env parse/serialize
-├── packages/cli/             @envsyncdev/cli — the `envsync` command
+├── packages/parser/          @envhq/parser — shared .env parse/serialize
+├── packages/cli/             envhq — the `envhq` command
 ├── docs/                     PLAN.md, ROADMAP.md, SYSTEM_DESIGN.md
 ├── pnpm-workspace.yaml
 └── .gitignore
@@ -148,7 +159,7 @@ Postgres, one migration (`0000_natural_piledriver.sql`). All timestamps are
 - Master key from **`ENV_ENCRYPTION_KEY`** (32 bytes, base64). Must stay stable —
   rotating it makes existing values undecryptable.
 - `encrypt(plaintext) → {ciphertext, iv, authTag}` (all base64); `decrypt(...)`.
-- Tokens: `generateToken()` → `envsync_` + 24 random bytes base64url;
+- Tokens: `generateToken()` → `envhq_` + 24 random bytes base64url;
   `hashToken()` → SHA-256 hex (only the hash is stored).
 - **This is server-side encryption, not zero-knowledge** — the server can
   decrypt. (ZK is planned; see PLAN §6.)
@@ -228,7 +239,14 @@ into the CLI by tsup). Runs on server and client.
 - `pairsToRecord` / `recordToPairs` helpers. Tested (`src/index.test.ts`,
   `node --test`).
 
-## 11. CLI (`packages/cli`, published `@envsyncdev/cli`, command `envsync`)
+## 11. CLI (`packages/cli`, published `envhq`, command `envhq`)
+
+> This section predates the M1 (CLI auth hardening) and M2 (CLI-first
+> lifecycle) milestones described in [ROADMAP.md](./ROADMAP.md) — those shipped
+> browser login, OS-keychain tokens, scoped PATs, `init`/`projects create`,
+> multi-env link, and `env create --from`, which aren't fully reflected below
+> yet. Branding here is current; command/feature coverage should be refreshed
+> against ROADMAP.md M1/M2 separately.
 
 - **Commands:** `login --token <t> [--url]`, `logout`, `whoami`, `projects`,
   `link [--project]`, `env map <env> <file>`, `pull [env --file --all --force
@@ -238,33 +256,36 @@ into the CLI by tsup). Runs on server and client.
   exclusive with an explicit env or `--file`); `prod`/`production` envs prompt
   for confirmation unless `--yes`.
 - **Config files:**
-  - `~/.envsync/config.json` — `{ url }` (global auth url; token lives in the
+  - `~/.envhq/config.json` — `{ url }` (global auth url; token lives in the
     OS keychain, see PLAN §7).
-  - `./.envsync/config.json` — per-folder link `{ projectId, projectName,
-    environments: { name → { id, file } }, default }` (gitignored). A pre-M2
-    `./.envsync.json` single-env link is auto-migrated on first read.
-- **URL resolution:** `ENVSYNC_URL` → **URL baked at build** (tsup `define`
-  `__ENVSYNC_DEFAULT_URL__`, default `https://envsync.dev`) → localhost. Dev runs
+  - `./.envhq/config.json` — per-folder link `{ projectId, projectName,
+    environments: { name → { id, file } }, default }` (gitignored). Older
+    `./.envsync/config.json` or the pre-M2 single-env `./.envsync.json` are
+    auto-migrated on first read (and any keychain session under the old
+    "envsync" service name is migrated too).
+- **URL resolution:** `ENVHQ_URL` → **URL baked at build** (tsup `define`
+  `__ENVHQ_DEFAULT_URL__`, default `https://envhq.dev`) → localhost. Dev runs
   (tsx) fall back to localhost.
 - **API client** (`src/api.ts`) sends `Authorization: Bearer <token>`; distinct
   messages for 401 / network errors.
 - **Publishing:** `pnpm build` (bakes prod URL) then `pnpm publish --access public
   --no-git-checks`. Parser is bundled, so the package is self-contained. `bin`
-  name is `envsync` regardless of package name.
+  name is `envhq` regardless of package name.
 
 
 ## 12. Deployment & environment variables
 
-- **Web:** Vercel, root directory `apps/web`. Domain **`envsync.dev`** is the
-  **apex-primary** custom domain (`www` 308-redirects to apex — important: apex
-  must serve `/api/*` directly so the CLI's bearer header survives, no
-  cross-origin redirect).
+- **Web:** Vercel, root directory `apps/web`. Domain **`envhq.dev`** — should be
+  set as the **apex-primary** custom domain (`www` redirecting to apex, not the
+  reverse) so the CLI's bearer header survives with no cross-origin redirect on
+  `/api/*` (this was verified for the old `envsync.dev` domain; re-verify after
+  pointing DNS at `envhq.dev`).
 - **Required env vars** (Vercel + `apps/web/.env.local` locally):
   `DATABASE_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
   `ENV_ENCRYPTION_KEY` (32-byte base64), and Clerk routing vars
   (`NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, `…SIGN_UP_URL=/sign-up`,
   `…SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard`, `…SIGN_UP_FALLBACK…=/dashboard`).
-- Migrations run with prod `DATABASE_URL`: `pnpm --filter @env-sync/web db:migrate`.
+- Migrations run with prod `DATABASE_URL`: `pnpm --filter @envhq/web db:migrate`.
 
 ## 13. Local dev & tooling
 
@@ -272,7 +293,7 @@ into the CLI by tsup). Runs on server and client.
   `nvm use 22` / set `nvm alias default 22`. (pnpm ≥ its version needs Node
   ≥ 22.13. Older bundled corepack has a pnpm-key-signature bug — update corepack.)
 - **Commands (from root):** `pnpm dev` (web on :3000), `pnpm build`,
-  `pnpm db:generate` / `pnpm db:migrate`, `pnpm --filter @envsyncdev/cli build`.
+  `pnpm db:generate` / `pnpm db:migrate`, `pnpm --filter envhq build`.
 - Drizzle config loads `.env.local` via dotenv (drizzle-kit runs outside Next).
 - Native builds (`sharp`, `unrs-resolver`, `esbuild`) are approved in
   `pnpm-workspace.yaml` (`onlyBuiltDependencies` / `allowBuilds`).

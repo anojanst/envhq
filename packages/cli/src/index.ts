@@ -3,7 +3,7 @@ import { readFile, writeFile, appendFile, access } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { basename } from "node:path";
-import { parseEnv } from "@env-sync/parser";
+import { parseEnv } from "@envhq/parser";
 import {
   readGlobalConfig,
   writeGlobalConfig,
@@ -32,7 +32,7 @@ function daysUntil(iso: string): number {
 const program = new Command();
 
 program
-  .name("envsync")
+  .name("envhq")
   .description("Sync your environment variables from the terminal.")
   .version(CLI_VERSION);
 
@@ -61,7 +61,7 @@ async function fileExists(path: string): Promise<boolean> {
 
 async function requireLink(): Promise<LinkConfig> {
   const link = await readLinkConfig();
-  if (!link) fail(`This folder isn't linked. Run \`envsync link\` first.`);
+  if (!link) fail(`This folder isn't linked. Run \`envhq link\` first.`);
   return link;
 }
 
@@ -89,13 +89,13 @@ function describeLinkMapping(link: LinkConfig): string {
     .join(", ");
 }
 
-/** Add `.envsync/` to .gitignore if it isn't already covered (idempotent). */
+/** Add `.envhq/` to .gitignore if it isn't already covered (idempotent). */
 async function ensureGitignored(cwd = process.cwd()): Promise<void> {
   const path = `${cwd}/.gitignore`;
   const existing = (await fileExists(path)) ? await readFile(path, "utf8") : "";
-  if (existing.split("\n").some((line) => line.trim() === ".envsync/")) return;
+  if (existing.split("\n").some((line) => line.trim() === ".envhq/")) return;
   const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
-  await appendFile(path, `${prefix}.envsync/\n`);
+  await appendFile(path, `${prefix}.envhq/\n`);
 }
 
 /** Resolve an env name (or the link's default) to its id + mapped local file. */
@@ -153,7 +153,7 @@ program
       if (!keychainAvailable()) {
         fail(
           "No OS keychain is available to store your login securely.\n" +
-            "Set ENVSYNC_TOKEN=<token> in your environment instead (recommended for CI).",
+            "Set ENVHQ_TOKEN=<token> in your environment instead (recommended for CI).",
         );
       }
 
@@ -241,7 +241,7 @@ program
       const link = buildLinkConfig(project, environments);
       await writeLinkConfig(link);
       console.log(`✔ Linked to ${project.name} (${describeLinkMapping(link)}). Default: ${link.default}.`);
-      console.log(`  Wrote ${LINK_FILENAME}. Adjust a mapping with \`envsync env map <env> <file>\`.`);
+      console.log(`  Wrote ${LINK_FILENAME}. Adjust a mapping with \`envhq env map <env> <file>\`.`);
     } catch (err) {
       fail(err instanceof ApiError ? err.message : String(err));
     }
@@ -486,9 +486,9 @@ program
     } else {
       const resolved = resolveToken(global.url);
       if (!resolved) {
-        console.log(`Logged in:  no token stored for ${global.url} (run \`envsync login\`)`);
+        console.log(`Logged in:  no token stored for ${global.url} (run \`envhq login\`)`);
       } else {
-        const via = resolved.source === "env" ? "ENVSYNC_TOKEN" : "keychain";
+        const via = resolved.source === "env" ? "ENVHQ_TOKEN" : "keychain";
         let suffix = ` (via ${via})`;
         if (resolved.expiresAt) {
           const days = daysUntil(resolved.expiresAt);
@@ -499,7 +499,7 @@ program
     }
 
     if (!link) {
-      console.log(`Linked to:  no (run \`envsync link\`)`);
+      console.log(`Linked to:  no (run \`envhq link\`)`);
     } else {
       console.log(`Linked to:  ${link.projectName}`);
       for (const [name, env] of Object.entries(link.environments)) {

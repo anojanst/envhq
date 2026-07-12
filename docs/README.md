@@ -1,6 +1,7 @@
-# env-sync docs
+# EnvHQ docs
 
-Design and reference documentation for env-sync.
+Design and reference documentation for EnvHQ (formerly envsync — see the
+rebrand note in [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md)).
 
 | Doc | What it is | Read it when |
 |---|---|---|

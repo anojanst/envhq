@@ -7,7 +7,9 @@ node_modules/
 .env.local
 .env*.local
 
-# envsync CLI state (link + per-env sync baseline) — never commit
+# envhq CLI state (link + per-env sync baseline) — never commit
+.envhq/
+# pre-rebrand (envsync) CLI state — still ignored in case an old checkout has it
 .envsync/
 .envsync.json
 

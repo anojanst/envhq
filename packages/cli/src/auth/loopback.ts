@@ -78,5 +78,5 @@ export function startLoopback(): Promise<Loopback> {
 }
 
 function page(message: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>env-sync</title></head><body style="font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0"><div style="text-align:center"><h2 style="margin:0 0 .5rem">env-sync</h2><p style="color:#555">${message}</p></div></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>EnvHQ</title></head><body style="font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0"><div style="text-align:center"><h2 style="margin:0 0 .5rem">EnvHQ</h2><p style="color:#555">${message}</p></div></body></html>`;
 }

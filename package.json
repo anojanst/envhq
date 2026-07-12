@@ -1,5 +1,5 @@
 {
-  "name": "env-sync",
+  "name": "envhq-monorepo",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.10.0",
@@ -7,10 +7,10 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "dev": "pnpm --filter @env-sync/web dev",
-    "build": "pnpm --filter @env-sync/web build",
-    "db:generate": "pnpm --filter @env-sync/web db:generate",
-    "db:migrate": "pnpm --filter @env-sync/web db:migrate",
-    "cli": "pnpm --filter @envsyncdev/cli start"
+    "dev": "pnpm --filter @envhq/web dev",
+    "build": "pnpm --filter @envhq/web build",
+    "db:generate": "pnpm --filter @envhq/web db:generate",
+    "db:migrate": "pnpm --filter @envhq/web db:migrate",
+    "cli": "pnpm --filter envhq start"
   }
 }

@@ -235,7 +235,7 @@ export function TokensManager({
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Use it in CI with: <code>ENVSYNC_TOKEN=&lt;token&gt;</code>
+            Use it in CI with: <code>ENVHQ_TOKEN=&lt;token&gt;</code>
           </p>
           <DialogFooter>
             <Button onClick={() => setNewToken(null)}>Done</Button>

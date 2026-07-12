@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * envsync brand mark — a rounded tile with an up/down sync glyph (push/pull),
+ * EnvHQ brand mark — a rounded tile with an up/down sync glyph (push/pull),
  * filled with the brand color. Uses currentColor-free brand tokens so it stays
  * on-brand in both themes.
  */
@@ -46,7 +46,7 @@ export function Logo({
     <span className={cn("inline-flex items-center gap-2", className)}>
       <BrandMark className={markClassName} />
       <span className="font-semibold tracking-tight">
-        env<span className="text-brand">sync</span>
+        env<span className="text-brand">HQ</span>
       </span>
     </span>
   );

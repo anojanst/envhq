@@ -50,7 +50,7 @@ export function decrypt({ ciphertext, iv, authTag }: Encrypted): string {
 
 /** Generate a new personal access token (shown to the user once). */
 export function generateToken(): string {
-  return "envsync_" + crypto.randomBytes(24).toString("base64url");
+  return "envhq_" + crypto.randomBytes(24).toString("base64url");
 }
 
 /** Hash a token for storage/lookup (only the hash is ever persisted). */

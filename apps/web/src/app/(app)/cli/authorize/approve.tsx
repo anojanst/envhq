@@ -67,7 +67,7 @@ export function ApproveCliLogin({
           <CardTitle>Invalid login request</CardTitle>
           <CardDescription>
             This link is missing required parameters. Re-run{" "}
-            <code className="rounded bg-muted px-1 py-0.5">envsync login</code> from your terminal.
+            <code className="rounded bg-muted px-1 py-0.5">envhq login</code> from your terminal.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -80,10 +80,10 @@ export function ApproveCliLogin({
         <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Terminal className="size-5" />
         </div>
-        <CardTitle>Authorize the env-sync CLI</CardTitle>
+        <CardTitle>Authorize the EnvHQ CLI</CardTitle>
         <CardDescription>
-          A CLI on this machine is requesting access to your env-sync account. Approve it only if
-          you just started <code className="rounded bg-muted px-1 py-0.5">envsync login</code>.
+          A CLI on this machine is requesting access to your EnvHQ account. Approve it only if
+          you just started <code className="rounded bg-muted px-1 py-0.5">envhq login</code>.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2 text-sm text-muted-foreground">

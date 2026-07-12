@@ -1,47 +1,47 @@
-# envsync
+# envhq
 
-Command-line client for [env-sync](https://envsync.dev) — push and pull your
+Command-line client for [EnvHQ](https://envhq.dev) — push and pull your
 environment variables between a local `.env` file and your projects.
 
 ```bash
-npm install -g @envsyncdev/cli   # installs the `envsync` command
-# or: npx @envsyncdev/cli <command>
+npm install -g envhq   # installs the `envhq` command
+# or: npx envhq <command>
 ```
 
 ## Usage
 
-1. Create a personal token at **https://envsync.dev → CLI Tokens**.
+1. Create a personal token at **https://envhq.dev → CLI Tokens**.
 2. Log in, then either bootstrap a brand-new project or link an existing one:
 
 ```bash
-envsync login --token <token>
+envhq login --token <token>
 cd ~/code/my-project
 
-envsync init                  # new project named after this folder, linked
-# — or, for a project that already exists on envsync.dev —
-envsync link                  # pick a project, maps every environment to a file
+envhq init                  # new project named after this folder, linked
+# — or, for a project that already exists on envhq.dev —
+envhq link                  # pick a project, maps every environment to a file
 ```
 
 Every environment in the project gets linked in one go: the default
 environment (`dev`, or the first one) maps to `.env`, the rest map to
 `.env.<name>` (e.g. `.env.staging`). Adjust a mapping with
-`envsync env map <env> <file>`, or add another environment later with
-`envsync env create <name> [--from <env>] --link`.
+`envhq env map <env> <file>`, or add another environment later with
+`envhq env create <name> [--from <env>] --link`.
 
 3. Sync:
 
 ```bash
-envsync pull                 # pull the default environment to its mapped file
-envsync push staging         # push a specific environment
-envsync push --all           # push every linked environment to its mapped file
-envsync status                # show login + link state
+envhq pull                 # pull the default environment to its mapped file
+envhq push staging         # push a specific environment
+envhq push --all           # push every linked environment to its mapped file
+envhq status                # show login + link state
 ```
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `login --token <t> [--url <u>]` | Authenticate and store credentials (`~/.envsync/config.json`). |
+| `login --token <t> [--url <u>]` | Authenticate and store credentials (`~/.envhq/config.json`). |
 | `logout` | Remove stored credentials. |
 | `whoami` | Show the authenticated user. |
 | `init [name] [--env <list>]` | Bootstrap this folder: create a project (default name = folder name) + environment(s), link it, write `.gitignore`. No-ops if already linked. |
@@ -67,15 +67,22 @@ confirmation unless you pass `--yes`.
 
 ## Configuration
 
-- **`--url` / `ENVSYNC_URL`** — override the server (defaults to
-  `https://envsync.dev`). Useful for local development or self-hosting.
-- **`.envsync/config.json`** — per-folder CLI state (project + environment →
-  file map) created by `envsync link`. Gitignored — do not commit it. A
-  pre-M2 `.envsync.json` from an older CLI version is migrated automatically
-  on first use.
+- **`--url` / `ENVHQ_URL`** — override the server (defaults to
+  `https://envhq.dev`). Useful for local development or self-hosting.
+- **`ENVHQ_TOKEN`** — supply a token directly (headless / CI). Never persisted
+  to disk.
+- **`.envhq/config.json`** — per-folder CLI state (project + environment →
+  file map) created by `envhq link`. Gitignored — do not commit it. Older
+  `.envsync/config.json` (or the pre-M2 single-file `.envsync.json`) is
+  migrated automatically on first use, including moving any stored keychain
+  session across.
 
 ## Notes
 
 Values are encrypted at rest on the server.
+
+This CLI was previously published as `@envsyncdev/cli` (command `envsync`)
+under the project's old name, envsync — see the note in the main
+[repo README](https://github.com/anojanst/envhq#readme).
 
 MIT © Anojan ST

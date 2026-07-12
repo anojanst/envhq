@@ -38,7 +38,7 @@ export default async function TokensPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">CLI Tokens</h1>
         <p className="text-sm text-muted-foreground">
-          Personal access tokens let the <code>envsync</code> CLI authenticate — scope one to a
+          Personal access tokens let the <code>envhq</code> CLI authenticate — scope one to a
           single project and to read-only for CI. A token is shown only once when created.
         </p>
       </div>

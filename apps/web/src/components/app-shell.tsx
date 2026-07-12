@@ -68,9 +68,9 @@ export function AppShell({
         <SidebarInset>
           <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur">
             <SidebarTrigger />
-            <Link href="/dashboard" aria-label="envsync home" className="md:hidden">
+            <Link href="/dashboard" aria-label="EnvHQ home" className="md:hidden">
               <span className="font-semibold tracking-tight">
-                env<span className="text-brand">sync</span>
+                env<span className="text-brand">HQ</span>
               </span>
             </Link>
           </header>
@@ -89,12 +89,12 @@ function AppSidebar() {
       <SidebarHeader>
         <Link
           href="/dashboard"
-          aria-label="envsync home"
+          aria-label="EnvHQ home"
           className="flex items-center gap-2 px-1 py-1"
         >
           <BrandMark className="shrink-0" />
           <span className="font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            env<span className="text-brand">sync</span>
+            env<span className="text-brand">HQ</span>
           </span>
         </Link>
       </SidebarHeader>

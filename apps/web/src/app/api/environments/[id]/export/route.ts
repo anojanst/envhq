@@ -1,4 +1,4 @@
-import { serializeEnv } from "@env-sync/parser";
+import { serializeEnv } from "@envhq/parser";
 import { getUserId } from "@/lib/auth";
 import { getOwnedEnvironment } from "@/lib/access";
 import { listPairs } from "@/lib/env-store";

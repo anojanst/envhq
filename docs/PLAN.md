@@ -1,7 +1,12 @@
-# env-sync — Design Plan
+# EnvHQ — Design Plan
 
-Living design document. Captures the decisions made for env-sync beyond v1, with
+Living design document. Captures the decisions made for EnvHQ beyond v1, with
 rationale and open questions. Sequencing lives in [ROADMAP.md](./ROADMAP.md).
+
+> **Rebrand note:** this project was originally named **envsync**
+> (`envsync.dev`, `@envsyncdev/cli`, `.envsync/`, `ENVSYNC_*`) and was
+> rebranded to **EnvHQ** (`envhq.dev`, `envhq` npm package, `.envhq/`,
+> `ENVHQ_*`). This document uses current (post-rebrand) naming throughout.
 
 **Vision:** a "git for environment variables" — store secrets by project and
 environment, sync them from the terminal, with versioned history and team access.
@@ -12,15 +17,15 @@ Cloud is the source of truth.
 ## Current state (v1 — shipped)
 
 - **Monorepo** (pnpm): `apps/web` (Next.js + Clerk + Neon/Drizzle + shadcn),
-  `packages/parser` (shared `.env` parse/serialize), `packages/cli` (`envsync`).
+  `packages/parser` (shared `.env` parse/serialize), `packages/cli` (`envhq`).
 - **Model:** personal-only. `projects → environments → env_vars`, everything
   scoped by Clerk `userId`.
 - **Encryption:** values AES-256-GCM encrypted at rest with a single server-side
   `ENV_ENCRYPTION_KEY` (server can decrypt).
 - **CLI:** `login` (paste token) / `link` / `push` / `pull` / `status`, plus
   `projects`. Auth = personal access token (SHA-256 hashed, revocable).
-- **Deployed:** web at `https://envsync.dev` (apex primary). CLI publishes to npm
-  as `@envsyncdev/cli` (command: `envsync`), prod URL baked at build.
+- **Deployed:** web at `https://envhq.dev` (apex primary). CLI publishes to npm
+  as `envhq` (command: `envhq`), prod URL baked at build.
 
 ---
 
@@ -35,7 +40,7 @@ These hold across all features — violating them breaks correctness:
 3. **The base is CLI-owned, human-read-only**, written only from the server's
    authoritative response at the commit point of a successful sync, and harmless
    if lost (degrades to merge-only).
-4. **All envsync CLI state is gitignored** — everything lives under `.envsync/`.
+4. **All EnvHQ CLI state is gitignored** — everything lives under `.envhq/`.
 
 ---
 
@@ -43,7 +48,7 @@ These hold across all features — violating them breaks correctness:
 
 **Decision:** Cloud is SoT. Reconciliation is three-way (base / local / remote).
 
-- **base** = `{ version, keys: [names] }` per environment, in `.envsync/`.
+- **base** = `{ version, keys: [names] }` per environment, in `.envhq/`.
 - **`push`** diffs base→local:
   - `local − base` → **add**
   - `base − local` (∩ remote) → **delete** (only keys removed since last pull)
@@ -51,7 +56,7 @@ These hold across all features — violating them breaks correctness:
   - a cloud key never in base → **left untouched** (saves partial-file disasters)
 - **`pull`** overwrites local, refreshes base + version.
 - **Deletions are soft** (`env_vars.deleted_at`) + restore + trash view.
-- **`envsync diff` / `status`** preview added/changed/deleted; **confirm on
+- **`envhq diff` / `status`** preview added/changed/deleted; **confirm on
   deletions**; extra confirm for sensitive envs.
 
 **Known sharp edges (must be handled):**
@@ -66,7 +71,7 @@ These hold across all features — violating them breaks correctness:
 
 ## 2. Project creation via CLI
 
-**Decision:** `envsync init` (bootstrap) + `envsync projects create <name>`.
+**Decision:** `envhq init` (bootstrap) + `envhq projects create <name>`.
 
 - `init`: create project (name defaults to folder name), create env(s), link the
   folder, write `.gitignore`. Idempotent (detects already-linked).
@@ -85,10 +90,10 @@ the full `file → env` target so wrong-target mistakes are visible.
 ## 4. Env creation + multi-env workspace link
 
 **Decision:**
-- `envsync env create <name>` (in linked project; `--project` to override);
+- `envhq env create <name>` (in linked project; `--project` to override);
   `--from <env>` clones another env server-side (ciphertext copied directly).
-  **No auto-link**; `--link` to opt in. `envsync env list`.
-- **Multi-env link** (`.envsync/config.json`): project + `environments: { name →
+  **No auto-link**; `--link` to opt in. `envhq env list`.
+- **Multi-env link** (`.envhq/config.json`): project + `environments: { name →
   { id, file } }` + `default`. `push <env>` / `pull <env>` positional; no-arg →
   default; `--file` overrides; `--all` explicit only.
 - Interactive `link` maps each env to a file (default env → `.env`, others →
@@ -147,14 +152,14 @@ E2E.** Server stores only ciphertext, cannot decrypt.
   server mints a **7-day** token + redirects a **one-time code** to loopback →
   CLI exchanges `code + verifier` over HTTPS for the token. **Token never appears
   in a URL.**
-- **Storage:** **OS keychain only** (interactive) or **`ENVSYNC_TOKEN`** env
+- **Storage:** **OS keychain only** (interactive) or **`ENVHQ_TOKEN`** env
   (headless/CI). **No plaintext token file, ever.** No keychain → refuse to
-  persist, require `ENVSYNC_TOKEN`. Non-secret `url` stays in
-  `~/.envsync/config.json`.
+  persist, require `ENVHQ_TOKEN`. Non-secret `url` stays in
+  `~/.envhq/config.json`.
 - **Expiry:** `api_tokens.expires_at`; server returns distinct `401
   token_expired`. On expiry, `push`/`pull` **auto-launch the browser flow and
   retry**.
-- Keep `--token` / `ENVSYNC_TOKEN` PAT path for CI.
+- Keep `--token` / `ENVHQ_TOKEN` PAT path for CI.
 - **Future tier:** sender-constrained (DPoP) tokens so a copied token is useless
   without the device key.
 
@@ -195,7 +200,7 @@ model.
 - Proper design tokens (shadcn palette was missing) — neutral base + **emerald
   brand accent**, light + dark.
 - Theme switcher, **default light** (`next-themes`).
-- **Brand identity**: `envsync` logo (sync glyph + wordmark), branded landing.
+- **Brand identity**: EnvHQ logo (sync glyph + wordmark), branded landing.
 - Web project-create auto-creates a `dev` env.
 - Env editor: multiline / auto-growing value fields + word-wrap on reveal.
 - Toasts positioned **top-center**.

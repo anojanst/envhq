@@ -1,18 +1,27 @@
-# env-sync — Roadmap
+# EnvHQ — Roadmap
 
 Phased sequencing of the work in [PLAN.md](./PLAN.md). Ordered to ship
 self-contained, high-value pieces first, defer the heavy epics, and respect
 dependencies. Milestones are independent unless a dependency is noted.
 
+> **Rebrand note:** this project shipped Phase 0–M2 under the name **envsync**
+> (domain `envsync.dev`, CLI package `@envsyncdev/cli`/command `envsync`, config
+> dir `.envsync/`, env vars `ENVSYNC_*`). It has since been rebranded to
+> **EnvHQ** (`envhq.dev`, npm package `envhq`, `.envhq/`, `ENVHQ_*`) — see the
+> rebrand note in [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md). Historical entries
+> below that describe what was literally shipped at the time (e.g. specific
+> published package/version strings) are left as-is; forward-looking mentions
+> use the current EnvHQ naming.
+
 Legend: ✅ done · 🔜 next · ⏳ planned · 🧊 epic (own architecture pass)
 
 ---
 
-## Phase 0 — v1 + polish  ✅ (shipped)
+## Phase 0 — v1 + polish  ✅ (shipped, as envsync)
 
 - ✅ Monorepo, web app, CLI, shared parser
 - ✅ Projects / environments / env_vars, server-side encryption
-- ✅ CLI `login`/`link`/`push`/`pull`/`status`, deployed at `envsync.dev`
+- ✅ CLI `login`/`link`/`push`/`pull`/`status`, deployed at `envsync.dev` (now `envhq.dev`)
 - ✅ Design tokens + theme switcher (default light) + brand identity
 - ✅ Web auto-creates `dev` env · multiline editor · top-center toasts
 
@@ -124,15 +133,55 @@ escalation attempts 403).
 **Done when:** you can `envsync init` a fresh folder and manage multiple
 environments + files entirely from the terminal. — **Met.**
 
-## M3 — Sync engine: cloud as source of truth  ⏳
+## M3 — Sync engine: cloud as source of truth  ⏳ (next up)
 
-*The correctness core. Foundation for M4.*
+*The correctness core. Foundation for M4. Full design in [PLAN.md §1](./PLAN.md)
+(read it before starting — this section is a summary, not a replacement).*
 
-- Env-keyed base (key names + version) in `.envsync/` (PLAN §1)
-- Three-way `push` (add / update / soft-delete); `pull` refreshes base
-- **Non-clobbering pull** (back up / refuse / diff) — required before M4
-- Soft-delete (`deleted_at`) + partial unique index + restore + trash
-- `envsync diff` / `status`; deletion + sensitive-env confirmations
+**Current gap this milestone closes:** today's `push` (CLI
+[index.ts](../packages/cli/src/index.ts) → `apiClient.importEnv` →
+[import/route.ts](../apps/web/src/app/api/environments/[id]/import/route.ts) →
+`upsertMany` in [env-store.ts](../apps/web/src/lib/env-store.ts)) is a
+**stateless upsert/merge only** — it never deletes a remote key, even one
+removed from the local file, and there is no local record of what was synced
+last (no base file, no version). `pull` just overwrites the target file with
+whatever `exportEnv` returns — no diff, no conflict detection, no backup.
+`env_vars` ([schema.ts](../apps/web/src/db/schema.ts)) has no `deleted_at`
+column — deletion (`deletePairByKey` in `env-store.ts`) is already used by the
+web UI's single-key delete, but hard-deletes with no trash/restore.
+
+**Scope:**
+- **Env-keyed base** — a per-environment `{ version, keys: [names] }` record
+  (names only, never values — PLAN's cross-cutting invariant #2) written into
+  `.envhq/` after every successful `push`/`pull`. CLI-owned, human-read-only,
+  harmless if lost (degrades to merge-only per invariant #3).
+- **Three-way `push`** (base / local / remote diff): `local − base` → add;
+  `base − local` (still present remotely) → soft-delete; keys in both with a
+  value that differs from the live remote value → update; a remote key never
+  present in base → left untouched (this is what prevents a stale/partial
+  local file from mass-deleting cloud state).
+- **Soft-delete**: add `deleted_at` to `env_vars`, a **partial unique index**
+  `WHERE deleted_at IS NULL` (so a deleted key's name can be re-created without
+  colliding with the tombstoned row), restore, and a trash view (web UI, and/or
+  `envhq` command — decide during implementation).
+- **Non-clobbering `pull`** — required before M4 can build on it. On a
+  conflict (local file has uncommitted-looking edits vs. the last-known base)
+  either refuse, back up to `.env.bak`, or show a diff and ask — pick one
+  default behavior and document it.
+- **`envhq diff` / `status`** — preview added/changed/deleted before they
+  happen. Confirm on deletions; extra confirm for sensitive envs (this can
+  reuse/extend the `prod`/`production`-name guard already in `push`/`pull`
+  from M2, at [index.ts](../packages/cli/src/index.ts)'s `confirmProdIfNeeded`).
+
+**Known sharp edges (from PLAN §1, must be handled, not just noted):**
+- Empty/partial local file → mass delete: mitigate with a confirm + threshold
+  (e.g. "deleting >50% of keys"); trash makes it recoverable regardless.
+- The partial unique index + `ON CONFLICT` target must match exactly, or
+  re-creating a previously-deleted key will either 409 or silently resurrect
+  the tombstoned row instead of inserting fresh.
+- Exact conflict-resolution UX is explicitly **open** in PLAN §1 — deferred to
+  M4's design pass, but non-clobbering `pull` here needs *some* safe default
+  now (refuse is the simplest correct starting point if undecided).
 
 **Done when:** deletions propagate correctly, partial files can't cause data
 loss, and a pull never silently destroys local edits.
@@ -196,12 +245,22 @@ M3/M4 if there's capacity, since it's on the access layer rather than the sync
 engine. M6 is deliberately last — it's the biggest commitment and benefits from
 M5's key model.
 
-**Next up: M3** (see above for scope) — cloud-as-source-of-truth sync engine,
-building on M2's multi-env link config. M1 and M2 are fully shipped; M2's CLI
-work hasn't been published to npm yet (`packages/cli/package.json` is at
-`0.2.2` locally but the last *published* `@envsyncdev/cli` is `0.2.1`, which
-predates `init`/`projects create`/`env create`/`env list` and the
-`.envsync/config.json` format) — verify the version, build, spot-check, then
-publish before relying on it externally (see M1's publish checklist above). A
-fresh agent picking up M3 only needs this doc's M1/M2 summaries for context,
-not the original conversations.
+**Next up: M3** (see above for full scope, current-state gap analysis, and
+sharp edges — a fresh agent should be able to start directly from that section
+plus [PLAN.md §1](./PLAN.md)). It builds on M2's multi-env link config
+(`.envhq/config.json`) and touches `env_vars` (new `deleted_at` column +
+partial unique index), `env-store.ts`, the import/export routes, and the CLI's
+`push`/`pull`.
+
+M1 and M2 are fully shipped, but as of the **EnvHQ rebrand** the CLI package
+itself changed name (`@envsyncdev/cli` → `envhq`, unscoped) and got a version
+bump for the breaking config/env-var/keychain-service renames
+(`packages/cli/package.json` is `0.4.0` locally). **Nothing has been published
+under the new `envhq` name yet** — the last real npm install anyone could do is
+still the old `@envsyncdev/cli@0.2.1`/`0.3.0`, which predates
+`init`/`projects create`/`env create`/`env list` *and* the rebrand entirely.
+Before relying on the CLI externally: build, spot-check `envhq --version` and
+the legacy `.envsync/`/keychain migration, publish `envhq` fresh (see M1's
+publish checklist above, using the new package name), and deprecate
+`@envsyncdev/cli` on npm pointing at it. Ideally bundle this with M3's CLI
+changes rather than as a separate release.

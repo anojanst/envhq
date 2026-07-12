@@ -1,4 +1,4 @@
-import { parseEnv } from "@env-sync/parser";
+import { parseEnv } from "@envhq/parser";
 import { getUserId } from "@/lib/auth";
 import { getOwnedEnvironment, isReadOnly } from "@/lib/access";
 import { upsertMany } from "@/lib/env-store";

@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { EnvPair } from "@env-sync/parser";
+import type { EnvPair } from "@envhq/parser";
 import { db } from "@/db";
 import { envVars } from "@/db/schema";
 import { encrypt, decrypt } from "./crypto";

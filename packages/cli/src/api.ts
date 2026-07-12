@@ -3,10 +3,10 @@ import { resolveToken, storeSession, envToken } from "./token-store.ts";
 import { runLoginFlow } from "./auth/login.ts";
 
 /**
- * Authenticated client for the env-sync REST API. Reuses the same endpoints the
+ * Authenticated client for the EnvHQ REST API. Reuses the same endpoints the
  * web app uses, authenticating with a Bearer token resolved from the OS keychain
- * (or `ENVSYNC_TOKEN`). On a `token_expired` 401 it transparently re-runs the
- * browser login and retries once — unless the token came from `ENVSYNC_TOKEN`.
+ * (or `ENVHQ_TOKEN`). On a `token_expired` 401 it transparently re-runs the
+ * browser login and retries once — unless the token came from `ENVHQ_TOKEN`.
  */
 export class ApiError extends Error {}
 
@@ -28,7 +28,7 @@ interface ResolvedAuth {
 }
 
 /**
- * Resolve the url + token for a request. Prefers the keychain / `ENVSYNC_TOKEN`;
+ * Resolve the url + token for a request. Prefers the keychain / `ENVHQ_TOKEN`;
  * if only a legacy plaintext token remains in config.json, migrate it into the
  * keychain (best effort) and strip it from disk.
  */
@@ -59,7 +59,7 @@ async function request<T>(path: string, options: Options = {}): Promise<T> {
     ? { url: options.auth.url, token: options.auth.token, source: "override" }
     : await loadAuth();
   if (!auth) {
-    throw new ApiError("Not logged in. Run `envsync login` first.");
+    throw new ApiError("Not logged in. Run `envhq login` first.");
   }
 
   let res: Response;
@@ -95,8 +95,8 @@ async function request<T>(path: string, options: Options = {}): Promise<T> {
     if (expired) {
       throw new ApiError(
         auth.source === "env"
-          ? "Your ENVSYNC_TOKEN has expired. Generate a new token in the web app."
-          : "Your session has expired. Run `envsync login` again.",
+          ? "Your ENVHQ_TOKEN has expired. Generate a new token in the web app."
+          : "Your session has expired. Run `envhq login` again.",
       );
     }
     throw new ApiError("Unauthorized — your token may be invalid or revoked.");

@@ -1,11 +1,17 @@
-# env-sync
+# EnvHQ
 
 Store, organize, and sync environment variables. Group secrets by **project** and
 **environment** (dev, qa, staging, uat, prod, and anything else), paste whole `.env`
 files in bulk, copy them back out, and sync from your terminal with the CLI.
 
+> **Note:** this project was originally named **envsync** and rebranded to
+> **EnvHQ** (domain moved from `envsync.dev` to `envhq.dev`). The CLI's old
+> package `@envsyncdev/cli` (command `envsync`) is deprecated in favor of
+> `envhq` (command `envhq`) — see [packages/cli/README.md](./packages/cli/README.md)
+> for the migration notes and legacy-config auto-migration.
+
 - **Web app** — Next.js (App Router) + Clerk auth + Neon Postgres + Drizzle + shadcn/ui
-- **CLI** — `envsync` (Node/TS) for `push`/`pull` from any project folder
+- **CLI** — `envhq` (Node/TS) for `push`/`pull` from any project folder
 - **Encryption** — values are AES-256-GCM encrypted at rest; the DB never stores plaintext
 - **Access** — personal-only (v1): every row is scoped to the signed-in user
 
@@ -15,14 +21,14 @@ Full design and reference docs live in [`docs/`](./docs):
 
 - [**System Design**](./docs/SYSTEM_DESIGN.md) — as-built architecture, data model, API, CLI (start here)
 - [**Plan**](./docs/PLAN.md) — design spec for decided-but-unbuilt features
-- [**Roadmap**](./docs/ROADMAP.md) — phased milestones (M1–M6)
+- [**Roadmap**](./docs/ROADMAP.md) — phased milestones and what's shipped vs. planned
 
 ## Monorepo layout
 
 ```
 apps/web            Next.js app (UI + REST API)
 packages/parser     Shared .env parser/serializer (used by web + CLI)
-packages/cli        The `envsync` command-line tool
+packages/cli        The `envhq` command-line tool
 ```
 
 ## Prerequisites
@@ -63,29 +69,29 @@ pnpm dev            # http://localhost:3000
 
 ## Using the CLI
 
-Once published, users install it from npm and never need to know a URL — the
-deployment URL is baked into the build:
+Users install it from npm and never need to know a URL — the deployment URL is
+baked into the build:
 
 ```bash
-npm install -g @envsyncdev/cli    # installs the `envsync` command
-# or run without installing: npx @envsyncdev/cli <command>
+npm install -g envhq          # installs the `envhq` command
+# or run without installing: npx envhq <command>
 
-envsync login --token <token> # token from the web app → CLI Tokens
+envhq login --token <token>   # token from the web app → CLI Tokens
 cd ~/code/my-project
-envsync link                  # pick a project, map every environment to a file
-envsync pull                  # write the default environment to its mapped file
-envsync push                  # upload the default environment from its mapped file
-envsync status                # show login + link state (and target URL)
+envhq link                    # pick a project, map every environment to a file
+envhq pull                    # write the default environment to its mapped file
+envhq push                    # upload the default environment from its mapped file
+envhq status                  # show login + link state (and target URL)
 ```
 
-`envsync push`/`pull` accept a positional `[env]` to target a different
+`envhq push`/`pull` accept a positional `[env]` to target a different
 environment, `--file <path>` to use a different file, and `--all` to act on
 every linked environment at once. Override the server with `--url <url>` on
-`login` or the `ENVSYNC_URL` env var (for local dev or self-hosting).
+`login` or the `ENVHQ_URL` env var (for local dev or self-hosting).
 
 ### Publishing the CLI
 
-Release builds bake in the production URL (`https://envsync.dev`) by default,
+Release builds bake in the production URL (`https://envhq.dev`) by default,
 so publishing is just:
 
 ```bash
@@ -95,19 +101,19 @@ npm login                              # one-time
 pnpm publish --access public --no-git-checks
 ```
 
-Use `pnpm publish` (not `npm publish`) so the bundled `@env-sync/parser`
-workspace reference is rewritten correctly. Published as `@envsyncdev/cli`;
-the installed command is still `envsync`.
+Use `pnpm publish` (not `npm publish`) so the bundled `@envhq/parser`
+workspace reference is rewritten correctly. Published as `envhq` (unscoped);
+the installed command is also `envhq`.
 
-The `@env-sync/parser` package is bundled into the CLI, so the published package
+The `@envhq/parser` package is bundled into the CLI, so the published package
 is self-contained (no workspace dependency to resolve).
 
 To test the built artifact against a **local** server, build with an override
 (or just use `pnpm dev`, which always targets localhost):
 
 ```bash
-ENVSYNC_DEFAULT_URL=http://localhost:3000 pnpm build
-# or override at runtime: ENVSYNC_URL=http://localhost:3000 envsync status
+ENVHQ_DEFAULT_URL=http://localhost:3000 pnpm build
+# or override at runtime: ENVHQ_URL=http://localhost:3000 envhq status
 ```
 
 ## Data model
@@ -117,9 +123,8 @@ ENVSYNC_DEFAULT_URL=http://localhost:3000 pnpm build
 - `env_vars` — key + AES-256-GCM (`ciphertext`, `iv`, `authTag`); unique key per environment
 - `api_tokens` — SHA-256 hashes of personal tokens for CLI auth
 
-## Roadmap (post-v1)
+## Roadmap
 
-- Team/shared projects with roles
-- Change history / versioning
-- Browser-based `envsync login` (device flow) instead of paste-a-token
-- `envsync run -- <cmd>` to inject vars without writing them to disk
+See [docs/ROADMAP.md](./docs/ROADMAP.md) for the full, up-to-date milestone plan
+(CLI auth hardening and CLI-first lifecycle are shipped; sync engine,
+versioning, teams, and zero-knowledge encryption are next).
