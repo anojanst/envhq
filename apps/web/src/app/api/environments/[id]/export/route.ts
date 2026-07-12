@@ -19,5 +19,5 @@ export async function GET(req: Request, { params }: Params) {
   if (!owned) return notFound("Environment not found");
 
   const pairs = await listPairs(id);
-  return json({ content: serializeEnv(pairs), count: pairs.length });
+  return json({ content: serializeEnv(pairs), count: pairs.length, version: owned.env.version });
 }

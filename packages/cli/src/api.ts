@@ -1,3 +1,4 @@
+import type { EnvPair } from "@envhq/parser";
 import { readGlobalConfig, writeGlobalConfig } from "./config.ts";
 import { resolveToken, storeSession, envToken } from "./token-store.ts";
 import { runLoginFlow } from "./auth/login.ts";
@@ -8,7 +9,13 @@ import { runLoginFlow } from "./auth/login.ts";
  * (or `ENVHQ_TOKEN`). On a `token_expired` 401 it transparently re-runs the
  * browser login and retries once — unless the token came from `ENVHQ_TOKEN`.
  */
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  /** HTTP status, when the error came from a non-ok response. */
+  status?: number;
+  /** Parsed JSON body, when the error came from a non-ok response — e.g. a
+   * `409`'s `{ currentVersion, serverPairs }` conflict payload. */
+  data?: unknown;
+}
 
 interface Options {
   method?: string;
@@ -103,7 +110,10 @@ async function request<T>(path: string, options: Options = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    throw new ApiError((data.error as string) ?? `Request failed (${res.status})`);
+    const err = new ApiError((data.error as string) ?? `Request failed (${res.status})`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
   }
   return data as T;
 }
@@ -138,7 +148,7 @@ export const apiClient = {
     }),
 
   exportEnv: (envId: string) =>
-    request<{ content: string; count: number }>(`/api/environments/${envId}/export`),
+    request<{ content: string; count: number; version: number }>(`/api/environments/${envId}/export`),
 
   importEnv: (envId: string, content: string) =>
     request<{ created: number; updated: number; total: number }>(
@@ -151,6 +161,15 @@ export const apiClient = {
       method: "DELETE",
       body: { keys },
     }),
+
+  commit: (
+    envId: string,
+    body: { baseVersion: number; upsert?: EnvPair[]; delete?: string[]; message?: string },
+  ) =>
+    request<{ version: number; created: number; updated: number; deleted: number }>(
+      `/api/environments/${envId}/commit`,
+      { method: "POST", body },
+    ),
 };
 
 // Re-exported so index.ts can surface auth state without reaching into the store.

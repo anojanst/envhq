@@ -3,7 +3,7 @@ import { readFile, writeFile, appendFile, access } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { basename } from "node:path";
-import { parseEnv, serializeEnv } from "@envhq/parser";
+import { parseEnv, serializeEnv, type EnvPair } from "@envhq/parser";
 import {
   readGlobalConfig,
   writeGlobalConfig,
@@ -430,33 +430,31 @@ program
       for (const env of targets) {
         const file = opts.file ?? env.file;
         await confirmProdIfNeeded(env.name, opts.yes);
-        const { content, count } = await apiClient.exportEnv(env.id);
+        const { content, count, version: remoteVersion } = await apiClient.exportEnv(env.id);
+        const remotePairs = parseEnv(content);
 
         const exists = await fileExists(file);
         let localRaw: string | null = null;
+        let localOnlyNew: EnvPair[] = [];
+
         if (exists) {
           localRaw = await readFile(file, "utf8");
 
-          if (!opts.force) {
-            // Non-clobbering check: if the local file's key set has drifted
-            // from what was last synced, pulling now would silently discard
-            // local additions/removals — refuse instead of overwriting.
-            // (Key-set only — a value edited in place without adding or
-            // removing a key isn't detectable from the base, which stores
-            // names only; the unconditional .bak below is the safety net for
-            // that case.)
-            const base = await readBase(env.id);
-            if (base) {
-              const localKeys = parseEnv(localRaw).map((p) => p.key).sort();
-              const baseKeys = [...base.keys].sort();
-              if (JSON.stringify(localKeys) !== JSON.stringify(baseKeys)) {
-                fail(
-                  `${file} has local changes that don't match the last sync for ${env.name} ` +
-                    `(keys differ from the last known set) — push first, or re-run with --force to overwrite anyway.`,
-                );
-              }
-            }
+          // Merge forward any local key that's never been synced (not in the
+          // base, and not already on the remote under that name) instead of
+          // silently discarding it — cloud still wins for every key it
+          // already knows about, so this can never resurrect or clobber
+          // anything remote. Value-only edits to an existing tracked key
+          // aren't detectable here (the base stores key names only, never
+          // values) — that's what the unconditional .bak below is for.
+          const base = await readBase(env.id);
+          const baseKeys = new Set(base?.keys ?? []);
+          const remoteKeys = new Set(remotePairs.map((p) => p.key));
+          localOnlyNew = parseEnv(localRaw).filter(
+            (p) => !remoteKeys.has(p.key) && !baseKeys.has(p.key),
+          );
 
+          if (!opts.force) {
             const answer = await prompt(`${file} exists. Overwrite? [y/N] `);
             if (answer.toLowerCase() !== "y") {
               console.log(`Skipped ${env.name}.`);
@@ -468,19 +466,25 @@ program
         if (localRaw !== null) {
           await writeFile(`${file}.bak`, localRaw);
         }
-        await writeFile(file, content);
+
+        const merged = localOnlyNew.length > 0 ? [...remotePairs, ...localOnlyNew] : remotePairs;
+        await writeFile(file, serializeEnv(merged));
 
         // Refresh the base from what was just pulled — pull is "cloud wins,"
-        // so the base becomes exactly the remote's key set.
-        const base = await readBase(env.id);
-        const remoteKeys = parseEnv(content)
-          .map((p) => p.key)
-          .sort();
-        await writeBase(env.id, { version: (base?.version ?? 0) + 1, keys: remoteKeys });
+        // so the base becomes exactly the remote's key set at the version the
+        // server just reported. The merged-forward keys aren't actually
+        // synced yet, so they deliberately stay out of the base; the next
+        // `push` will pick them up as ordinary new local adds.
+        const remoteKeys = remotePairs.map((p) => p.key).sort();
+        await writeBase(env.id, { version: remoteVersion, keys: remoteKeys });
 
         const backupNote = localRaw !== null ? ` (backed up previous ${file} → ${file}.bak)` : "";
+        const keptNote =
+          localOnlyNew.length > 0
+            ? ` — kept ${localOnlyNew.length} un-synced local key(s): ${localOnlyNew.map((p) => p.key).join(", ")}`
+            : "";
         console.log(
-          `✔ Pulled ${count} variable${count === 1 ? "" : "s"} from ${env.name} → ${file}${backupNote}.`,
+          `✔ Pulled ${count} variable${count === 1 ? "" : "s"} from ${env.name} → ${file}${backupNote}${keptNote}.`,
         );
       }
     } catch (err) {
@@ -496,76 +500,91 @@ program
   .option("-f, --file <path>", "input file (overrides the linked mapping)")
   .option("--all", "push every linked environment from its mapped file", false)
   .option("--yes", "skip the production confirmation", false)
-  .action(async (envArg: string | undefined, opts: { file?: string; all: boolean; yes: boolean }) => {
-    try {
-      const link = await requireLink();
-      if (opts.all && envArg) fail("Pass either an environment or --all, not both.");
-      if (opts.all && opts.file) fail("--file can't be combined with --all.");
+  .option("-m, --message <msg>", "commit message for this push")
+  .action(
+    async (
+      envArg: string | undefined,
+      opts: { file?: string; all: boolean; yes: boolean; message?: string },
+    ) => {
+      try {
+        const link = await requireLink();
+        if (opts.all && envArg) fail("Pass either an environment or --all, not both.");
+        if (opts.all && opts.file) fail("--file can't be combined with --all.");
 
-      const targets = opts.all
-        ? Object.keys(link.environments).map((name) => resolveLinkedEnv(link, name))
-        : [resolveLinkedEnv(link, envArg)];
+        const targets = opts.all
+          ? Object.keys(link.environments).map((name) => resolveLinkedEnv(link, name))
+          : [resolveLinkedEnv(link, envArg)];
 
-      for (const env of targets) {
-        const file = opts.file ?? env.file;
-        await confirmProdIfNeeded(env.name, opts.yes);
+        for (const env of targets) {
+          const file = opts.file ?? env.file;
+          await confirmProdIfNeeded(env.name, opts.yes);
 
-        let raw: string;
-        try {
-          raw = await readFile(file, "utf8");
-        } catch {
-          fail(`Could not read ${file}.`);
-        }
+          let raw: string;
+          try {
+            raw = await readFile(file, "utf8");
+          } catch {
+            fail(`Could not read ${file}.`);
+          }
 
-        const parsed = parseEnv(raw);
-        if (parsed.length === 0) fail(`No valid KEY=value lines found in ${file}.`);
+          const parsed = parseEnv(raw);
+          if (parsed.length === 0) fail(`No valid KEY=value lines found in ${file}.`);
 
-        const base = await readBase(env.id);
+          // Always read live remote state first — the diff (and the CAS
+          // version sent to /commit) are both computed against this same
+          // fresh read, not the on-disk base, so a push never false-conflicts
+          // just because the disk-cached version is behind reality.
+          const { content: remoteContent, version: remoteVersion } = await apiClient.exportEnv(env.id);
+          const remotePairs = parseEnv(remoteContent);
 
-        if (!base) {
-          // No sync record (never pushed/pulled, or the base was lost) —
-          // degrade to the old merge-only behavior: upsert everything, delete
-          // nothing, then start tracking a base from here on.
-          const res = await apiClient.importEnv(env.id, raw);
-          await writeBase(env.id, { version: 1, keys: parsed.map((p) => p.key).sort() });
+          const base = await readBase(env.id);
+          const { toUpsert, toDelete } = base
+            ? computeThreeWayDiff(parsed, base.keys, remotePairs)
+            : { toUpsert: parsed, toDelete: [] as string[] };
+
+          if (toUpsert.length === 0 && toDelete.length === 0) {
+            console.log(`No changes to push for ${env.name}.`);
+            continue;
+          }
+
+          await confirmDeletions(toDelete, base?.keys.length ?? 0, opts.yes);
+
+          let result: { version: number; created: number; updated: number; deleted: number };
+          try {
+            result = await apiClient.commit(env.id, {
+              baseVersion: remoteVersion,
+              upsert: toUpsert,
+              delete: toDelete,
+              message: opts.message,
+            });
+          } catch (err) {
+            if (err instanceof ApiError && err.status === 409) {
+              const data = err.data as { currentVersion: number; serverPairs: { key: string; value: string }[] };
+              const localValues = new Map(parsed.map((p) => [p.key, p.value]));
+              console.error(
+                `✖ ${env.name} has moved to version ${data.currentVersion} since your last read. Conflicting keys:`,
+              );
+              for (const server of data.serverPairs) {
+                console.error(`  ${server.key}: yours="${localValues.get(server.key) ?? "(deleted)"}", server="${server.value}"`);
+              }
+              fail(`Run \`envhq pull\` to get the latest, then push again.`);
+            }
+            throw err;
+          }
+
+          await writeBase(env.id, {
+            version: result.version,
+            keys: parsed.map((p) => p.key).sort(),
+          });
+
           console.log(
-            `✔ Pushed to ${env.name}: ${res.created} new, ${res.updated} updated (merge-only — no sync record found).`,
+            `✔ Pushed to ${env.name} (v${result.version}): ${result.created} new, ${result.updated} updated, ${result.deleted} deleted.`,
           );
-          continue;
         }
-
-        const { content: remoteContent } = await apiClient.exportEnv(env.id);
-        const remotePairs = parseEnv(remoteContent);
-        const { toUpsert, toDelete } = computeThreeWayDiff(parsed, base.keys, remotePairs);
-
-        await confirmDeletions(toDelete, base.keys.length, opts.yes);
-
-        let created = 0;
-        let updated = 0;
-        if (toUpsert.length > 0) {
-          const res = await apiClient.importEnv(env.id, serializeEnv(toUpsert));
-          created = res.created;
-          updated = res.updated;
-        }
-        let deleted = 0;
-        if (toDelete.length > 0) {
-          const res = await apiClient.deleteKeys(env.id, toDelete);
-          deleted = res.deleted;
-        }
-
-        await writeBase(env.id, {
-          version: base.version + 1,
-          keys: parsed.map((p) => p.key).sort(),
-        });
-
-        console.log(
-          `✔ Pushed to ${env.name}: ${created} new, ${updated} updated, ${deleted} deleted.`,
-        );
+      } catch (err) {
+        fail(err instanceof ApiError ? err.message : String(err));
       }
-    } catch (err) {
-      fail(err instanceof ApiError ? err.message : String(err));
-    }
-  });
+    },
+  );
 
 // ---- diff ----
 program

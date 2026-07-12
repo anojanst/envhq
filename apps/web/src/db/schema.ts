@@ -8,6 +8,7 @@ import {
   unique,
   uniqueIndex,
   index,
+  jsonb,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -42,6 +43,13 @@ export const environments = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    /**
+     * Server-owned version counter (M4 — linear, no branches). Bumped only by
+     * an atomic `UPDATE ... WHERE version = $current RETURNING version` (see
+     * the commit route) so concurrent commits can never race for the same
+     * version number.
+     */
+    version: integer("version").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -78,6 +86,40 @@ export const envVars = pgTable(
       .on(t.environmentId, t.key)
       .where(sql`${t.deletedAt} is null`),
     index("env_vars_environment_id_idx").on(t.environmentId),
+  ],
+);
+
+/** One entry in an `environmentVersions.snapshot` array. */
+export interface VersionSnapshotEntry {
+  key: string;
+  valueCiphertext: string;
+  iv: string;
+  authTag: string;
+}
+
+/**
+ * A full snapshot of an environment's active vars at one version (M4). Written
+ * once per successful commit, alongside the atomic bump of
+ * `environments.version` — never mutated afterward. Ciphertext is copied
+ * directly from `env_vars` (same "copy, don't decrypt" pattern as
+ * `cloneVars`), so no plaintext ever touches this table.
+ */
+export const environmentVersions = pgTable(
+  "environment_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    environmentId: uuid("environment_id")
+      .notNull()
+      .references(() => environments.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    message: text("message"),
+    snapshot: jsonb("snapshot").notNull().$type<VersionSnapshotEntry[]>(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("environment_versions_environment_version_uq").on(t.environmentId, t.version),
+    index("environment_versions_environment_id_idx").on(t.environmentId),
   ],
 );
 
@@ -139,6 +181,7 @@ export const environmentsRelations = relations(environments, ({ one, many }) => 
     references: [projects.id],
   }),
   envVars: many(envVars),
+  versions: many(environmentVersions),
 }));
 
 export const envVarsRelations = relations(envVars, ({ one }) => ({
@@ -148,8 +191,16 @@ export const envVarsRelations = relations(envVars, ({ one }) => ({
   }),
 }));
 
+export const environmentVersionsRelations = relations(environmentVersions, ({ one }) => ({
+  environment: one(environments, {
+    fields: [environmentVersions.environmentId],
+    references: [environments.id],
+  }),
+}));
+
 export type Project = typeof projects.$inferSelect;
 export type Environment = typeof environments.$inferSelect;
 export type EnvVar = typeof envVars.$inferSelect;
+export type EnvironmentVersion = typeof environmentVersions.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type CliAuthRequest = typeof cliAuthRequests.$inferSelect;
