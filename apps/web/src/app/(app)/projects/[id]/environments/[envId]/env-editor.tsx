@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Eye,
@@ -52,6 +52,11 @@ export function EnvEditor({
   envName: string;
 }) {
   const [vars, setVars] = useState<Row[]>(initialVars);
+  // Resync when the server component re-renders with fresh vars (e.g. after
+  // a version rollback triggers router.refresh() from a sibling component) —
+  // useState's initial value only applies on mount, so without this the
+  // table would keep showing stale data after an out-of-band refresh.
+  useEffect(() => setVars(initialVars), [initialVars]);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [revealAll, setRevealAll] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);

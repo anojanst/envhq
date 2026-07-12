@@ -1,7 +1,8 @@
 import { getUserId } from "@/lib/auth";
 import { getOwnedEnvironment, isReadOnly } from "@/lib/access";
 import { upsertPair, deleteMany } from "@/lib/env-store";
-import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
+import { commitVersion } from "@/lib/version-store";
+import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden, versionConflict } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -28,8 +29,12 @@ export async function POST(req: Request, { params }: Params) {
     return badRequest("key must start with a letter or _ and contain only letters, digits, _");
   }
 
-  const { created } = await upsertPair(id, key, value);
-  return json({ key, created }, created ? 201 : 200);
+  const outcome = await commitVersion(id, owned.env.version, userId, `Set ${key} via web`, () =>
+    upsertPair(id, key, value),
+  );
+  if (outcome.conflict) return versionConflict();
+
+  return json({ key, created: outcome.result.created }, outcome.result.created ? 201 : 200);
 }
 
 // Batch soft-delete by key (CLI three-way push's delete step — the CLI never

@@ -16,3 +16,6 @@ export const forbidden = (message = "Forbidden") => apiError(message, 403);
 export const notFound = (what = "Not found") => apiError(what, 404);
 export const badRequest = (message: string) => apiError(message, 400);
 export const conflict = (message: string) => apiError(message, 409);
+// A commitVersion() CAS loss — someone else changed this environment first.
+export const versionConflict = () =>
+  apiError("This environment changed elsewhere — refresh and try again.", 409);

@@ -4,7 +4,17 @@ import { envVars } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
 import { getOwnedVar, isReadOnly } from "@/lib/access";
 import { encrypt } from "@/lib/crypto";
-import { json, badRequest, unauthorized, tokenExpired, notFound, conflict, forbidden } from "@/lib/api";
+import { commitVersion } from "@/lib/version-store";
+import {
+  json,
+  badRequest,
+  unauthorized,
+  tokenExpired,
+  notFound,
+  conflict,
+  forbidden,
+  versionConflict,
+} from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -38,13 +48,24 @@ export async function PATCH(req: Request, { params }: Params) {
   }
   if (Object.keys(set).length === 1) return badRequest("Nothing to update");
 
+  const originalKey = owned.envVar.key;
   try {
-    const [updated] = await db
-      .update(envVars)
-      .set(set)
-      .where(eq(envVars.id, id))
-      .returning({ id: envVars.id, key: envVars.key });
-    return json({ variable: updated });
+    const outcome = await commitVersion(
+      owned.environment.id,
+      owned.environment.version,
+      userId,
+      `Updated ${originalKey} via web`,
+      async () => {
+        const [updated] = await db
+          .update(envVars)
+          .set(set)
+          .where(eq(envVars.id, id))
+          .returning({ id: envVars.id, key: envVars.key });
+        return updated;
+      },
+    );
+    if (outcome.conflict) return versionConflict();
+    return json({ variable: outcome.result });
   } catch {
     return conflict("A variable with that key already exists in this environment");
   }
@@ -60,6 +81,14 @@ export async function DELETE(req: Request, { params }: Params) {
   const owned = await getOwnedVar(userId, id, scope);
   if (!owned) return notFound("Variable not found");
 
-  await db.update(envVars).set({ deletedAt: new Date() }).where(eq(envVars.id, id));
+  const outcome = await commitVersion(
+    owned.environment.id,
+    owned.environment.version,
+    userId,
+    `Deleted ${owned.envVar.key} via web`,
+    () => db.update(envVars).set({ deletedAt: new Date() }).where(eq(envVars.id, id)),
+  );
+  if (outcome.conflict) return versionConflict();
+
   return json({ ok: true });
 }

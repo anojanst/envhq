@@ -11,6 +11,7 @@ import { EnvironmentTabs } from "@/components/environment-tabs";
 import { CreateEnvironmentDialog } from "../../create-environment-dialog";
 import { ProjectActions } from "../../project-actions";
 import { EnvEditor } from "./env-editor";
+import { EnvironmentHistory } from "./environment-history";
 
 export default async function EnvironmentPage({
   params,
@@ -78,6 +79,10 @@ export default async function EnvironmentPage({
         environments={siblingEnvs}
         activeEnvId={envId}
       />
+
+      <div className="flex justify-end">
+        <EnvironmentHistory environmentId={envId} currentVersion={owned.env.version} />
+      </div>
 
       <EnvEditor environmentId={envId} initialVars={vars} envName={owned.env.name} />
     </div>

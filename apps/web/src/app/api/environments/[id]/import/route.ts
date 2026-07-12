@@ -2,13 +2,14 @@ import { parseEnv } from "@envhq/parser";
 import { getUserId } from "@/lib/auth";
 import { getOwnedEnvironment, isReadOnly } from "@/lib/access";
 import { upsertMany } from "@/lib/env-store";
-import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
+import { commitVersion } from "@/lib/version-store";
+import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden, versionConflict } from "@/lib/api";
 
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
 
-// Paste-a-blob / CLI push: parse a .env blob and upsert-merge it.
+// Paste-a-blob (web UI): parse a .env blob and upsert-merge it.
 export async function POST(req: Request, { params }: Params) {
   const { userId, expired, scope } = await getUserId(req);
   if (expired) return tokenExpired();
@@ -28,6 +29,14 @@ export async function POST(req: Request, { params }: Params) {
     return badRequest("No valid KEY=value lines found in the pasted content");
   }
 
-  const result = await upsertMany(id, pairs);
-  return json({ ...result, total: pairs.length });
+  const outcome = await commitVersion(
+    id,
+    owned.env.version,
+    userId,
+    `Pasted ${pairs.length} variable(s) via web`,
+    () => upsertMany(id, pairs),
+  );
+  if (outcome.conflict) return versionConflict();
+
+  return json({ ...outcome.result, total: pairs.length });
 }
