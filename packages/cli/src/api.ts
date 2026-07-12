@@ -170,6 +170,17 @@ export const apiClient = {
       `/api/environments/${envId}/commit`,
       { method: "POST", body },
     ),
+
+  listVersions: (envId: string) =>
+    request<{
+      versions: { version: number; message: string | null; createdBy: string; createdAt: string }[];
+    }>(`/api/environments/${envId}/versions`),
+
+  rollback: (envId: string, version: number, body: { baseVersion: number; message?: string }) =>
+    request<{ version: number }>(`/api/environments/${envId}/versions/${version}/rollback`, {
+      method: "POST",
+      body,
+    }),
 };
 
 // Re-exported so index.ts can surface auth state without reaching into the store.

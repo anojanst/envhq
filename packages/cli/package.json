@@ -1,6 +1,6 @@
 {
   "name": "envhq",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Sync your environment variables from the terminal — push/pull secrets to your EnvHQ projects.",
   "keywords": ["env", "dotenv", "environment-variables", "secrets", "cli", "sync", "envhq"],
   "license": "MIT",
