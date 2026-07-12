@@ -67,7 +67,7 @@ These hold across all features — violating them breaks correctness:
 - Soft-delete needs a **partial unique index** `WHERE deleted_at IS NULL`, and an
   `ON CONFLICT` targeting that predicate, so a deleted key can be re-created.
 
-**Open:** exact conflict-resolution UX (see §5) — deferred.
+**Resolved:** see §5 — reject-and-diff via CAS, not rebase/replay.
 
 ## 2. Project creation via CLI
 
@@ -118,7 +118,11 @@ the full `file → env` target so wrong-target mistakes are visible.
 - Subsumes v1's soft-delete/trash and the concurrency `version`.
 
 **Depends on:** §1's non-clobbering pull (resolution loop needs it).
-**Open:** conflict-resolution UX (rebase/replay flow) — to be designed.
+**Resolved (shipped in M4):** no rebase/replay — a stale `baseVersion` on
+`/commit` 409s with `currentVersion` + the live values for just the
+conflicting keys; the CLI prints a yours-vs-server diff and tells the user to
+`pull` then retry. Simpler than rebase/replay and considered sufficient given
+env files are small and conflicts rare.
 
 ## 6. Security — encryption posture
 

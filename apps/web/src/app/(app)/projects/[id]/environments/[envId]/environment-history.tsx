@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { History as HistoryIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatRelativeTime } from "@/lib/utils";
 import {
   Sheet,
   SheetTrigger,
@@ -54,6 +55,14 @@ export function EnvironmentHistory({ environmentId }: { environmentId: string })
     }
   }
 
+  // Fetch once on mount too (not just when the sheet opens) — the always-
+  // visible summary strip below needs a version to show before the user
+  // ever opens the sheet.
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function rollback(version: number) {
     // Use the newest entry from the versions list we just loaded when the
     // sheet opened — not a version number captured once at page load, which
@@ -79,56 +88,75 @@ export function EnvironmentHistory({ environmentId }: { environmentId: string })
     }
   }
 
+  const latest = versions?.[0];
+
   return (
     <>
-      <Sheet
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (next) load();
-        }}
-      >
-        <SheetTrigger render={<Button variant="outline" size="sm" />}>
-          <HistoryIcon className="size-4" /> History
-        </SheetTrigger>
-        <SheetContent>
-          <SheetHeader>
-            <SheetTitle>Version history</SheetTitle>
-            <SheetDescription>Every change to this environment, newest first.</SheetDescription>
-          </SheetHeader>
-          <div className="flex flex-col gap-2 overflow-y-auto px-4 pb-4">
-            {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
-            {!loading && versions?.length === 0 && (
-              <p className="text-sm text-muted-foreground">No history yet.</p>
-            )}
-            {versions?.map((v, i) => (
-              <div
-                key={v.version}
-                className="flex items-center justify-between gap-2 rounded-md border p-3"
-              >
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-sm font-medium">
-                    v{v.version}
-                    {v.message ? ` · ${v.message}` : ""}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(v.createdAt).toLocaleString()}
-                  </span>
+      <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+        <span className="text-muted-foreground">
+          {latest ? (
+            <>
+              <span className="font-medium text-foreground">v{latest.version}</span>
+              {" · updated "}
+              {formatRelativeTime(latest.createdAt)}
+              {" by "}
+              {latest.createdBy}
+            </>
+          ) : versions ? (
+            "No history yet"
+          ) : (
+            "Loading…"
+          )}
+        </span>
+        <Sheet
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (next) load();
+          }}
+        >
+          <SheetTrigger render={<Button variant="outline" size="sm" />}>
+            <HistoryIcon className="size-4" /> History
+          </SheetTrigger>
+          <SheetContent>
+            <SheetHeader>
+              <SheetTitle>Version history</SheetTitle>
+              <SheetDescription>Every change to this environment, newest first.</SheetDescription>
+            </SheetHeader>
+            <div className="flex flex-col gap-2 overflow-y-auto px-4 pb-4">
+              {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+              {!loading && versions?.length === 0 && (
+                <p className="text-sm text-muted-foreground">No history yet.</p>
+              )}
+              {versions?.map((v, i) => (
+                <div
+                  key={v.version}
+                  className="flex items-center justify-between gap-2 rounded-md border p-3"
+                >
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-sm font-medium">
+                      v{v.version}
+                      {v.message ? ` · ${v.message}` : ""}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(v.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  {i !== 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRollbackTarget(v.version)}
+                    >
+                      Roll back
+                    </Button>
+                  )}
                 </div>
-                {i !== 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setRollbackTarget(v.version)}
-                  >
-                    Roll back
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </SheetContent>
-      </Sheet>
+              ))}
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
 
       <AlertDialog
         open={rollbackTarget !== null}

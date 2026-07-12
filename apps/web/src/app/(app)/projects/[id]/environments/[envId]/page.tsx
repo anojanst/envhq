@@ -80,11 +80,13 @@ export default async function EnvironmentPage({
         activeEnvId={envId}
       />
 
-      <div className="flex justify-end">
-        <EnvironmentHistory environmentId={envId} />
-      </div>
+      <EnvironmentHistory environmentId={envId} />
 
-      <EnvEditor environmentId={envId} initialVars={vars} envName={owned.env.name} />
+      <EnvEditor
+        environmentId={envId}
+        initialVars={vars.map((v) => ({ ...v, updatedAt: v.updatedAt.toISOString() }))}
+        envName={owned.env.name}
+      />
     </div>
   );
 }

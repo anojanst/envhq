@@ -12,6 +12,8 @@ import {
   Plus,
   ClipboardPaste,
   Download,
+  Search,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,11 +37,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { api } from "@/lib/client";
+import { formatRelativeTime } from "@/lib/utils";
+import { isProdEnv } from "@/components/project-visuals";
 
 interface Row {
   id: string;
   key: string;
   value: string;
+  updatedAt: string;
 }
 
 export function EnvEditor({
@@ -60,6 +65,11 @@ export function EnvEditor({
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [revealAll, setRevealAll] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const isProd = isProdEnv(envName);
+  const filtered = query
+    ? vars.filter((v) => v.key.toLowerCase().includes(query.toLowerCase()))
+    : vars;
 
   async function reload() {
     const data = await api<{ vars: Row[] }>(`/api/environments/${environmentId}`);
@@ -103,8 +113,24 @@ export function EnvEditor({
 
   return (
     <div className="flex flex-col gap-4">
+      {isProd && (
+        <div className="flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400">
+          <AlertTriangle className="size-4 shrink-0" />
+          Editing <code>{envName}</code> — changes take effect immediately.
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search keys"
+              className="w-48 pl-8"
+            />
+          </div>
           <Button variant="outline" size="sm" onClick={() => setRevealAll((v) => !v)}>
             {revealAll ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             {revealAll ? "Hide all" : "Reveal all"}
@@ -126,14 +152,21 @@ export function EnvEditor({
             </TableRow>
           </TableHeader>
           <TableBody>
+            <AddRow environmentId={environmentId} onAdded={reload} />
             {vars.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
-                  No variables yet. Add one below or paste a .env.
+                  No variables yet. Add one above or paste a .env.
+                </TableCell>
+              </TableRow>
+            ) : filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
+                  No keys match your search.
                 </TableCell>
               </TableRow>
             ) : (
-              vars.map((row) => (
+              filtered.map((row) => (
                 <VarRow
                   key={row.id}
                   row={row}
@@ -145,7 +178,6 @@ export function EnvEditor({
                 />
               ))
             )}
-            <AddRow environmentId={environmentId} onAdded={reload} />
           </TableBody>
         </Table>
       </div>
@@ -241,7 +273,12 @@ function VarRow({
 
   return (
     <TableRow>
-      <TableCell className="font-mono font-medium break-all align-top">{row.key}</TableCell>
+      <TableCell className="align-top">
+        <span className="block font-mono font-medium break-all">{row.key}</span>
+        <span className="block text-xs text-muted-foreground">
+          updated {formatRelativeTime(row.updatedAt)}
+        </span>
+      </TableCell>
       <TableCell className="font-mono text-muted-foreground align-top">
         <span className="block max-w-xl whitespace-pre-wrap break-all">
           {revealed ? row.value || <em className="not-italic opacity-50">(empty)</em> : "••••••••••••"}

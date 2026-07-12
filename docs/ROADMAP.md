@@ -133,70 +133,63 @@ escalation attempts 403).
 **Done when:** you can `envsync init` a fresh folder and manage multiple
 environments + files entirely from the terminal. — **Met.**
 
-## M3 — Sync engine: cloud as source of truth  ⏳ (next up)
+## M3 — Sync engine: cloud as source of truth  ✅ (shipped)
 
-*The correctness core. Foundation for M4. Full design in [PLAN.md §1](./PLAN.md)
-(read it before starting — this section is a summary, not a replacement).*
+*The correctness core. Foundation for M4. Full design in [PLAN.md §1](./PLAN.md).*
 
-**Current gap this milestone closes:** today's `push` (CLI
-[index.ts](../packages/cli/src/index.ts) → `apiClient.importEnv` →
-[import/route.ts](../apps/web/src/app/api/environments/[id]/import/route.ts) →
-`upsertMany` in [env-store.ts](../apps/web/src/lib/env-store.ts)) is a
-**stateless upsert/merge only** — it never deletes a remote key, even one
-removed from the local file, and there is no local record of what was synced
-last (no base file, no version). `pull` just overwrites the target file with
-whatever `exportEnv` returns — no diff, no conflict detection, no backup.
-`env_vars` ([schema.ts](../apps/web/src/db/schema.ts)) has no `deleted_at`
-column — deletion (`deletePairByKey` in `env-store.ts`) is already used by the
-web UI's single-key delete, but hard-deletes with no trash/restore.
-
-**Scope:**
-- **Env-keyed base** — a per-environment `{ version, keys: [names] }` record
-  (names only, never values — PLAN's cross-cutting invariant #2) written into
-  `.envhq/` after every successful `push`/`pull`. CLI-owned, human-read-only,
-  harmless if lost (degrades to merge-only per invariant #3).
-- **Three-way `push`** (base / local / remote diff): `local − base` → add;
-  `base − local` (still present remotely) → soft-delete; keys in both with a
-  value that differs from the live remote value → update; a remote key never
-  present in base → left untouched (this is what prevents a stale/partial
-  local file from mass-deleting cloud state).
-- **Soft-delete**: add `deleted_at` to `env_vars`, a **partial unique index**
-  `WHERE deleted_at IS NULL` (so a deleted key's name can be re-created without
-  colliding with the tombstoned row), restore, and a trash view (web UI, and/or
-  `envhq` command — decide during implementation).
-- **Non-clobbering `pull`** — required before M4 can build on it. On a
-  conflict (local file has uncommitted-looking edits vs. the last-known base)
-  either refuse, back up to `.env.bak`, or show a diff and ask — pick one
-  default behavior and document it.
-- **`envhq diff` / `status`** — preview added/changed/deleted before they
-  happen. Confirm on deletions; extra confirm for sensitive envs (this can
-  reuse/extend the `prod`/`production`-name guard already in `push`/`pull`
-  from M2, at [index.ts](../packages/cli/src/index.ts)'s `confirmProdIfNeeded`).
-
-**Known sharp edges (from PLAN §1, must be handled, not just noted):**
-- Empty/partial local file → mass delete: mitigate with a confirm + threshold
-  (e.g. "deleting >50% of keys"); trash makes it recoverable regardless.
-- The partial unique index + `ON CONFLICT` target must match exactly, or
-  re-creating a previously-deleted key will either 409 or silently resurrect
-  the tombstoned row instead of inserting fresh.
-- Exact conflict-resolution UX is explicitly **open** in PLAN §1 — deferred to
-  M4's design pass, but non-clobbering `pull` here needs *some* safe default
-  now (refuse is the simplest correct starting point if undecided).
+- ✅ **Env-keyed base** — `.envhq/` holds a per-environment `{ version, keys }`
+  record (names only, never values), written after every successful
+  `push`/`pull` (`readBase`/`writeBase` in
+  [index.ts](../packages/cli/src/index.ts))
+- ✅ **Three-way `push`** (`computeThreeWayDiff`) — `local − base` → add;
+  `base − local` (∩ remote) → soft-delete; changed-vs-live-remote → update; a
+  remote key never in base → left untouched. Live remote state is re-read on
+  every push so the diff and the CAS version are computed against the same
+  fresh snapshot, not the stale on-disk base
+- ✅ **Soft-delete** — `env_vars.deleted_at` + a **partial unique index**
+  `env_vars_environment_key_uq` on `(environment_id, key) WHERE deleted_at IS
+  NULL` ([schema.ts](../apps/web/src/db/schema.ts)) so a deleted key's name
+  can be re-created without colliding with its tombstone. Trash/restore ended
+  up superseded by M4's full version rollback rather than a separate trash
+  view — restoring a version restores any keys deleted since
+- ✅ **Non-clobbering `push`** — conflicts are detected via the CAS version
+  passed to `/commit` (see M4); a stale base 409s with the live conflicting
+  keys/values rather than silently overwriting
+- ✅ **`envhq diff` / `status`** — `diff` previews add/update/delete against
+  the live remote without applying; deletions and prod/production envs
+  prompt for confirmation (`confirmDeletions`, `confirmProdIfNeeded`) unless
+  `--yes`
 
 **Done when:** deletions propagate correctly, partial files can't cause data
-loss, and a pull never silently destroys local edits.
+loss, and a pull never silently destroys local edits. — **Met**, with the
+conflict story resolved via M4's CAS rather than a separate pre-M4
+mechanism (the two milestones landed together — see commits `188737c`
+through `f2df816`).
 
-## M4 — Versioning ("git for env")  ⏳
+## M4 — Versioning ("git for env")  ✅ (shipped)
 
 *Depends on M3 (needs non-clobbering pull + soft-delete).*
 
-- Per-env integer sequence + optimistic concurrency (base-version CAS) (PLAN §5)
-- Full snapshot per version; commit messages; history / diff / rollback / blame
-- Server-side key-level conflict reporting; rebase/replay resolution UX
-- Web edits create versions (message/granularity policy)
+- ✅ Per-env integer sequence + optimistic concurrency — `commitVersion` in
+  [version-store.ts](../apps/web/src/lib/version-store.ts) does an atomic
+  `UPDATE ... WHERE version = $baseVersion RETURNING version` as the
+  linearization point (no multi-statement transactions on the neon-http
+  driver), shared by the plain commit route and rollback
+- ✅ Full snapshot per version (`environmentVersions.snapshot`); commit
+  messages; `envhq history` / `diff` / `rollback` CLI commands + a version
+  history panel in the web UI
+  ([environment-history.tsx](../apps/web/src/app/(app)/projects/[id]/environments/[envId]/environment-history.tsx))
+- ✅ Server-side key-level conflict reporting — a stale `baseVersion` on
+  `POST /api/environments/[id]/commit` 409s with `currentVersion` +
+  `serverPairs` (only the keys actually in conflict); CLI prints a
+  yours-vs-server diff and tells the user to `pull` before retrying (no
+  auto rebase/replay — conflicts are surfaced, not auto-resolved)
+- ✅ Web edits (single-key add/edit) go through the same `commitVersion` path
+  via `POST /api/environments/[id]/vars`, so manual web changes are versioned
+  too, one version per save
 
 **Done when:** every change is a versioned, message-tagged revision you can diff
-and roll back, and concurrent pushes conflict safely at the key level.
+and roll back, and concurrent pushes conflict safely at the key level. — **Met.**
 
 ## M5 — Teams & access control  🧊
 
@@ -233,34 +226,27 @@ re-wrapping keys to members.
 ```
 M1 (auth) ✅ ──┐
 M2 (lifecycle) ──┤ (independent, ship early)
-M3 (sync) ──► M4 (versioning)
-M5 (teams) ── independent, foundational
+M3 (sync) ✅──► M4 (versioning) ✅
+M5 (teams) ── independent, foundational, next up
 M6 (zero-knowledge) ── after M5, largest
 ```
 
 ## Suggested order
 
-**M1 → M2 → M3 → M4**, then **M5**, then **M6**. M5 can start in parallel with
-M3/M4 if there's capacity, since it's on the access layer rather than the sync
-engine. M6 is deliberately last — it's the biggest commitment and benefits from
-M5's key model.
+**M1 → M2 → M3 → M4**, then **M5**, then **M6**. M1–M4 are done. M6 is
+deliberately last — it's the biggest commitment and benefits from M5's key
+model.
 
-**Next up: M3** (see above for full scope, current-state gap analysis, and
-sharp edges — a fresh agent should be able to start directly from that section
-plus [PLAN.md §1](./PLAN.md)). It builds on M2's multi-env link config
-(`.envhq/config.json`) and touches `env_vars` (new `deleted_at` column +
-partial unique index), `env-store.ts`, the import/export routes, and the CLI's
-`push`/`pull`.
+**Next up: M5** (Teams & access control — see above for scope; it's a 🧊
+foundational epic, so read [PLAN.md §8](./PLAN.md) in full and do a design
+pass before writing code). It's independent of the sync milestones but large:
+org-owned projects + a personal-org migration, Clerk Organizations, new
+`access_grants`/`groups`/`group_members` tables, a `getAccessibleProject(...)`
+access-layer refactor that touches every route, plus CLI and web surface
+(org switcher, members/groups admin, per-project Share dialog).
 
-M1 and M2 are fully shipped, but as of the **EnvHQ rebrand** the CLI package
-itself changed name (`@envsyncdev/cli` → `envhq`, unscoped) and got a version
-bump for the breaking config/env-var/keychain-service renames
-(`packages/cli/package.json` is `0.4.0` locally). **Nothing has been published
-under the new `envhq` name yet** — the last real npm install anyone could do is
-still the old `@envsyncdev/cli@0.2.1`/`0.3.0`, which predates
-`init`/`projects create`/`env create`/`env list` *and* the rebrand entirely.
-Before relying on the CLI externally: build, spot-check `envhq --version` and
-the legacy `.envsync/`/keychain migration, publish `envhq` fresh (see M1's
-publish checklist above, using the new package name), and deprecate
-`@envsyncdev/cli` on npm pointing at it. Ideally bundle this with M3's CLI
-changes rather than as a separate release.
+M1–M4 are fully shipped. The CLI package is published on npm as `envhq`
+(currently `0.6.0`, published under the post-rebrand name — the earlier
+"nothing published under `envhq` yet" warning is stale and has been removed).
+`packages/cli/package.json` is the source of truth for the current published
+version; bump it before any future publish per M1's publish checklist above.

@@ -11,6 +11,7 @@ import { encrypt, decrypt } from "./crypto";
 
 export interface EnvVarRow extends EnvPair {
   id: string;
+  updatedAt: Date;
 }
 
 /** Decrypt all of an environment's rows (with ids), ordered by key. */
@@ -29,6 +30,7 @@ export async function listVarRows(environmentId: string): Promise<EnvVarRow[]> {
         iv: row.iv,
         authTag: row.authTag,
       }),
+      updatedAt: row.updatedAt,
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -155,6 +157,7 @@ export async function listTrash(environmentId: string): Promise<EnvVarRow[]> {
         iv: row.iv,
         authTag: row.authTag,
       }),
+      updatedAt: row.updatedAt,
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
 }
