@@ -112,10 +112,20 @@ function resolveLinkedEnv(link: LinkConfig, name?: string): { name: string; id: 
   return { name: envName, ...env };
 }
 
-/** Resolve the target project: --project <name> looks it up, else the linked project. */
-async function resolveProject(opts: { project?: string }): Promise<{ id: string; name: string }> {
+/** Resolve --org <name> to an org id via a case-insensitive name match, or undefined (server defaults to the personal org). */
+async function resolveOrgId(opts: { org?: string }): Promise<string | undefined> {
+  if (!opts.org) return undefined;
+  const { orgs } = await apiClient.listOrgs();
+  const org = orgs.find((o) => o.name.toLowerCase() === opts.org!.toLowerCase());
+  if (!org) fail(`No org named "${opts.org}". Run \`envhq orgs\` to see your orgs.`);
+  return org.id;
+}
+
+/** Resolve the target project: --project <name> (optionally scoped by --org) looks it up, else the linked project. */
+async function resolveProject(opts: { project?: string; org?: string }): Promise<{ id: string; name: string }> {
   if (opts.project) {
-    const { projects } = await apiClient.listProjects();
+    const orgId = await resolveOrgId(opts);
+    const { projects } = await apiClient.listProjects(orgId);
     const project = projects.find((p) => p.name === opts.project);
     if (!project) fail(`No project named "${opts.project}".`);
     return project;
@@ -215,13 +225,29 @@ program
     }
   });
 
+// ---- orgs ----
+program
+  .command("orgs")
+  .description("List the orgs you belong to.")
+  .action(async () => {
+    try {
+      const { orgs } = await apiClient.listOrgs();
+      if (orgs.length === 0) return console.log("No orgs found.");
+      for (const o of orgs) console.log(`${o.name}  (${o.id})  — ${o.role}`);
+    } catch (err) {
+      fail(err instanceof ApiError ? err.message : String(err));
+    }
+  });
+
 // ---- projects ----
 const projectsCommand = program
   .command("projects")
   .description("List your projects.")
-  .action(async () => {
+  .option("--org <name>", "org to list projects from (defaults to your personal org)")
+  .action(async (opts: { org?: string }) => {
     try {
-      const { projects } = await apiClient.listProjects();
+      const orgId = await resolveOrgId(opts);
+      const { projects } = await apiClient.listProjects(orgId);
       if (projects.length === 0) return console.log("No projects yet.");
       for (const p of projects) console.log(`${p.name}  (${p.id})`);
     } catch (err) {
@@ -234,9 +260,11 @@ program
   .command("link")
   .description("Link this folder to a project, mapping every environment to a local file.")
   .option("-p, --project <name>", "project name")
-  .action(async (opts: { project?: string }) => {
+  .option("--org <name>", "org to pick the project from (defaults to your personal org)")
+  .action(async (opts: { project?: string; org?: string }) => {
     try {
-      const { projects } = await apiClient.listProjects();
+      const orgId = await resolveOrgId(opts);
+      const { projects } = await apiClient.listProjects(orgId);
       if (projects.length === 0) fail("You have no projects yet. Create one in the web app.");
 
       let project = opts.project
@@ -270,14 +298,16 @@ projectsCommand
   .description("Create a new project (and dev environment) and link this folder to it.")
   .argument("<name>", "project name")
   .option("-e, --env <names>", "comma-separated environment names", "dev")
+  .option("--org <name>", "org to create the project in (defaults to your personal org)")
   .option("--no-link", "don't link this folder to the new project")
-  .action(async (name: string, opts: { env: string; link: boolean }) => {
+  .action(async (name: string, opts: { env: string; org?: string; link: boolean }) => {
     try {
       const envNames = opts.env
         .split(",")
         .map((n) => n.trim())
         .filter(Boolean);
-      const { project, environments } = await apiClient.createProject(name, envNames);
+      const orgId = await resolveOrgId(opts);
+      const { project, environments } = await apiClient.createProject(name, envNames, orgId);
       console.log(`✔ Created project "${project.name}" (${environments.map((e) => e.name).join(", ")}).`);
 
       if (opts.link) {
@@ -297,7 +327,8 @@ program
   .description("Bootstrap this folder: create a project, environment(s), and link it.")
   .argument("[name]", "project name (defaults to the folder name)")
   .option("-e, --env <names>", "comma-separated environment names", "dev")
-  .action(async (name: string | undefined, opts: { env: string }) => {
+  .option("--org <name>", "org to create the project in (defaults to your personal org)")
+  .action(async (name: string | undefined, opts: { env: string; org?: string }) => {
     try {
       const existing = await readLinkConfig();
       if (existing) {
@@ -312,7 +343,8 @@ program
         .map((n) => n.trim())
         .filter(Boolean);
 
-      const { project, environments } = await apiClient.createProject(projectName, envNames);
+      const orgId = await resolveOrgId(opts);
+      const { project, environments } = await apiClient.createProject(projectName, envNames, orgId);
       console.log(`✔ Created project "${project.name}" (${environments.map((e) => e.name).join(", ")}).`);
 
       const link = buildLinkConfig(project, environments);

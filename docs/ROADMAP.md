@@ -311,8 +311,24 @@ sync milestones but large.*
   newly-active org (confirmed via a real `POST /api/projects` → 201),
   added an env var, committed, and granted access via the PR2 Share dialog
   — the full stack composing correctly across PR1–PR4 in one live session.
-- ⏳ PR5 — CLI `--org` support (flows into the same `orgId` param
-  `/api/projects` already accepts from PR1)
+- ✅ **PR5 — CLI `--org` support.** New `GET /api/orgs` (lists orgs the
+  caller belongs to — reuses the same `getOrganizationMembershipList` call
+  already made internally by `getClerkOrgRole`/`getOrCreatePersonalOrg`,
+  just newly exposed for listing). CLI: `envhq orgs`, and a `--org <name>`
+  flag on `projects`, `projects create`, `link`, and `init` — resolved via
+  a new `resolveOrgId` helper (case-insensitive name match against
+  `apiClient.listOrgs()`) and threaded into `listProjects(orgId?)` /
+  `createProject(name, environments?, orgId?)`, both of which already
+  accepted an `orgId` param server-side since PR1/PR4 with nothing feeding
+  it from the CLI until now. Omitting `--org` is byte-for-byte the same
+  behavior as before this PR (server defaults to the personal org) — purely
+  additive, no regression for existing scripts/CI. Deliberately **not**
+  stored in `.envhq/config.json`'s `LinkConfig` — every operational command
+  (`push`/`pull`/`commit`/etc.) only needs the linked project/environment
+  *id*, which already fully determines its org server-side; org selection
+  only matters at discovery time. `apps/web` side verified via `tsc`/`lint`
+  clean and the CLI build (`tsup`) succeeding; live cross-org verification
+  against the deployed CLI is yours to run post-publish.
 - ⏳ `env_scope` enforcement (prod-protection first) — column exists, inert
 
 **Done when:** an org admin can invite people, put them in groups, and grant

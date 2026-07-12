@@ -130,15 +130,18 @@ export interface Environment {
 export const apiClient = {
   me: (auth?: Options["auth"]) => request<{ userId: string }>("/api/me", { auth }),
 
-  listProjects: () => request<{ projects: Project[] }>("/api/projects"),
+  listOrgs: () => request<{ orgs: { id: string; name: string; role: string }[] }>("/api/orgs"),
+
+  listProjects: (orgId?: string) =>
+    request<{ projects: Project[] }>(`/api/projects${orgId ? `?orgId=${encodeURIComponent(orgId)}` : ""}`),
 
   getProject: (id: string) =>
     request<{ project: Project; environments: Environment[] }>(`/api/projects/${id}`),
 
-  createProject: (name: string, environments?: string[]) =>
+  createProject: (name: string, environments?: string[], orgId?: string) =>
     request<{ project: Project; environments: Environment[] }>("/api/projects", {
       method: "POST",
-      body: { name, ...(environments ? { environments } : {}) },
+      body: { name, ...(environments ? { environments } : {}), ...(orgId ? { orgId } : {}) },
     }),
 
   createEnvironment: (projectId: string, name: string, from?: string) =>
