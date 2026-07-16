@@ -89,7 +89,12 @@ function SetupFlow({
   function confirmRecovery(e: React.FormEvent) {
     e.preventDefault();
     const normalize = (s: string) => s.toUpperCase().replace(/[^0-9A-Z]/g, "");
-    if (normalize(confirmRecoveryPhrase) !== normalize(recoveryPhrase)) {
+    // Explicit non-empty check, not just relying on the submit button's
+    // `disabled` state — a disabled attribute on a non-native-rendered
+    // button (this design system's Button can lose native semantics
+    // depending on how it's composed) isn't a reliable enough gate for a
+    // step this security-sensitive.
+    if (!normalize(confirmRecoveryPhrase) || normalize(confirmRecoveryPhrase) !== normalize(recoveryPhrase)) {
       toast.error("That doesn't match your recovery phrase.");
       return;
     }
