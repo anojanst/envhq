@@ -17,7 +17,9 @@ import {
   DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog";
+import { generateDek, sealToPublicKey, encodeBase64 } from "@envhq/crypto";
 import { ProjectAvatar, EnvBadge } from "@/components/project-visuals";
+import { useCryptoSession } from "@/components/crypto-session-provider";
 import { cn, nativeSelectClass } from "@/lib/utils";
 import { api } from "@/lib/client";
 import type { OrgOption } from "./projects-browser";
@@ -69,6 +71,7 @@ export function CreateProjectDialog({
   callerUserId: string;
 }) {
   const router = useRouter();
+  const { status: cryptoStatus, publicKey } = useCryptoSession();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [orgId, setOrgId] = useState(defaultOrgId);
@@ -143,7 +146,7 @@ export function CreateProjectDialog({
     setSaving(true);
     setError(null);
     try {
-      await api("/api/projects", {
+      const { project } = await api<{ project: { id: string } }>("/api/projects", {
         method: "POST",
         body: {
           name: trimmed,
@@ -151,6 +154,22 @@ export function CreateProjectDialog({
           grants: pendingGrants.map(({ subjectType, subjectId, role }) => ({ subjectType, subjectId, role })),
         },
       });
+
+      // Best-effort (M6 PR2): register the creator's own wrapped DEK if
+      // their crypto session happens to be unlocked. Not required for the
+      // project to work yet — value encryption doesn't read this until a
+      // later PR — so a locked/not-set-up session just skips it silently
+      // rather than blocking project creation on ZK onboarding.
+      if (cryptoStatus === "unlocked" && publicKey) {
+        try {
+          const dek = await generateDek();
+          const wrappedDek = await sealToPublicKey(encodeBase64(dek), publicKey);
+          await api(`/api/projects/${project.id}/keys`, { method: "POST", body: { wrappedDek } });
+        } catch {
+          // Non-fatal — the project itself was created successfully either way.
+        }
+      }
+
       toast.success(`Project "${trimmed}" created`);
       handleOpenChange(false);
       router.refresh();

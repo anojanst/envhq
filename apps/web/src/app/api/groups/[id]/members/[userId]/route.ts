@@ -1,6 +1,7 @@
 import { getUserId } from "@/lib/auth";
 import { getClerkOrgRole } from "@/lib/orgs";
 import { getGroupOrgId, removeGroupMember } from "@/lib/groups";
+import { deleteProjectKeysForGroupMember } from "@/lib/project-keys";
 import { json, unauthorized, tokenExpired, notFound } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -20,6 +21,10 @@ export async function DELETE(req: Request, { params }: Params) {
 
   const removed = await removeGroupMember(id, memberUserId);
   if (!removed) return notFound("Member not found in this group");
+
+  // M6 PR6: they may still be able to decrypt via a direct grant or being
+  // an org admin — the next reconciliation pass re-wraps them if so.
+  await deleteProjectKeysForGroupMember(id, memberUserId);
 
   return json({ ok: true });
 }

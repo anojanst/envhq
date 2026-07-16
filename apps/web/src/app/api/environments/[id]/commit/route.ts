@@ -1,7 +1,6 @@
-import type { EnvPair } from "@envhq/parser";
 import { getUserId } from "@/lib/auth";
 import { getAccessibleEnvironment, isReadOnly } from "@/lib/access";
-import { upsertMany, deleteMany, listPairs } from "@/lib/env-store";
+import { upsertMany, deleteMany, listPairs, type EncryptedPair } from "@/lib/env-store";
 import { commitVersion } from "@/lib/version-store";
 import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
 
@@ -10,10 +9,12 @@ export const runtime = "nodejs";
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * Atomic three-way "commit" (M4): applies an upsert/delete batch and bumps
- * the environment's version via `commitVersion` (see version-store.ts for
- * the CAS + snapshot mechanics), or 409s with the live server state for the
- * keys involved if `baseVersion` is stale.
+ * Atomic three-way "commit" (M4, ciphertext-only since M6 PR4/PR5): applies
+ * an upsert/delete batch of already-encrypted pairs and bumps the
+ * environment's version via `commitVersion`, or 409s with the live
+ * ciphertext for the keys involved if `baseVersion` is stale — the caller
+ * (CLI) decrypts those with the project DEK to build its yours-vs-server
+ * diff, since the server can't do that itself anymore.
  */
 export async function POST(req: Request, { params }: Params) {
   const { userId, expired, scope } = await getUserId(req);
@@ -29,10 +30,13 @@ export async function POST(req: Request, { params }: Params) {
   const baseVersion = typeof body?.baseVersion === "number" ? body.baseVersion : null;
   if (baseVersion === null) return badRequest("baseVersion is required");
 
-  const upsert: EnvPair[] = Array.isArray(body?.upsert)
+  const upsert: EncryptedPair[] = Array.isArray(body?.upsert)
     ? body.upsert.filter(
-        (p: unknown): p is EnvPair =>
-          !!p && typeof (p as EnvPair).key === "string" && typeof (p as EnvPair).value === "string",
+        (p: unknown): p is EncryptedPair =>
+          !!p &&
+          typeof (p as EncryptedPair).key === "string" &&
+          typeof (p as EncryptedPair).ciphertext === "string" &&
+          typeof (p as EncryptedPair).iv === "string",
       )
     : [];
   const del: string[] = Array.isArray(body?.delete)

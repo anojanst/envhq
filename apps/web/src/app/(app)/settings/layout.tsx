@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { label: "Tokens", href: "/settings/tokens" },
   { label: "Groups", href: "/settings/groups" },
+  { label: "Security", href: "/settings/security" },
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {

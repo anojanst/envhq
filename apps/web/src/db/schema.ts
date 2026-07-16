@@ -50,6 +50,64 @@ export const personalOrgs = pgTable("personal_orgs", {
 });
 
 /**
+ * A user's zero-knowledge identity (M6 PR1) — one row per Clerk user, keyed
+ * by `userId` like `personalOrgs`. Holds the X25519 User Keypair's public
+ * key in the clear plus the private key wrapped two independent ways: under
+ * the passphrase-derived Master Key (day-to-day unlock) and under a
+ * separately generated Recovery Key (PLAN.md §6's mandatory Recovery Kit —
+ * the only other way in if the passphrase is lost). The server only ever
+ * sees ciphertext here; wrapping/unwrapping happens client-side via
+ * `@envhq/crypto`. `kdfT`/`kdfM`/`kdfP` are the Argon2id cost parameters
+ * used for this user's Master Key derivation (`@envhq/crypto`'s
+ * `KdfLimits`), persisted so re-deriving on a future unlock uses the same
+ * work factor even if the app's own default later changes.
+ */
+export const userKeys = pgTable("user_keys", {
+  userId: text("user_id").primaryKey(),
+  publicKey: text("public_key").notNull(),
+  kdfSalt: text("kdf_salt").notNull(),
+  kdfT: integer("kdf_t").notNull(),
+  kdfM: integer("kdf_m").notNull(),
+  kdfP: integer("kdf_p").notNull(),
+  wrappedPrivateKey: text("wrapped_private_key").notNull(),
+  wrappedPrivateKeyNonce: text("wrapped_private_key_nonce").notNull(),
+  wrappedPrivateKeyByRecovery: text("wrapped_private_key_by_recovery").notNull(),
+  wrappedPrivateKeyByRecoveryNonce: text("wrapped_private_key_by_recovery_nonce").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * A project's Data Encryption Key (M6 PR2), wrapped per member — one row per
+ * (project, user) who currently holds a usable copy of the DEK. DEK
+ * granularity is per-*project*, not per-environment, because
+ * `cloneVars`/`restoreSnapshot` copy `env_vars` ciphertext directly across
+ * environments within a project with no decrypt/re-encrypt step; a
+ * per-environment DEK would break that. `wrappedDek` is sealed
+ * (`@envhq/crypto`'s `sealToPublicKey`) to `subjectUserId`'s public key from
+ * `userKeys` — only that user's private key can open it, so the server
+ * never holds a usable DEK. This PR only ever self-registers a wrap for the
+ * project's creator; wrapping the DEK to *other* members (sharing) is PR6.
+ */
+export const projectKeys = pgTable(
+  "project_keys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    subjectUserId: text("subject_user_id").notNull(),
+    wrappedDek: text("wrapped_dek").notNull(),
+    wrappedByUserId: text("wrapped_by_user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("project_keys_project_id_subject_user_id_uq").on(t.projectId, t.subjectUserId),
+    index("project_keys_project_id_idx").on(t.projectId),
+  ],
+);
+
+/**
  * An environment under a project (dev, qa, staging, uat, prod, ...).
  * Unlimited per project; name is unique within its project.
  */
@@ -78,9 +136,16 @@ export const environments = pgTable(
 );
 
 /**
- * A single key/value pair inside an environment. The value is encrypted at
- * rest with AES-256-GCM: `valueCiphertext` + per-value `iv` + `authTag`.
- * Key is unique within its environment.
+ * A single key/value pair inside an environment. The value is
+ * zero-knowledge encrypted client-side (M6 PR4) under the project's DEK
+ * (`project_keys`) with XChaCha20-Poly1305 (`@envhq/crypto`'s
+ * `encryptValue`) — `valueCiphertext` (tag included) + per-value `iv`
+ * (an AEAD nonce despite the legacy column name, kept to avoid a rename
+ * migration). `authTag` is nullable and unused for new writes: unlike
+ * AES-256-GCM, XChaCha20-Poly1305's tag is embedded in the ciphertext
+ * output, so there's nothing separate to store. The server only ever
+ * stores/returns this ciphertext blob; it cannot decrypt it. Key is unique
+ * within its environment.
  */
 export const envVars = pgTable(
   "env_vars",
@@ -92,7 +157,7 @@ export const envVars = pgTable(
     key: text("key").notNull(),
     valueCiphertext: text("value_ciphertext").notNull(),
     iv: text("iv").notNull(),
-    authTag: text("auth_tag").notNull(),
+    authTag: text("auth_tag"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -112,7 +177,7 @@ export interface VersionSnapshotEntry {
   key: string;
   valueCiphertext: string;
   iv: string;
-  authTag: string;
+  authTag: string | null;
 }
 
 /**
@@ -295,3 +360,5 @@ export type Group = typeof groups.$inferSelect;
 export type GroupMember = typeof groupMembers.$inferSelect;
 export type AccessGrant = typeof accessGrants.$inferSelect;
 export type PersonalOrg = typeof personalOrgs.$inferSelect;
+export type UserKeys = typeof userKeys.$inferSelect;
+export type ProjectKeys = typeof projectKeys.$inferSelect;

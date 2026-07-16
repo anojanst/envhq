@@ -1,4 +1,3 @@
-import { serializeEnv } from "@envhq/parser";
 import { getUserId } from "@/lib/auth";
 import { getAccessibleEnvironment } from "@/lib/access";
 import { listPairs } from "@/lib/env-store";
@@ -8,7 +7,12 @@ export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
 
-// Copy-all / CLI pull: return the environment serialized as a .env blob.
+/**
+ * Copy-all / CLI pull: return the environment's ciphertext pairs. The
+ * server can no longer serialize a `.env` blob itself (that requires
+ * decrypting) — the caller decrypts each pair with the project DEK and
+ * calls `@envhq/parser`'s `serializeEnv` client-side.
+ */
 export async function GET(req: Request, { params }: Params) {
   const { userId, expired, scope } = await getUserId(req);
   if (expired) return tokenExpired();
@@ -19,5 +23,5 @@ export async function GET(req: Request, { params }: Params) {
   if (!owned) return notFound("Environment not found");
 
   const pairs = await listPairs(id);
-  return json({ content: serializeEnv(pairs), count: pairs.length, version: owned.env.version });
+  return json({ pairs, count: pairs.length, version: owned.env.version });
 }

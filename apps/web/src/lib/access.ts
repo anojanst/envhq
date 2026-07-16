@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { projects, environments, envVars, accessGrants, groupMembers, type Project } from "@/db/schema";
 import type { TokenScope } from "@/lib/auth";
-import { getClerkOrgRole, listMyOrgs } from "@/lib/orgs";
+import { getClerkOrgRole, listMyOrgs, listOrgAdminUserIds } from "@/lib/orgs";
 
 /**
  * Org-role-scoped lookups (M5). Every read/write path goes through one of
@@ -250,6 +250,31 @@ export async function listAccessibleProjectsWithEnvs(userId: string, orgId: stri
     .leftJoin(environments, eq(environments.projectId, projects.id))
     .where(and(eq(projects.orgId, orgId), ids === "all" ? undefined : inArray(projects.id, ids)))
     .orderBy(desc(projects.createdAt), asc(environments.createdAt));
+}
+
+/**
+ * Every userId with access to a project (M6 PR6): org admins/owners (who
+ * bypass `access_grants` entirely per `resolveRole`'s automatic-admin rule,
+ * so they don't otherwise show up here) + direct user grants + group
+ * members via a group grant. This is the *authorization* view, used only to
+ * drive DEK-wrap reconciliation — it says nothing about who currently holds
+ * a usable key (`project_keys` is the separate, derived source of truth for
+ * that).
+ */
+export async function listAccessibleUserIds(orgId: string, projectId: string): Promise<string[]> {
+  const [admins, direct, viaGroup] = await Promise.all([
+    listOrgAdminUserIds(orgId),
+    db
+      .select({ id: accessGrants.subjectId })
+      .from(accessGrants)
+      .where(and(eq(accessGrants.projectId, projectId), eq(accessGrants.subjectType, "user"))),
+    db
+      .select({ id: groupMembers.userId })
+      .from(accessGrants)
+      .innerJoin(groupMembers, sql`${accessGrants.subjectId} = ${groupMembers.groupId}::text`)
+      .where(and(eq(accessGrants.projectId, projectId), eq(accessGrants.subjectType, "group"))),
+  ]);
+  return [...new Set([...admins, ...direct.map((r) => r.id), ...viaGroup.map((r) => r.id)])];
 }
 
 /**

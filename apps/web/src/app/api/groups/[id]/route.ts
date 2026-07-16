@@ -1,6 +1,7 @@
 import { getUserId } from "@/lib/auth";
 import { getClerkOrgRole } from "@/lib/orgs";
 import { deleteGroup, getGroupOrgId } from "@/lib/groups";
+import { deleteProjectKeysForGroupEverywhere } from "@/lib/project-keys";
 import { json, unauthorized, tokenExpired, notFound } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -19,6 +20,11 @@ export async function DELETE(req: Request, { params }: Params) {
   // it exists" convention as the project access layer.
   const orgId = await getGroupOrgId(id);
   if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return notFound("Group not found");
+
+  // M6 PR6: read members/grants and clean up project_keys *before* deleting
+  // the group — deleteGroup cascades group_members away, and this needs
+  // them to know whose wraps to drop.
+  await deleteProjectKeysForGroupEverywhere(id);
 
   const deleted = await deleteGroup(orgId, id);
   if (!deleted) return notFound("Group not found");

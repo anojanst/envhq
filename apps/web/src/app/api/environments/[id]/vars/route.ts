@@ -23,14 +23,16 @@ export async function POST(req: Request, { params }: Params) {
 
   const body = await req.json().catch(() => null);
   const key = typeof body?.key === "string" ? body.key.trim() : "";
-  const value = typeof body?.value === "string" ? body.value : "";
+  const ciphertext = typeof body?.ciphertext === "string" ? body.ciphertext : "";
+  const iv = typeof body?.iv === "string" ? body.iv : "";
   if (!key) return badRequest("key is required");
   if (!KEY_RE.test(key)) {
     return badRequest("key must start with a letter or _ and contain only letters, digits, _");
   }
+  if (!ciphertext || !iv) return badRequest("ciphertext and iv are required");
 
   const outcome = await commitVersion(id, owned.env.version, userId, `Set ${key} via web`, () =>
-    upsertPair(id, key, value),
+    upsertPair(id, key, ciphertext, iv),
   );
   if (outcome.conflict) return versionConflict();
 

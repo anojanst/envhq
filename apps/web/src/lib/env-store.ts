@@ -1,21 +1,29 @@
 import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
-import type { EnvPair } from "@envhq/parser";
 import { db } from "@/db";
 import { envVars } from "@/db/schema";
-import { encrypt, decrypt } from "./crypto";
 
 /**
- * The encryption boundary for env values. Everything above this layer works in
- * plaintext pairs; everything below (the DB) only ever sees ciphertext.
+ * The env-var storage boundary (M6 PR4). Everything here is ciphertext —
+ * the server stores/returns exactly the `{ciphertext, iv}` blob a client
+ * gave it and never decrypts. Encrypting/decrypting happens client-side via
+ * `@envhq/crypto`, using a project's DEK (unwrapped from `project_keys`).
+ * `iv` is an AEAD nonce despite the legacy column name (kept to avoid a
+ * rename migration — see schema.ts's `envVars` comment).
  */
 
-export interface EnvVarRow extends EnvPair {
+export interface EncryptedPair {
+  key: string;
+  ciphertext: string;
+  iv: string;
+}
+
+export interface EncryptedVarRow extends EncryptedPair {
   id: string;
   updatedAt: Date;
 }
 
-/** Decrypt all of an environment's rows (with ids), ordered by key. */
-export async function listVarRows(environmentId: string): Promise<EnvVarRow[]> {
+/** All of an environment's active rows (with ids), ciphertext only, ordered by key. */
+export async function listVarRows(environmentId: string): Promise<EncryptedVarRow[]> {
   const rows = await db
     .select()
     .from(envVars)
@@ -25,45 +33,36 @@ export async function listVarRows(environmentId: string): Promise<EnvVarRow[]> {
     .map((row) => ({
       id: row.id,
       key: row.key,
-      value: decrypt({
-        ciphertext: row.valueCiphertext,
-        iv: row.iv,
-        authTag: row.authTag,
-      }),
+      ciphertext: row.valueCiphertext,
+      iv: row.iv,
       updatedAt: row.updatedAt,
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
 }
 
-/** Return an environment's variables as decrypted pairs (for export/CLI). */
-export async function listPairs(environmentId: string): Promise<EnvPair[]> {
+/** An environment's variables as ciphertext pairs (for CLI export/pull — decrypted client-side). */
+export async function listPairs(environmentId: string): Promise<EncryptedPair[]> {
   const rows = await listVarRows(environmentId);
-  return rows.map(({ key, value }) => ({ key, value }));
+  return rows.map(({ key, ciphertext, iv }) => ({ key, ciphertext, iv }));
 }
 
-/** Insert or update a single key, returning whether it was created. */
+/** Insert or update a single key from client-supplied ciphertext, returning whether it was created. */
 export async function upsertPair(
   environmentId: string,
   key: string,
-  value: string,
+  ciphertext: string,
+  iv: string,
 ): Promise<{ created: boolean }> {
-  const enc = encrypt(value);
   const result = await db
     .insert(envVars)
-    .values({
-      environmentId,
-      key,
-      valueCiphertext: enc.ciphertext,
-      iv: enc.iv,
-      authTag: enc.authTag,
-    })
+    .values({ environmentId, key, valueCiphertext: ciphertext, iv })
     .onConflictDoUpdate({
       target: [envVars.environmentId, envVars.key],
       targetWhere: sql`${envVars.deletedAt} is null`,
       set: {
-        valueCiphertext: enc.ciphertext,
-        iv: enc.iv,
-        authTag: enc.authTag,
+        valueCiphertext: ciphertext,
+        iv,
+        authTag: null,
         updatedAt: new Date(),
       },
     })
@@ -74,17 +73,18 @@ export async function upsertPair(
 }
 
 /**
- * Upsert/merge a batch of pairs (the paste-a-blob and CLI push behaviour):
- * new keys are inserted, existing keys are updated, untouched keys are kept.
+ * Upsert/merge a batch of already-encrypted pairs (the paste-a-blob and CLI
+ * push behaviour): new keys are inserted, existing keys are updated,
+ * untouched keys are kept.
  */
 export async function upsertMany(
   environmentId: string,
-  pairs: EnvPair[],
+  pairs: EncryptedPair[],
 ): Promise<{ created: number; updated: number }> {
   let created = 0;
   let updated = 0;
-  for (const { key, value } of pairs) {
-    const res = await upsertPair(environmentId, key, value);
+  for (const { key, ciphertext, iv } of pairs) {
+    const res = await upsertPair(environmentId, key, ciphertext, iv);
     if (res.created) created++;
     else updated++;
   }
@@ -141,8 +141,8 @@ export async function restorePair(varId: string) {
     .where(and(eq(envVars.id, varId), isNotNull(envVars.deletedAt)));
 }
 
-/** List an environment's soft-deleted vars (trash), decrypted, ordered by key. */
-export async function listTrash(environmentId: string): Promise<EnvVarRow[]> {
+/** List an environment's soft-deleted vars (trash), ciphertext only, ordered by key. */
+export async function listTrash(environmentId: string): Promise<EncryptedVarRow[]> {
   const rows = await db
     .select()
     .from(envVars)
@@ -152,11 +152,8 @@ export async function listTrash(environmentId: string): Promise<EnvVarRow[]> {
     .map((row) => ({
       id: row.id,
       key: row.key,
-      value: decrypt({
-        ciphertext: row.valueCiphertext,
-        iv: row.iv,
-        authTag: row.authTag,
-      }),
+      ciphertext: row.valueCiphertext,
+      iv: row.iv,
       updatedAt: row.updatedAt,
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
@@ -164,7 +161,8 @@ export async function listTrash(environmentId: string): Promise<EnvVarRow[]> {
 
 /**
  * Clone every var from one environment into another by copying ciphertext
- * directly — no decrypt/re-encrypt needed since values aren't keyed per-env.
+ * directly — no decrypt/re-encrypt needed since values aren't keyed per-env
+ * (the DEK is per-project, see `project_keys`).
  */
 export async function cloneVars(fromEnvironmentId: string, toEnvironmentId: string): Promise<number> {
   const rows = await db

@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn, nativeSelectClass as selectClass } from "@/lib/utils";
 import { api } from "@/lib/client";
+import { useProjectDek } from "@/hooks/use-project-dek";
+import { useProjectKeyReconciliation, reconcileProjectKeys } from "@/hooks/use-project-key-reconciliation";
 
 type Role = "viewer" | "editor" | "admin";
 type SubjectType = "user" | "group";
@@ -81,6 +83,8 @@ export function AccessManager({
   const [adding, setAdding] = useState(false);
   const [expandedGrantId, setExpandedGrantId] = useState<string | null>(null);
   const pickersLoading = members === null || groups === null;
+  const { dek } = useProjectDek(projectId);
+  useProjectKeyReconciliation(projectId, dek);
 
   useEffect(() => {
     Promise.all([
@@ -135,6 +139,11 @@ export function AccessManager({
       toast.success("Access granted");
       setSelectedSubject("");
       await reloadGrants();
+      // Deliver the key right away rather than waiting for the next
+      // opportunistic reconciliation — the granter is right here, already
+      // holding the DEK. Silent either way (e.g. the grantee hasn't
+      // finished ZK onboarding yet) — reconciliation just catches up later.
+      if (dek) void reconcileProjectKeys(projectId, dek);
     } catch (err) {
       toast.error((err as Error).message);
     } finally {

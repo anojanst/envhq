@@ -3,7 +3,6 @@ import { db } from "@/db";
 import { envVars } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
 import { getAccessibleVar, isReadOnly } from "@/lib/access";
-import { encrypt } from "@/lib/crypto";
 import { commitVersion } from "@/lib/version-store";
 import {
   json,
@@ -56,11 +55,10 @@ export async function PATCH(req: Request, { params }: Params) {
     }
     set.key = key;
   }
-  if (typeof body?.value === "string") {
-    const enc = encrypt(body.value);
-    set.valueCiphertext = enc.ciphertext;
-    set.iv = enc.iv;
-    set.authTag = enc.authTag;
+  if (typeof body?.ciphertext === "string" && typeof body?.iv === "string") {
+    set.valueCiphertext = body.ciphertext;
+    set.iv = body.iv;
+    set.authTag = null;
   }
   if (Object.keys(set).length === 1) return badRequest("Nothing to update");
 

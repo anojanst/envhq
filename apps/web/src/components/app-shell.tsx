@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { Folder, Settings, Users, type LucideIcon } from "lucide-react";
 import { BrandMark } from "@/components/brand";
+import { CryptoSessionProvider } from "@/components/crypto-session-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -62,26 +63,28 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   return (
-    <TooltipProvider>
-      <SidebarProvider defaultOpen={defaultOpen}>
-        <AppSidebar />
-        <SidebarInset>
-          {/* Sidebar is off-canvas on mobile (closed by default), so it needs
-              an entry point outside itself there. Desktop collapses the
-              sidebar in place instead, so its trigger lives in the sidebar
-              header — no bar needed. */}
-          <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur md:hidden">
-            <SidebarTrigger />
-            <Link href="/dashboard" aria-label="EnvHQ home">
-              <span className="font-semibold tracking-tight">
-                env<span className="text-brand">HQ</span>
-              </span>
-            </Link>
-          </header>
-          <div className="w-full flex-1 px-6 py-8">{children}</div>
-        </SidebarInset>
-      </SidebarProvider>
-    </TooltipProvider>
+    <CryptoSessionProvider>
+      <TooltipProvider>
+        <SidebarProvider defaultOpen={defaultOpen}>
+          <AppSidebar />
+          <SidebarInset>
+            {/* Sidebar is off-canvas on mobile (closed by default), so it needs
+                an entry point outside itself there. Desktop collapses the
+                sidebar in place instead, so its trigger lives in the sidebar
+                header — no bar needed. */}
+            <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur md:hidden">
+              <SidebarTrigger />
+              <Link href="/dashboard" aria-label="EnvHQ home">
+                <span className="font-semibold tracking-tight">
+                  env<span className="text-brand">HQ</span>
+                </span>
+              </Link>
+            </header>
+            <div className="w-full flex-1 px-6 py-8">{children}</div>
+          </SidebarInset>
+        </SidebarProvider>
+      </TooltipProvider>
+    </CryptoSessionProvider>
   );
 }
 

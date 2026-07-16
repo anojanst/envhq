@@ -84,11 +84,15 @@ export async function withGrantNames<G extends GrantRow>(grants: G[]): Promise<(
   return grants.map((g) => ({ ...g, name: names[g.subjectId] ?? g.subjectId }));
 }
 
-/** Revoke a grant. Returns whether a row was actually deleted (for a 404 vs. no-op). */
-export async function deleteGrant(projectId: string, grantId: string): Promise<boolean> {
+/**
+ * Revoke a grant. Returns the deleted row (so the caller can clean up its
+ * `project_keys` wrap(s), M6 PR6) or `null` if nothing matched (404 vs.
+ * no-op).
+ */
+export async function deleteGrant(projectId: string, grantId: string): Promise<GrantRow | null> {
   const deleted = await db
     .delete(accessGrants)
     .where(and(eq(accessGrants.id, grantId), eq(accessGrants.projectId, projectId)))
-    .returning({ id: accessGrants.id });
-  return deleted.length > 0;
+    .returning();
+  return deleted[0] ? toGrantRow(deleted[0]) : null;
 }

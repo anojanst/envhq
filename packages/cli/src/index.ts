@@ -17,7 +17,7 @@ import {
 } from "./config.ts";
 import { readBase, writeBase } from "./base.ts";
 import { computeThreeWayDiff } from "./sync.ts";
-import { apiClient, ApiError, type Environment } from "./api.ts";
+import { apiClient, ApiError, type Environment, type EncryptedPair } from "./api.ts";
 import { runLoginFlow } from "./auth/login.ts";
 import {
   storeSession,
@@ -25,6 +25,9 @@ import {
   resolveToken,
   keychainAvailable,
 } from "./token-store.ts";
+import { resolveKeypair, unlockInteractive, resolveProjectDek } from "./crypto-session.ts";
+import { loadCachedKeypair, clearCachedKeypair, type CachedKeypair } from "./crypto-store.ts";
+import { encryptValue, decryptValue } from "@envhq/crypto";
 
 /** Whole days until an ISO timestamp (never negative). */
 function daysUntil(iso: string): number {
@@ -110,6 +113,30 @@ function resolveLinkedEnv(link: LinkConfig, name?: string): { name: string; id: 
     );
   }
   return { name: envName, ...env };
+}
+
+/** Decrypts a batch of ciphertext pairs under a project DEK into plaintext `EnvPair[]`. */
+async function decryptPairs(dek: Uint8Array, pairs: EncryptedPair[]): Promise<EnvPair[]> {
+  return Promise.all(
+    pairs.map(async (p) => ({ key: p.key, value: await decryptValue(dek, { ciphertext: p.ciphertext, nonce: p.iv }) })),
+  );
+}
+
+/** Encrypts a batch of plaintext pairs under a project DEK into wire-format ciphertext. */
+async function encryptPairs(dek: Uint8Array, pairs: EnvPair[]): Promise<EncryptedPair[]> {
+  return Promise.all(
+    pairs.map(async (p) => {
+      const { ciphertext, nonce } = await encryptValue(dek, p.value);
+      return { key: p.key, ciphertext, iv: nonce };
+    }),
+  );
+}
+
+/** Resolves the caller's keypair + this environment's project DEK together — every command that touches values needs both. */
+async function resolveDek(projectId: string): Promise<{ keypair: CachedKeypair; dek: Uint8Array }> {
+  const keypair = await resolveKeypair();
+  const dek = await resolveProjectDek(projectId, keypair);
+  return { keypair, dek };
 }
 
 /** Resolve --org <name> to an org id via a case-insensitive name match, or undefined (server defaults to the personal org). */
@@ -207,9 +234,40 @@ program
   .description("Remove stored credentials.")
   .action(async () => {
     const config = await readGlobalConfig();
-    if (config) clearSession(config.url);
+    if (config) {
+      clearSession(config.url);
+      clearCachedKeypair(config.url);
+    }
     await clearGlobalConfig();
     console.log("✔ Logged out.");
+  });
+
+// ---- unlock / lock ----
+program
+  .command("unlock")
+  .description("Unlock your end-to-end encryption key for this machine (cached until `lock`/`logout`).")
+  .action(async () => {
+    try {
+      const config = await readGlobalConfig();
+      if (!config) fail("Not logged in. Run `envhq login` first.");
+      if (loadCachedKeypair(config.url)) {
+        console.log("✔ Already unlocked (cached in your OS keychain).");
+        return;
+      }
+      await unlockInteractive(config.url);
+      console.log("✔ Unlocked.");
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+  });
+
+program
+  .command("lock")
+  .description("Forget the cached encryption key on this machine.")
+  .action(async () => {
+    const config = await readGlobalConfig();
+    if (config) clearCachedKeypair(config.url);
+    console.log("✔ Locked.");
   });
 
 // ---- whoami ----
@@ -454,6 +512,7 @@ program
       const link = await requireLink();
       if (opts.all && envArg) fail("Pass either an environment or --all, not both.");
       if (opts.all && opts.file) fail("--file can't be combined with --all.");
+      const { dek } = await resolveDek(link.projectId);
 
       const targets = opts.all
         ? Object.keys(link.environments).map((name) => resolveLinkedEnv(link, name))
@@ -462,8 +521,8 @@ program
       for (const env of targets) {
         const file = opts.file ?? env.file;
         await confirmProdIfNeeded(env.name, opts.yes);
-        const { content, count, version: remoteVersion } = await apiClient.exportEnv(env.id);
-        const remotePairs = parseEnv(content);
+        const { pairs, count, version: remoteVersion } = await apiClient.exportEnv(env.id);
+        const remotePairs = await decryptPairs(dek, pairs);
 
         const exists = await fileExists(file);
         let localRaw: string | null = null;
@@ -542,6 +601,7 @@ program
         const link = await requireLink();
         if (opts.all && envArg) fail("Pass either an environment or --all, not both.");
         if (opts.all && opts.file) fail("--file can't be combined with --all.");
+        const { dek } = await resolveDek(link.projectId);
 
         const targets = opts.all
           ? Object.keys(link.environments).map((name) => resolveLinkedEnv(link, name))
@@ -565,8 +625,8 @@ program
           // version sent to /commit) are both computed against this same
           // fresh read, not the on-disk base, so a push never false-conflicts
           // just because the disk-cached version is behind reality.
-          const { content: remoteContent, version: remoteVersion } = await apiClient.exportEnv(env.id);
-          const remotePairs = parseEnv(remoteContent);
+          const { pairs: remoteEncrypted, version: remoteVersion } = await apiClient.exportEnv(env.id);
+          const remotePairs = await decryptPairs(dek, remoteEncrypted);
 
           const base = await readBase(env.id);
           const { toUpsert, toDelete } = base
@@ -584,18 +644,19 @@ program
           try {
             result = await apiClient.commit(env.id, {
               baseVersion: remoteVersion,
-              upsert: toUpsert,
+              upsert: await encryptPairs(dek, toUpsert),
               delete: toDelete,
               message: opts.message,
             });
           } catch (err) {
             if (err instanceof ApiError && err.status === 409) {
-              const data = err.data as { currentVersion: number; serverPairs: { key: string; value: string }[] };
+              const data = err.data as { currentVersion: number; serverPairs: EncryptedPair[] };
               const localValues = new Map(parsed.map((p) => [p.key, p.value]));
+              const serverPairs = await decryptPairs(dek, data.serverPairs);
               console.error(
                 `✖ ${env.name} has moved to version ${data.currentVersion} since your last read. Conflicting keys:`,
               );
-              for (const server of data.serverPairs) {
+              for (const server of serverPairs) {
                 console.error(`  ${server.key}: yours="${localValues.get(server.key) ?? "(deleted)"}", server="${server.value}"`);
               }
               fail(`Run \`envhq pull\` to get the latest, then push again.`);
@@ -630,6 +691,7 @@ program
       const link = await requireLink();
       if (opts.all && envArg) fail("Pass either an environment or --all, not both.");
       if (opts.all && opts.file) fail("--file can't be combined with --all.");
+      const { dek } = await resolveDek(link.projectId);
 
       const targets = opts.all
         ? Object.keys(link.environments).map((name) => resolveLinkedEnv(link, name))
@@ -652,8 +714,8 @@ program
           continue;
         }
 
-        const { content: remoteContent } = await apiClient.exportEnv(env.id);
-        const remotePairs = parseEnv(remoteContent);
+        const { pairs: remoteEncrypted } = await apiClient.exportEnv(env.id);
+        const remotePairs = await decryptPairs(dek, remoteEncrypted);
         const { toUpsert, toDelete } = computeThreeWayDiff(parsed, base.keys, remotePairs);
 
         if (toUpsert.length === 0 && toDelete.length === 0) {

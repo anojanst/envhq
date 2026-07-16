@@ -1,4 +1,3 @@
-import type { EnvPair } from "@envhq/parser";
 import { readGlobalConfig, writeGlobalConfig } from "./config.ts";
 import { resolveToken, storeSession, envToken } from "./token-store.ts";
 import { runLoginFlow } from "./auth/login.ts";
@@ -127,6 +126,25 @@ export interface Environment {
   name: string;
 }
 
+/** An env-var pair as it crosses the wire — ciphertext only, decrypted client-side (M6 PR5). */
+export interface EncryptedPair {
+  key: string;
+  ciphertext: string;
+  iv: string;
+}
+
+export interface UserKeys {
+  publicKey: string;
+  kdfSalt: string;
+  kdfT: number;
+  kdfM: number;
+  kdfP: number;
+  wrappedPrivateKey: string;
+  wrappedPrivateKeyNonce: string;
+  wrappedPrivateKeyByRecovery: string;
+  wrappedPrivateKeyByRecoveryNonce: string;
+}
+
 export const apiClient = {
   me: (auth?: Options["auth"]) => request<{ userId: string }>("/api/me", { auth }),
 
@@ -151,16 +169,21 @@ export const apiClient = {
     }),
 
   exportEnv: (envId: string) =>
-    request<{ content: string; count: number; version: number }>(`/api/environments/${envId}/export`),
+    request<{ pairs: EncryptedPair[]; count: number; version: number }>(`/api/environments/${envId}/export`),
 
   commit: (
     envId: string,
-    body: { baseVersion: number; upsert?: EnvPair[]; delete?: string[]; message?: string },
+    body: { baseVersion: number; upsert?: EncryptedPair[]; delete?: string[]; message?: string },
   ) =>
     request<{ version: number; created: number; updated: number; deleted: number }>(
       `/api/environments/${envId}/commit`,
       { method: "POST", body },
     ),
+
+  getUserKeys: () => request<UserKeys>("/api/users/me/keys"),
+
+  getProjectKey: (projectId: string) =>
+    request<{ wrappedDek: string }>(`/api/projects/${projectId}/keys/me`),
 
   listVersions: (envId: string) =>
     request<{

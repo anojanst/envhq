@@ -1,0 +1,1 @@
+ALTER TABLE "env_vars" ALTER COLUMN "auth_tag" DROP NOT NULL;

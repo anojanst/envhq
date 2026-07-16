@@ -6,8 +6,8 @@ export default defineConfig({
   format: ["esm"],
   target: "node20",
   clean: true,
-  // Bundle the workspace parser into the CLI.
-  noExternal: ["@envhq/parser"],
+  // Bundle the workspace parser + crypto primitives into the CLI.
+  noExternal: ["@envhq/parser", "@envhq/crypto"],
   // The keychain is a native (.node) addon — it can't be bundled, so it stays a
   // real runtime dependency resolved from node_modules at install time.
   external: ["@napi-rs/keyring"],

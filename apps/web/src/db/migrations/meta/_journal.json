@@ -57,6 +57,27 @@
       "when": 1783851853390,
       "tag": "0007_giant_stingray",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784191871677,
+      "tag": "0008_vengeful_nightshade",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784195065511,
+      "tag": "0009_bitter_triton",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784196355370,
+      "tag": "0010_serious_prism",
+      "breakpoints": true
     }
   ]
 }

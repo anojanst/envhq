@@ -84,6 +84,20 @@ export async function listMyOrgs(userId: string): Promise<{ id: string; name: st
 }
 
 /**
+ * Every Clerk org:admin/owner userId in an org — used by M6 PR6's DEK
+ * reconciliation to include org admins in a project's "who should have a
+ * key" set, since `lib/access.ts`'s admin-role bypass grants them
+ * *authorization* with no `access_grants` row to enumerate them from.
+ */
+export async function listOrgAdminUserIds(orgId: string): Promise<string[]> {
+  const client = await clerkClient();
+  const { data: memberships } = await client.organizations.getOrganizationMembershipList({
+    organizationId: orgId,
+  });
+  return memberships.filter((m) => m.role === ADMIN_ROLE && m.publicUserData).map((m) => m.publicUserData!.userId);
+}
+
+/**
  * Resolves which org an org-context-less request (project list/create, groups,
  * org members) acts on: an explicit `requestedOrgId` if the caller names one
  * and is a Clerk member of it, else the caller's personal org. Shared by the
