@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Trash2, User, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, ShieldAlert, Trash2, User, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,6 +17,8 @@ import { api } from "@/lib/client";
 
 type Role = "viewer" | "editor" | "admin";
 type SubjectType = "user" | "group";
+/** Per-env role cap on a grant, e.g. `{ prod: "viewer" }` — envs absent from the map inherit the grant's role. */
+type EnvScope = Partial<Record<string, Role>>;
 
 interface Grant {
   id: string;
@@ -24,6 +26,7 @@ interface Grant {
   subjectId: string;
   name: string;
   role: Role;
+  envScope: EnvScope | null;
   createdAt: string;
 }
 
@@ -40,7 +43,13 @@ interface GroupOption {
   memberCount: number;
 }
 
+interface EnvironmentOption {
+  id: string;
+  name: string;
+}
+
 const ROLES: Role[] = ["viewer", "editor", "admin"];
+const ROLE_RANK: Record<Role, number> = { viewer: 1, editor: 2, admin: 3 };
 const ROLE_LABEL: Record<Role, string> = { viewer: "Viewer", editor: "Editor", admin: "Admin" };
 
 const selectClass =
@@ -71,20 +80,23 @@ export function ShareDialog({
   const [grants, setGrants] = useState<Grant[] | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
   const [groups, setGroups] = useState<GroupOption[] | null>(null);
+  const [environments, setEnvironments] = useState<EnvironmentOption[] | null>(null);
   const [selectedSubject, setSelectedSubject] = useState("");
   const [selectedRole, setSelectedRole] = useState<Role>("viewer");
   const [adding, setAdding] = useState(false);
-  const loading = grants === null || members === null || groups === null;
+  const [expandedGrantId, setExpandedGrantId] = useState<string | null>(null);
+  const loading = grants === null || members === null || groups === null || environments === null;
 
   useEffect(() => {
     if (!open) return;
     Promise.all([
-      api<{ grants: Grant[] }>(`/api/projects/${projectId}/access`),
+      api<{ grants: Grant[]; environments: EnvironmentOption[] }>(`/api/projects/${projectId}/access`),
       api<{ members: Member[] }>(`/api/projects/${projectId}/access/members`),
       api<{ groups: GroupOption[] }>(`/api/projects/${projectId}/access/groups`),
     ])
       .then(([g, m, gr]) => {
         setGrants(g.grants);
+        setEnvironments(g.environments);
         setMembers(m.members);
         setGroups(gr.groups);
       })
@@ -92,8 +104,30 @@ export function ShareDialog({
   }, [open, projectId]);
 
   async function reloadGrants() {
-    const data = await api<{ grants: Grant[] }>(`/api/projects/${projectId}/access`);
+    const data = await api<{ grants: Grant[]; environments: EnvironmentOption[] }>(`/api/projects/${projectId}/access`);
     setGrants(data.grants);
+    setEnvironments(data.environments);
+  }
+
+  /** Set (or clear, when `cap` is `""`) one environment's role cap on a grant, leaving the others untouched. */
+  async function updateEnvCap(grant: Grant, envName: string, cap: Role | "") {
+    const nextScope: EnvScope = { ...grant.envScope };
+    if (cap) nextScope[envName] = cap;
+    else delete nextScope[envName];
+    try {
+      await api(`/api/projects/${projectId}/access`, {
+        method: "POST",
+        body: {
+          subjectType: grant.subjectType,
+          subjectId: grant.subjectId,
+          role: grant.role,
+          envScope: Object.keys(nextScope).length > 0 ? nextScope : null,
+        },
+      });
+      await reloadGrants();
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
   }
 
   async function addGrant(e: React.FormEvent) {
@@ -163,31 +197,71 @@ export function ShareDialog({
             <ul className="flex flex-col gap-2">
               {grants.map((g) => {
                 const SubjectIcon = g.subjectType === "group" ? Users : User;
+                const isExpanded = expandedGrantId === g.id;
+                const isRestricted = !!g.envScope && Object.keys(g.envScope).length > 0;
+                const availableCaps = ROLES.filter((r) => ROLE_RANK[r] <= ROLE_RANK[g.role]);
                 return (
-                  <li
-                    key={g.id}
-                    className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium">
-                      <SubjectIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{g.name}</span>
-                    </span>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <select
-                        className={selectClass}
-                        value={g.role}
-                        onChange={(e) => changeRole(g, e.target.value as Role)}
+                  <li key={g.id} className="rounded-md border">
+                    <div className="flex items-center justify-between gap-2 px-3 py-2">
+                      <button
+                        type="button"
+                        className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium"
+                        onClick={() => setExpandedGrantId(isExpanded ? null : g.id)}
+                        title="Restrict access to specific environments"
                       >
-                        {ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {ROLE_LABEL[r]}
-                          </option>
-                        ))}
-                      </select>
-                      <Button variant="ghost" size="icon" className="size-7" onClick={() => revoke(g)}>
-                        <Trash2 className="size-4" />
-                      </Button>
+                        {isExpanded ? (
+                          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                        )}
+                        <SubjectIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{g.name}</span>
+                        {isRestricted && (
+                          <ShieldAlert className="size-3.5 shrink-0 text-amber-600" aria-label="Restricted on some environments" />
+                        )}
+                      </button>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <select
+                          className={selectClass}
+                          value={g.role}
+                          onChange={(e) => changeRole(g, e.target.value as Role)}
+                        >
+                          {ROLES.map((r) => (
+                            <option key={r} value={r}>
+                              {ROLE_LABEL[r]}
+                            </option>
+                          ))}
+                        </select>
+                        <Button variant="ghost" size="icon" className="size-7" onClick={() => revoke(g)}>
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
                     </div>
+                    {isExpanded && (
+                      <div className="flex flex-col gap-1.5 border-t bg-muted/30 px-3 py-2">
+                        {(environments ?? []).length === 0 ? (
+                          <p className="text-xs text-muted-foreground">No environments yet.</p>
+                        ) : (
+                          (environments ?? []).map((env) => (
+                            <div key={env.id} className="flex items-center justify-between gap-2">
+                              <span className="truncate text-xs text-muted-foreground">{env.name}</span>
+                              <select
+                                className={cn(selectClass, "h-7 text-xs")}
+                                value={g.envScope?.[env.name] ?? ""}
+                                onChange={(e) => updateEnvCap(g, env.name, e.target.value as Role | "")}
+                              >
+                                <option value="">Full access ({ROLE_LABEL[g.role]})</option>
+                                {availableCaps.map((r) => (
+                                  <option key={r} value={r}>
+                                    {ROLE_LABEL[r]} only
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </li>
                 );
               })}

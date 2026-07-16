@@ -43,7 +43,7 @@ export default function GettingStartedPage() {
       <CodeBlock>{`npm install -g envhq
 # or run it without installing:
 npx envhq <command>`}</CodeBlock>
-      <P>Requires Node.js ≥ 18. You never need to know a server URL — it's baked into the CLI build.</P>
+      <P>Requires Node.js ≥ 20. You never need to know a server URL — it&apos;s baked into the CLI build.</P>
 
       <H2>5. Log in from the terminal</H2>
       <CodeBlock>{`envhq login`}</CodeBlock>

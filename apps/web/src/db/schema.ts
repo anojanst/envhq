@@ -231,9 +231,11 @@ export const groupMembers = pgTable(
  * Project-level access grant (M5), to a user or a group. Effective role is
  * the highest-ranked grant across direct + group membership, unioned with
  * automatic admin access for Clerk org owner/admin (resolved in
- * `lib/access.ts`, not stored here). `envScope` exists per PLAN.md §8 but is
- * not read or enforced anywhere yet — project-level role is the only gate
- * until a later milestone phases it in.
+ * `lib/access.ts`, not stored here). `envScope` (PLAN.md §8) is a JSON text
+ * blob of `{ [envName]: Role }` — a per-environment cap on this grant's role
+ * (e.g. Editor project-wide, Viewer-only in `prod`); an env absent from the
+ * map is uncapped. Enforced in `lib/access.ts`'s `getAccessibleEnvironment`/
+ * `getAccessibleVar` only — project-level actions ignore it.
  */
 export const accessGrants = pgTable(
   "access_grants",

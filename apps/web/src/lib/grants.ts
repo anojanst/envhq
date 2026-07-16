@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accessGrants } from "@/db/schema";
-import type { Role } from "@/lib/access";
+import { parseEnvScope, type EnvScope, type Role } from "@/lib/access";
 
 /**
  * `access_grants` CRUD (M5 PR2 direct users, PR3b groups). Kept separate
@@ -17,6 +17,7 @@ export interface GrantRow {
   subjectType: SubjectType;
   subjectId: string;
   role: Role;
+  envScope: EnvScope | null;
   createdAt: Date;
 }
 
@@ -26,6 +27,7 @@ function toGrantRow(row: typeof accessGrants.$inferSelect): GrantRow {
     subjectType: row.subjectType as SubjectType,
     subjectId: row.subjectId,
     role: row.role as Role,
+    envScope: parseEnvScope(row.envScope),
     createdAt: row.createdAt,
   };
 }
@@ -40,20 +42,32 @@ export async function listGrants(projectId: string): Promise<GrantRow[]> {
   return rows.map(toGrantRow);
 }
 
-/** Grant (or update the role of) a user or group on a project. */
+/**
+ * Grant (or update the role of) a user or group on a project.
+ *
+ * `envScope` is a separate optional argument, not folded into `role`: pass
+ * `undefined` to leave an existing grant's env-scope untouched (e.g. a plain
+ * role change from the inline dropdown shouldn't wipe a prod restriction),
+ * or an explicit `EnvScope | null` to set/clear it.
+ */
 export async function upsertGrant(
   orgId: string,
   projectId: string,
   subjectType: SubjectType,
   subjectId: string,
   role: Role,
+  envScope?: EnvScope | null,
 ): Promise<GrantRow> {
+  const envScopeText = envScope ? JSON.stringify(envScope) : null;
+  const updateSet: Partial<typeof accessGrants.$inferInsert> = { role, updatedAt: new Date() };
+  if (envScope !== undefined) updateSet.envScope = envScopeText;
+
   const [row] = await db
     .insert(accessGrants)
-    .values({ orgId, projectId, subjectType, subjectId, role })
+    .values({ orgId, projectId, subjectType, subjectId, role, envScope: envScopeText })
     .onConflictDoUpdate({
       target: [accessGrants.projectId, accessGrants.subjectType, accessGrants.subjectId],
-      set: { role, updatedAt: new Date() },
+      set: updateSet,
     })
     .returning();
   return toGrantRow(row!);

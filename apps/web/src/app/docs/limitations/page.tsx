@@ -34,18 +34,30 @@ export default function LimitationsPage() {
       </QA>
 
       <H2>Data safety</H2>
-      <QA q="If I delete a variable, environment, or project, can I get it back?">
+      <QA q="If I delete a variable, can I get it back?">
         <P>
-          No — not today. Deletion is currently permanent: there is no user-facing undo, trash,
-          or version history. If a secret matters, keep an independent backup of it (a password
-          manager, a private vault, etc.) in addition to EnvHQ.
+          Yes — every change to an environment is a versioned, immutable snapshot. Open{" "}
+          <Code>History</Code> on the environment (web) or run <Code>envhq history</Code> /{" "}
+          <Code>envhq rollback &lt;version&gt;</Code> (CLI) to restore an earlier version,
+          bringing back anything deleted or changed since.
+        </P>
+      </QA>
+      <QA q="If I delete an entire environment or project, can I get it back?">
+        <P>
+          No — that&apos;s still permanent, with no undo, trash, or recovery path. Version history
+          only covers changes to variables within an environment, not deleting the
+          environment/project itself. If a secret matters, keep an independent backup of it (a
+          password manager, a private vault, etc.) in addition to EnvHQ.
         </P>
       </QA>
       <QA q="If I push a partial or empty local file, will it wipe out my remote environment?">
         <P>
-          <Code>push</Code> is an upsert-merge: it adds and updates keys from your local file but
-          never deletes a remote key just because it's missing locally. A three-way sync with
-          deletion tracking, previews, and safety confirmations is planned but not built yet.
+          <Code>push</Code> does a three-way sync against the last-known state, not a blind
+          overwrite: it adds new keys, updates changed ones, and only deletes a remote key if you
+          removed it locally <em>and</em> it hasn&apos;t changed remotely since — and it&apos;ll ask for
+          confirmation before deleting anything (skippable with <Code>--yes</Code>). Run{" "}
+          <Code>envhq diff</Code> first to preview exactly what a push would do. And since every
+          push is a version, you can always <Code>rollback</Code> if something still goes wrong.
         </P>
       </QA>
       <QA q="Can EnvHQ's operator see my secrets?">
@@ -53,17 +65,24 @@ export default function LimitationsPage() {
           Technically, yes. Encryption is server-side (AES-256-GCM) using a key the operator
           holds — this is not zero-knowledge encryption. See the{" "}
           <Link href="/docs/security" className="underline underline-offset-2">Security model</Link>{" "}
-          page for details and what's planned.
+          page for details and what&apos;s planned.
         </P>
       </QA>
 
       <H2>Access &amp; collaboration</H2>
       <QA q="Can I share a project with my team?">
         <P>
-          Not yet. EnvHQ v1 is personal-only — every project belongs to a single account, with no
-          teams, organizations, or role-based permissions. The only way to give someone else
-          access today is to share your login or a CLI token, which gives them full access within
-          that token&apos;s scope — not recommended. Team access is on the roadmap.
+          Yes. Create or switch to a team organization from the sidebar switcher, invite people
+          (handled by Clerk&apos;s hosted invite UI under <Code>Teams</Code>), then use{" "}
+          <strong>Manage access</strong> on a project to grant an org member — or a group of
+          them, from <Code>Settings → Groups</Code> — Viewer, Editor, or Admin access. Org
+          admins/owners get admin access to every project in the org automatically.
+        </P>
+      </QA>
+      <QA q="Can I give someone access to just one environment, like dev but not prod?">
+        <P>
+          Not yet — a role grant applies to the whole project, every environment included.
+          Per-environment scoping is planned but not built yet.
         </P>
       </QA>
       <QA q="I think my CLI token leaked — what do I do?">
@@ -83,17 +102,19 @@ export default function LimitationsPage() {
       </QA>
       <QA q="Should I store production secrets in EnvHQ?">
         <P>
-          That's your call, but weigh it against the limitations on this page — especially the
-          lack of versioning/backups and the personal-only access model — before relying on it as
-          your sole store for anything business-critical.
+          That&apos;s your call, but weigh it against the limitations on this page — especially the
+          lack of zero-knowledge encryption and the fact that deleting an entire environment or
+          project is still unrecoverable — before relying on it as your sole store for anything
+          business-critical.
         </P>
       </QA>
       <QA q="What's actively being worked on?">
         <P>
-          Roughly in order: a proper three-way sync engine with safe deletion and previews,
-          version history with rollback, team/organization access control, and — further out —
-          zero-knowledge (client-side) encryption. This page and the Security model page will be
-          updated as each ships.
+          Per-environment access scoping (e.g. Editor on <Code>dev</Code> but Viewer-only on{" "}
+          <Code>prod</Code>) is next, followed by zero-knowledge (client-side) encryption further
+          out. The three-way sync engine, version history with rollback, and team/organization
+          access control described elsewhere on this page have already shipped. This page and the
+          Security model page will be updated as each further piece ships.
         </P>
       </QA>
     </div>

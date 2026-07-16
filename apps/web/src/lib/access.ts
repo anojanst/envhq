@@ -19,18 +19,47 @@ import { getClerkOrgRole, listMyOrgs } from "@/lib/orgs";
  * `undefined` too, so a scoped token 404s on other projects. `isReadOnly`/
  * `isFullAccess` are a separate, orthogonal gate on token *capability*
  * (read vs write), unrelated to org role.
+ *
+ * `getAccessibleEnvironment`/`getAccessibleVar` additionally cap the
+ * resolved role per-environment via each grant's `env_scope` (e.g. a group
+ * granted Editor project-wide but capped to Viewer in `prod`) — see
+ * `capRoleForEnv`. `getAccessibleProject` has no single environment in
+ * scope, so it stays uncapped; project-level actions (rename, delete, manage
+ * access) aren't env-scoped.
  */
 
 export type Role = "viewer" | "editor" | "admin";
 
+/** Per-env role cap on a grant, e.g. `{ prod: "viewer" }` — env names absent from the map are uncapped. */
+export type EnvScope = Partial<Record<string, Role>>;
+
 const ROLE_RANK: Record<Role, number> = { viewer: 1, editor: 2, admin: 3 };
 
-function isRole(value: string): value is Role {
+export function isRole(value: string): value is Role {
   return value === "viewer" || value === "editor" || value === "admin";
 }
 
 function meetsRole(have: Role, need: Role): boolean {
   return ROLE_RANK[have] >= ROLE_RANK[need];
+}
+
+/** Parses the `access_grants.env_scope` text column; malformed JSON (shouldn't happen — we control writes) is treated as no restriction. */
+export function parseEnvScope(raw: string | null): EnvScope | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Caps `role` down to the grant's env-specific restriction, if `envName` has one. Never escalates. */
+function capRoleForEnv(role: Role, envScope: EnvScope | null, envName?: string): Role {
+  if (!envName || !envScope) return role;
+  const cap = envScope[envName];
+  if (!cap) return role;
+  return ROLE_RANK[cap] < ROLE_RANK[role] ? cap : role;
 }
 
 /** Restrict a query to a token's project, if the token is project-scoped. */
@@ -55,10 +84,17 @@ export function isFullAccess(scope?: TokenScope): boolean {
   return !scope || (!scope.projectId && scope.capability === "write");
 }
 
-/** Highest role granted to `userId` on `projectId` via direct or group `access_grants`, or `null`. */
-async function resolveGrantRole(userId: string, projectId: string): Promise<Role | null> {
+/**
+ * Highest role granted to `userId` on `projectId` via direct or group
+ * `access_grants`, or `null`. When `envName` is given, each grant's role is
+ * first capped by its own `env_scope` (if it has an entry for that env)
+ * before the max is taken — so a group grant capped to viewer-in-prod can't
+ * be overridden by an uncapped direct grant unless that direct grant is
+ * itself uncapped for `envName`.
+ */
+async function resolveGrantRole(userId: string, projectId: string, envName?: string): Promise<Role | null> {
   const direct = await db
-    .select({ role: accessGrants.role })
+    .select({ role: accessGrants.role, envScope: accessGrants.envScope })
     .from(accessGrants)
     .where(
       and(
@@ -69,7 +105,7 @@ async function resolveGrantRole(userId: string, projectId: string): Promise<Role
     );
 
   const viaGroup = await db
-    .select({ role: accessGrants.role })
+    .select({ role: accessGrants.role, envScope: accessGrants.envScope })
     .from(accessGrants)
     .innerJoin(
       groupMembers,
@@ -78,16 +114,18 @@ async function resolveGrantRole(userId: string, projectId: string): Promise<Role
     .where(and(eq(accessGrants.projectId, projectId), eq(accessGrants.subjectType, "group")));
 
   let best: Role | null = null;
-  for (const { role } of [...direct, ...viaGroup]) {
-    if (isRole(role) && (!best || ROLE_RANK[role] > ROLE_RANK[best])) best = role;
+  for (const { role, envScope } of [...direct, ...viaGroup]) {
+    if (!isRole(role)) continue;
+    const effective = capRoleForEnv(role, parseEnvScope(envScope), envName);
+    if (!best || ROLE_RANK[effective] > ROLE_RANK[best]) best = effective;
   }
   return best;
 }
 
-/** Clerk org admin/owner ⇒ `"admin"` outright; else the highest `access_grants` role, or `null`. */
-async function resolveRole(userId: string, orgId: string, projectId: string): Promise<Role | null> {
+/** Clerk org admin/owner ⇒ `"admin"` outright (unaffected by env_scope — org admins are always full access); else the highest `access_grants` role for `envName`, or `null`. */
+async function resolveRole(userId: string, orgId: string, projectId: string, envName?: string): Promise<Role | null> {
   if ((await getClerkOrgRole(userId, orgId)) === "admin") return "admin";
-  return resolveGrantRole(userId, projectId);
+  return resolveGrantRole(userId, projectId, envName);
 }
 
 export async function getAccessibleProject(
@@ -124,7 +162,7 @@ export async function getAccessibleEnvironment(
   const row = rows[0];
   if (!row) return undefined;
 
-  const role = await resolveRole(userId, row.project.orgId, row.project.id);
+  const role = await resolveRole(userId, row.project.orgId, row.project.id, row.env.name);
   if (!role || !meetsRole(role, requiredRole)) return undefined;
   return { env: row.env, project: row.project, role };
 }
@@ -145,7 +183,7 @@ export async function getAccessibleVar(
   const row = rows[0];
   if (!row) return undefined;
 
-  const role = await resolveRole(userId, row.project.orgId, row.project.id);
+  const role = await resolveRole(userId, row.project.orgId, row.project.id, row.environment.name);
   if (!role || !meetsRole(role, requiredRole)) return undefined;
   return { envVar: row.envVar, environment: row.environment, role };
 }

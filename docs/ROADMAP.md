@@ -191,7 +191,7 @@ through `f2df816`).
 **Done when:** every change is a versioned, message-tagged revision you can diff
 and roll back, and concurrent pushes conflict safely at the key level. — **Met.**
 
-## M5 — Teams & access control  🧊 (in progress, shipping as staged PRs)
+## M5 — Teams & access control  🧊 ✅ (shipped, as staged PRs)
 
 *Foundational epic; access-layer refactor touches every route. Independent of the
 sync milestones but large.*
@@ -329,10 +329,29 @@ sync milestones but large.*
   only matters at discovery time. `apps/web` side verified via `tsc`/`lint`
   clean and the CLI build (`tsup`) succeeding; live cross-org verification
   against the deployed CLI is yours to run post-publish.
-- ⏳ `env_scope` enforcement (prod-protection first) — column exists, inert
+- ✅ **PR6 — `env_scope` enforcement (prod-protection).** `access_grants.envScope` (a JSON text
+  blob, `{ [envName]: Role }`) goes from inert to enforced. `lib/access.ts`'s `resolveGrantRole`
+  now takes an optional `envName` and caps each grant's role via `capRoleForEnv` (min of the
+  grant's role and its scope's cap for that env, uncapped if the env has no entry) before the
+  usual "highest of direct + group grants" reduction — so `getAccessibleEnvironment`/
+  `getAccessibleVar` (which now pass the resolved environment's name) enforce it, while
+  `getAccessibleProject` stays uncapped since project-level actions (rename, delete, manage
+  access) aren't environment-scoped. Clerk org admin/owner bypass is unaffected — org admins stay
+  full-access everywhere. `lib/grants.ts`'s `upsertGrant` gained an `envScope` param that's
+  deliberately `undefined`-vs-`null` distinct: `undefined` leaves an existing grant's restriction
+  untouched (so the Share dialog's plain role-change dropdown can't silently wipe a prod
+  restriction), `null`/`{}` clears it. `api/projects/[id]/access/route.ts`'s `POST` validates a
+  supplied `envScope` against the project's real environment names and rejects a cap ranked above
+  the grant's own role (capping can't escalate); its `GET` now also returns the project's
+  environment list so the Share dialog can build the per-env picker without a new endpoint.
+  `share-dialog.tsx`: each grant row is now expandable into a per-environment cap selector
+  (defaulting to "Full access ({role})"), with a shield icon marking rows that have any
+  restriction set. This closes out M5 — role capping only for now (a cap restricts *how much*
+  access an env gets, not remove it outright to zero; that's a natural follow-up, not required by
+  PLAN.md §8's "e.g. read-only prod" framing).
 
 **Done when:** an org admin can invite people, put them in groups, and grant
-group/user access to specific projects with roles.
+group/user access to specific projects with roles. — **Met.**
 
 ## M6 — Zero-knowledge encryption  🧊
 
@@ -355,25 +374,24 @@ re-wrapping keys to members.
 M1 (auth) ✅ ──┐
 M2 (lifecycle) ──┤ (independent, ship early)
 M3 (sync) ✅──► M4 (versioning) ✅
-M5 (teams) ── independent, foundational, next up
-M6 (zero-knowledge) ── after M5, largest
+M5 (teams) ✅──► M6 (zero-knowledge) ── next up, largest
 ```
 
 ## Suggested order
 
-**M1 → M2 → M3 → M4**, then **M5**, then **M6**. M1–M4 are done. M6 is
-deliberately last — it's the biggest commitment and benefits from M5's key
-model.
+**M1 → M2 → M3 → M4 → M5**, then **M6**. M1–M5 are done. M6 is deliberately
+last — it's the biggest commitment and benefits from M5's key model (grants
+now exist and can be re-wrapped instead of designed from scratch).
 
-**Next up: M5** (Teams & access control — see above for scope; it's a 🧊
-foundational epic, so read [PLAN.md §8](./PLAN.md) in full and do a design
-pass before writing code). It's independent of the sync milestones but large:
-org-owned projects + a personal-org migration, Clerk Organizations, new
-`access_grants`/`groups`/`group_members` tables, a `getAccessibleProject(...)`
-access-layer refactor that touches every route, plus CLI and web surface
-(org switcher, members/groups admin, per-project Share dialog).
+**Next up: M6** (Zero-knowledge encryption — see above for scope; it's the
+largest 🧊 epic in the roadmap, so do a full design pass against
+[PLAN.md §6](./PLAN.md) before writing code — envelope encryption, key
+hierarchy, device enrollment, and how existing `access_grants` map onto
+re-wrapped per-member keys all need to be nailed down first). It reshapes web
+viewing, import, clone, and conflict detection, and turns the API token into
+an auth-only credential once the server can no longer decrypt secrets itself.
 
-M1–M4 are fully shipped. The CLI package is published on npm as `envhq`
+M1–M5 are fully shipped. The CLI package is published on npm as `envhq`
 (currently `0.6.0`, published under the post-rebrand name — the earlier
 "nothing published under `envhq` yet" warning is stale and has been removed).
 `packages/cli/package.json` is the source of truth for the current published
