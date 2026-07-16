@@ -353,18 +353,84 @@ sync milestones but large.*
 **Done when:** an org admin can invite people, put them in groups, and grant
 group/user access to specific projects with roles. — **Met.**
 
-## M6 — Zero-knowledge encryption  🧊
+## M6 — Zero-knowledge encryption  🧊 ✅ (shipped, as staged PRs)
 
-*Largest epic; own architecture pass. Best after M5 (asymmetric keys designed for
-sharing). Reshapes web viewing, import, clone, and conflict detection.*
+*Largest epic; own architecture pass. Reshaped web viewing, import, clone, and sharing.
+Full design pass documented before implementation (envelope encryption, key hierarchy,
+device-key mechanism, DEK granularity, metadata scope) — see PLAN.md §6 for the resolved
+decisions.*
 
-- Envelope encryption; passphrase → Master Key → User Key → per-project DEK
-- Device enrollment + keychain; API token becomes auth-only; Recovery Kit
-- Client-side web decrypt + import; keyed HMAC tags for conflict equality
-- Decide: DEK granularity, device-key mechanism, metadata encryption scope
+- ✅ **PR1 — crypto foundations + user key setup.** New `packages/crypto` (source-exported,
+  mirrors `packages/parser`) — built on `@noble/hashes`/`@noble/ciphers`/`@noble/curves`, not
+  libsodium: the published `libsodium-wrappers-sumo` ESM build turned out to be broken (a
+  relative import to a file the npm package doesn't actually ship), and the non-sumo build's
+  WASM doesn't include Argon2id despite listing its JS bindings — `@noble/*` sidesteps the whole
+  WASM-loading/packaging problem. New `user_keys` table: one row per user, holding an X25519
+  public key in the clear plus the private key wrapped two independent ways — under a
+  passphrase-derived Argon2id Master Key (day-to-day unlock), and under a separately generated
+  Recovery Key (the mandatory Recovery Kit, PLAN.md §6). Web: a new Settings → Security page
+  (`security-manager.tsx`) walks through passphrase creation, recovery-phrase reveal, and a
+  re-type confirmation before finishing setup (confirmation is enforced in the handler itself,
+  not just via a disabled submit button — found live-testing that the design system's `Button`
+  doesn't reliably forward native `disabled` semantics). `CryptoSessionProvider` holds the
+  unwrapped private key in React state only — memory, never localStorage — for the browser
+  session; a page refresh re-prompts.
+- ✅ **PR2 — per-project DEK.** New `project_keys` table (one row per project × member holding a
+  wrap). DEK granularity is per-**project**, not per-environment — confirmed by
+  `env-store.ts`'s `cloneVars` and `version-store.ts`'s `restoreSnapshot`, which both copy
+  `env_vars` ciphertext directly across environments/versions with no decrypt step, which only
+  stays correct under one shared DEK. `POST /api/projects` client flow: generate a DEK, seal it
+  to the creator's own public key, `POST /api/projects/[id]/keys` — best-effort at creation time
+  (skipped if the creator's session isn't unlocked yet, healed later by PR6's self-heal fix
+  below).
+- **PR3 — migration — dropped.** All production data at the time M6 shipped was test data with
+  nothing to preserve, so it was cleared outright rather than migrated — see PLAN.md §6 decision
+  #8. This made the cutover to zero-knowledge unconditional: no legacy server-side ciphertext
+  ever needed a decrypt-and-reencrypt pass, and `ENV_ENCRYPTION_KEY`/`lib/crypto.ts`'s old
+  `encrypt`/`decrypt` became dead code the moment PR4 shipped.
+- ✅ **PR4 — web value encryption.** `env_vars.auth_tag` made nullable (XChaCha20-Poly1305's tag
+  lives in the ciphertext, unlike the AES-256-GCM scheme it replaced — no separate tag to
+  store). `lib/env-store.ts` stopped calling `encrypt`/`decrypt` entirely — every function now
+  takes/returns opaque `{ciphertext, iv}` blobs. `env-editor.tsx`'s reveal, add, edit,
+  paste-import, and copy-all-as-`.env` all encrypt/decrypt client-side via a new
+  `useProjectDek` hook. New gate states cover the cases where a DEK isn't available yet: `locked`
+  (session not unlocked), `no-key` (authorized, but no wrap exists for you *yet* — a real
+  pending-share case), and `uninitialized` (nobody holds a wrap at all, only reachable if the
+  project is provably empty — self-heals via a "Generate encryption key" button, found and fixed
+  from a real first-time-user report during live testing: a project created before its creator
+  ever unlocked a session used to be permanently stuck, since reconciliation can only
+  redistribute an *existing* DEK, not conjure one).
+- ✅ **PR5 — CLI encryption.** `packages/cli` bundles `@envhq/crypto` via tsup (same pattern as
+  `@envhq/parser`). New `envhq unlock`/`lock` commands; the unwrapped keypair is cached in the OS
+  keychain via the existing `@napi-rs/keyring` dependency (`crypto-store.ts`, a new keychain
+  service alongside the session-token one in `token-store.ts`) so `push`/`pull`/`diff` don't
+  re-prompt every command. Passphrase entry uses a hand-rolled hidden-input prompt (raw-mode
+  stdin, falls back to visible input over a non-TTY pipe). `exportEnv`/`commit` now carry
+  ciphertext pairs; the three-way diff (`computeThreeWayDiff`) still runs on decrypted plaintext,
+  just decrypted client-side first instead of being handed plaintext by the server.
+- ✅ **PR6 — sharing.** Granting access wraps the DEK to the new member immediately
+  (`access-manager.tsx`, right after the grant call succeeds) and via opportunistic
+  reconciliation (`GET /api/projects/[id]/keys/pending` + `useProjectKeyReconciliation`, run on
+  every env-editor/access-page visit by a client that already holds the DEK) for cases with no
+  single "grant" moment, like a new group member. Revoking access — a direct grant, a group
+  member removed, or a group deleted — deletes the corresponding `project_keys` row(s); the DEK
+  itself isn't rotated, so a former member retains whatever they already fetched before removal
+  (documented in `docs/security`, not silently glossed over). Verified live end-to-end with three
+  real Clerk accounts against production — which also surfaced and fixed two more real bugs: a
+  recovery-phrase confirmation that could be bypassed (see PR1), and personal orgs falling back
+  to the literal name `"Personal"` for any account with no first/username set, making orgs
+  indistinguishable in the project-creation org picker and causing confusing cross-account access
+  (`getOrCreatePersonalOrg` now falls back through email first).
+
+**Deferred, not built:** key-name/metadata encryption (only values are end-to-end encrypted);
+DEK rotation on revoke; a full passphrase-rotation/"forgot passphrase" *reset* flow beyond the
+already-shipped recovery-phrase *unlock* path; the keyed-HMAC (`valueTag`) conflict-detection
+optimization from PLAN.md §6 (the `commit` route's 409 path works today, just decrypts more than
+strictly necessary on a rare version race); WebAuthn/platform-bound "remember this device" for
+the web; sender-constrained (DPoP) CLI tokens.
 
 **Done when:** the server can no longer decrypt any secret, and sharing works by
-re-wrapping keys to members.
+re-wrapping keys to members. — **Met.**
 
 ---
 
@@ -374,25 +440,21 @@ re-wrapping keys to members.
 M1 (auth) ✅ ──┐
 M2 (lifecycle) ──┤ (independent, ship early)
 M3 (sync) ✅──► M4 (versioning) ✅
-M5 (teams) ✅──► M6 (zero-knowledge) ── next up, largest
+M5 (teams) ✅──► M6 (zero-knowledge) ✅
 ```
 
 ## Suggested order
 
-**M1 → M2 → M3 → M4 → M5**, then **M6**. M1–M5 are done. M6 is deliberately
-last — it's the biggest commitment and benefits from M5's key model (grants
-now exist and can be re-wrapped instead of designed from scratch).
+**M1 → M2 → M3 → M4 → M5 → M6.** All shipped. M6 landed last as planned — it
+was the biggest commitment and benefited from M5's key model (grants already
+existed and could be re-wrapped instead of designed from scratch).
 
-**Next up: M6** (Zero-knowledge encryption — see above for scope; it's the
-largest 🧊 epic in the roadmap, so do a full design pass against
-[PLAN.md §6](./PLAN.md) before writing code — envelope encryption, key
-hierarchy, device enrollment, and how existing `access_grants` map onto
-re-wrapped per-member keys all need to be nailed down first). It reshapes web
-viewing, import, clone, and conflict detection, and turns the API token into
-an auth-only credential once the server can no longer decrypt secrets itself.
-
-M1–M5 are fully shipped. The CLI package is published on npm as `envhq`
-(currently `0.6.0`, published under the post-rebrand name — the earlier
-"nothing published under `envhq` yet" warning is stale and has been removed).
+M1–M6 are fully shipped. The CLI package is published on npm as `envhq`
+(currently `0.6.0` at last publish — bump it before publishing a build with
+M6's client-side encryption support, per M1's publish checklist above).
 `packages/cli/package.json` is the source of truth for the current published
-version; bump it before any future publish per M1's publish checklist above.
+version.
+
+**What's left** is the "Deferred, not built" list under M6 above — none of it
+blocks normal use; see PLAN.md §6 and `docs/security` for the current,
+user-facing framing of each gap.

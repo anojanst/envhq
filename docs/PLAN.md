@@ -147,6 +147,31 @@ E2E.** Server stores only ciphertext, cannot decrypt.
 - **Open (deferred):** DEK granularity (project vs env), device-key mechanism,
   metadata encryption scope.
 
+**Resolved (shipped in M6):** all three open questions above were resolved during M6's
+pre-implementation design pass and shipped as designed:
+- **DEK granularity → per-project.** Confirmed by `env-store.ts`'s `cloneVars` and
+  `version-store.ts`'s `restoreSnapshot`, which both copy `env_vars` ciphertext directly across
+  environments/versions with no decrypt step — only correct under one shared DEK per project.
+- **Device-key mechanism → no separate device keypair.** The passphrase-unwrapped User Keypair
+  itself is the cached secret: browser memory only (session-scoped, cleared on refresh) on the
+  web, OS keychain (via the CLI's existing `@napi-rs/keyring` dependency) on the CLI.
+- **Metadata encryption scope → values only.** Key names (project/environment/variable) stay
+  plaintext; the three-way sync/diff protocol still operates on names server-side.
+
+Also resolved along the way: values ended up under **XChaCha20-Poly1305**, not AES-256-GCM as
+sketched above — the shared `packages/crypto` package (used by both `apps/web` and
+`packages/cli`) is built on `@noble/hashes`/`@noble/ciphers`/`@noble/curves` rather than
+libsodium (the published libsodium ESM/Argon2id builds turned out to be broken/incomplete), and
+XChaCha20-Poly1305 keeps one AEAD implementation shared across both clients instead of mixing
+WebCrypto and `node:crypto`. **Migration was dropped, not built** — all data at the time M6
+shipped was test data, cleared outright rather than migrated, so `ENV_ENCRYPTION_KEY` and the
+old server-side `encrypt`/`decrypt` became dead code unconditionally. **The keyed-HMAC
+(`valueTag`) conflict-equality optimization was not built** — the `commit` route's 409 path
+still returns ciphertext for the caller to decrypt-and-diff, which is correct, just does more
+decryption than strictly necessary on a rare version race. See
+[ROADMAP.md](./ROADMAP.md)'s M6 section for the full PR-by-PR history, including bugs found and
+fixed during live multi-account verification.
+
 ## 7. CLI login mechanism — browser auth + expiring token
 
 **Decision:** replace paste-a-token with **loopback browser auth**.

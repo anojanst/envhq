@@ -16,6 +16,10 @@ what exists today.
 > where they describe what was literally shipped at the time.
 
 Last updated: v1 + UX pass (theme, brand, multiline editor, top-center toasts) + rebrand to EnvHQ.
+**§5 (data model) and §6 (encryption) are current through M6** (zero-knowledge encryption,
+2026-07-17). Other sections (§7 auth, §11 CLI, API reference) predate M2–M5 and haven't been
+refreshed to match — cross-check against [ROADMAP.md](./ROADMAP.md)'s milestone notes for
+anything not encryption-related.
 
 ---
 
@@ -111,17 +115,20 @@ envhq/                         (git repo root; pnpm workspace — the on-disk
 
 ## 5. Data model
 
-Postgres, one migration (`0000_natural_piledriver.sql`). All timestamps are
-`timestamptz` with `defaultNow()`.
+Postgres, migrated incrementally (`apps/web/src/db/migrations/`). All timestamps are
+`timestamptz` with `defaultNow()`. Schema source of truth: `apps/web/src/db/schema.ts`.
 
-**`projects`** — owned by a Clerk user.
+**`projects`** — owned by an org (M5), not a user directly.
 | col | type | notes |
 |---|---|---|
 | id | uuid PK | `defaultRandom()` |
-| user_id | text | Clerk userId; **everything scoped by this** |
-| name | text | |
-| created_at, updated_at | timestamptz | |
-| | | index on `user_id` |
+| user_id | text | Clerk userId of the creator; audit-only, not the auth scope |
+| org_id | text | Clerk Organization id; **the actual auth scope** |
+| name | text | **unique(org_id, name)** |
+| created_at, updated_at | timestamptz | index on `org_id` |
+
+**`personal_orgs`** — maps a Clerk userId to their auto-provisioned personal org (M5). One row
+per user, `user_id` PK; `INSERT ... ON CONFLICT DO NOTHING` is the atomic get-or-create.
 
 **`environments`** — under a project (dev/qa/staging/uat/prod/…, unlimited).
 | col | type | notes |
@@ -129,18 +136,63 @@ Postgres, one migration (`0000_natural_piledriver.sql`). All timestamps are
 | id | uuid PK | |
 | project_id | uuid FK → projects | `onDelete: cascade` |
 | name | text | **unique(project_id, name)** |
+| version | integer | server-owned linear version counter (M4), bumped via atomic CAS |
 | created_at, updated_at | | index on `project_id` |
 
-**`env_vars`** — a key/value pair; value encrypted at rest.
+**`env_vars`** — a key/value pair; value zero-knowledge encrypted (M6).
 | col | type | notes |
 |---|---|---|
 | id | uuid PK | |
 | environment_id | uuid FK → environments | cascade |
-| key | text | **unique(environment_id, key)** |
-| value_ciphertext | text | base64 AES-256-GCM ciphertext |
-| iv | text | base64, per-value 96-bit nonce |
-| auth_tag | text | base64 GCM tag |
+| key | text | **unique(environment_id, key)** where `deleted_at is null` (soft-delete, M3) |
+| value_ciphertext | text | base64 XChaCha20-Poly1305 ciphertext (tag included) |
+| iv | text | base64 AEAD nonce (legacy column name, kept to avoid a rename migration) |
+| auth_tag | text nullable | unused for new writes — XChaCha20-Poly1305's tag lives in `value_ciphertext`, unlike the AES-256-GCM scheme this column was named for pre-M6 |
+| deleted_at | timestamptz nullable | soft-delete (M3) |
 | created_at, updated_at | | index on `environment_id` |
+
+**`environment_versions`** — a full immutable snapshot per commit (M4).
+| col | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| environment_id | uuid FK → environments | cascade |
+| version | integer | **unique(environment_id, version)** |
+| message | text nullable | commit message |
+| snapshot | jsonb | array of `{key, valueCiphertext, iv, authTag}` — ciphertext copied directly, never decrypted |
+| created_by | text | Clerk userId |
+| created_at | | index on `environment_id` |
+
+**`user_keys`** — a user's zero-knowledge identity (M6). One row per user, `user_id` PK.
+| col | type | notes |
+|---|---|---|
+| public_key | text | X25519 public key, base64, in the clear |
+| kdf_salt, kdf_t, kdf_m, kdf_p | text/integer | Argon2id salt + cost params for this user's passphrase → Master Key derivation |
+| wrapped_private_key, wrapped_private_key_nonce | text | private key wrapped under the passphrase-derived Master Key |
+| wrapped_private_key_by_recovery, wrapped_private_key_by_recovery_nonce | text | the same private key, wrapped a second, independent way under the Recovery Key |
+
+**`project_keys`** — a project's Data Encryption Key, wrapped per member (M6).
+| col | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| project_id | uuid FK → projects | cascade |
+| subject_user_id | text | who this wrap is for |
+| wrapped_dek | text | the DEK, sealed (`crypto_box_seal`-equivalent) to `subject_user_id`'s public key |
+| wrapped_by_user_id | text | who performed the wrap (audit) |
+| | | **unique(project_id, subject_user_id)**, index on `project_id` |
+
+**`access_grants`** — project-level role grant to a user or group (M5).
+| col | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| org_id, project_id | | project's org (denormalized) + the project |
+| subject_type | text | `"user"` \| `"group"` |
+| subject_id | text | Clerk userId or `groups.id` |
+| role | text | `"viewer"` \| `"editor"` \| `"admin"` |
+| env_scope | text nullable | JSON `{envName: role}` — per-environment role cap |
+| | | **unique(project_id, subject_type, subject_id)** |
+
+**`groups`** / **`group_members`** — org-scoped named sets of users (M5), for granting several
+people access at once via `access_grants.subject_type = "group"`.
 
 **`api_tokens`** — personal access tokens for CLI auth.
 | col | type | notes |
@@ -149,20 +201,60 @@ Postgres, one migration (`0000_natural_piledriver.sql`). All timestamps are
 | user_id | text | |
 | name | text | user-facing label |
 | token_hash | text unique | SHA-256 of the token (plaintext never stored) |
-| last_used_at | timestamptz nullable | |
+| kind | text | `"pat"` (user-created) or `"cli_session"` (browser-login, M1) |
+| project_id, capability | uuid nullable / text | PAT scoping (M1) — null project = all projects |
+| expires_at, last_used_at | timestamptz nullable | |
 | created_at | | index on `user_id` |
 
-## 6. Encryption (`lib/crypto.ts`)
+**`cli_auth_requests`** — short-lived PKCE codes backing the CLI browser-login flow (M1).
 
-- **AES-256-GCM**, 96-bit random IV per value, GCM auth tag. Server-side only
-  (Node runtime).
-- Master key from **`ENV_ENCRYPTION_KEY`** (32 bytes, base64). Must stay stable —
-  rotating it makes existing values undecryptable.
-- `encrypt(plaintext) → {ciphertext, iv, authTag}` (all base64); `decrypt(...)`.
-- Tokens: `generateToken()` → `envhq_` + 24 random bytes base64url;
-  `hashToken()` → SHA-256 hex (only the hash is stored).
-- **This is server-side encryption, not zero-knowledge** — the server can
-  decrypt. (ZK is planned; see PLAN §6.)
+## 6. Encryption — zero-knowledge, end-to-end (M6)
+
+The server **never holds a key capable of decrypting a value**. All encryption/decryption of
+env-var values happens client-side — in the browser (`apps/web`) or in the CLI process
+(`packages/cli`) — using the shared, source-exported `packages/crypto` package (mirrors
+`packages/parser`'s pattern; built on `@noble/hashes`/`@noble/ciphers`/`@noble/curves`, not
+libsodium — see that package's top-of-file comment for why).
+
+**Key hierarchy:**
+1. Passphrase → **Argon2id** (`deriveMasterKey`) → 32-byte **Master Key**. Cost params
+   (`t`/`m`/`p`) are persisted per-user in `user_keys` so re-deriving later uses the same work
+   factor. Defaults to OWASP's minimum baseline (19 MiB / 2 passes) — tuned for ~1s in a browser,
+   since this runs on every unlock.
+2. Master Key unwraps (`unwrapPrivateKey`, XChaCha20-Poly1305) a **User Keypair** (X25519),
+   generated once at ZK onboarding (`Settings → Security`). A separately generated **Recovery
+   Key** wraps the same private key a second, independent way — the mandatory Recovery Kit;
+   losing both the passphrase and the recovery phrase means permanently losing access (no
+   server-side reset is possible, by design).
+3. Each **project** has a random 32-byte **DEK** (`generateDek`), generated at project creation.
+   The DEK is sealed (`sealToPublicKey`, an X25519-ECDH + HKDF construction analogous to
+   libsodium's `crypto_box_seal`) to the public key of every member with access, one
+   `project_keys` row per (project, member) pair — never per environment: `env-store.ts`'s
+   `cloneVars` and `version-store.ts`'s `restoreSnapshot` both copy `env_vars` ciphertext
+   directly across environments/versions with no decrypt step, which only stays correct if
+   every environment in a project shares one DEK.
+4. Values are encrypted under the project DEK with **XChaCha20-Poly1305** (`encryptValue`/
+   `decryptValue`) — the AEAD tag is embedded in the ciphertext, unlike the AES-256-GCM scheme
+   this replaced, so `env_vars.auth_tag` is unused for new writes.
+
+**Authorization ≠ decryption capability.** `lib/access.ts`'s Clerk-org-admin bypass (and a
+newly-granted group member) can be *authorized* for a project with no `project_keys` row yet.
+`useProjectDek` (`apps/web/src/hooks/use-project-dek.ts`) surfaces this as a distinct `no-key`
+state (vs. `uninitialized` — nobody holds the DEK at all, only reachable if the project is
+provably empty, self-healed via a "Generate encryption key" action) so the UI doesn't silently
+fail. Delivery is two-pronged: granting access wraps the DEK for the new member immediately
+(`access-manager.tsx`, right after the grant succeeds), and `GET /api/projects/[id]/keys/pending`
++ `useProjectKeyReconciliation` opportunistically wrap it for anyone still missing one, on every
+env-editor/access-page visit by a client that already holds it. Revoking access deletes the
+corresponding `project_keys` row(s) — but does not rotate the DEK, so a former member retains
+whatever they already fetched before removal (see `docs/security` for the user-facing framing).
+
+**Not encrypted:** key *names* (project/environment/variable) — only values. The three-way
+sync/diff protocol (`push`/`pull`) operates on key names server-side by design.
+
+**Tokens** (unrelated to value encryption, still server-side, `lib/crypto.ts`):
+`generateToken()` → `envhq_` + 24 random bytes base64url; `hashToken()` → SHA-256 hex (only the
+hash is ever stored).
 
 ## 7. Auth & authorization
 
@@ -312,9 +404,22 @@ into the CLI by tsup). Runs on server and client.
 
 ## 15. Not yet built (pointers)
 
-Deletion-aware three-way sync, versioning, CLI browser login / expiring tokens,
-teams/orgs, zero-knowledge encryption, `env create`/`init`/multi-env link,
-per-env scoping. See [PLAN.md](./PLAN.md) + [ROADMAP.md](./ROADMAP.md).
+M1 through M6 have all shipped (deletion-aware three-way sync, versioning, CLI browser login,
+teams/orgs with per-env role caps, zero-knowledge encryption — see [ROADMAP.md](./ROADMAP.md)).
+What's left, per M6 PR6's own "explicitly deferred" list:
+
+- Key-name/metadata encryption (only values are end-to-end encrypted today).
+- DEK rotation on revoke (a revoked member keeps whatever they already fetched).
+- Passphrase rotation / a full "forgot passphrase" reset flow beyond the already-shipped
+  recovery-phrase *unlock* path (`unlockWithRecoveryPhrase`) — there's no UI yet to unwrap via
+  recovery and then set a *new* passphrase.
+- The keyed-HMAC (`valueTag`) conflict-detection optimization from PLAN.md §6 — the `commit`
+  route's 409 path works today (returns ciphertext, the caller decrypts to diff), just does more
+  decryption than strictly necessary on a rare version race.
+- WebAuthn/platform-bound "remember this device" for the web (currently memory-only per session).
+- Sender-constrained (DPoP) CLI tokens (PLAN.md §7's noted future tier).
+
+See [PLAN.md](./PLAN.md) + [ROADMAP.md](./ROADMAP.md).
 
 ## 16. Key file index
 

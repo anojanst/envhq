@@ -27,7 +27,7 @@ export default async function LandingPage() {
       <section className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-16 text-center">
         <span className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground">
           <ShieldCheck className="size-3.5 text-brand" />
-          Encrypted at rest · CLI-native
+          End-to-end encrypted · CLI-native
         </span>
 
         <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-balance sm:text-6xl">
@@ -62,8 +62,8 @@ export default async function LandingPage() {
           <Feature icon={<FolderTree className="size-5" />} title="Projects & envs">
             Unlimited environments under every project.
           </Feature>
-          <Feature icon={<KeyRound className="size-5" />} title="Encrypted at rest">
-            Values are AES-256-GCM encrypted in the database.
+          <Feature icon={<KeyRound className="size-5" />} title="Zero-knowledge encryption">
+            Values are encrypted in your browser or CLI — we never see them.
           </Feature>
           <Feature icon={<TerminalSquare className="size-5" />} title="CLI-native">
             Push and pull secrets straight from your terminal.
@@ -71,7 +71,7 @@ export default async function LandingPage() {
         </div>
 
         <p className="mt-2 text-xs text-muted-foreground">
-          EnvHQ is a free, personal-use tool. See the{" "}
+          EnvHQ is a free tool. See the{" "}
           <Link href="/docs/security" className="underline hover:text-foreground">
             security model
           </Link>{" "}

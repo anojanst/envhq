@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     "Terms & Conditions for EnvHQ, including the current security measures in place and the limitations of the free tool.",
 };
 
-const LAST_UPDATED = "July 12, 2026";
+const LAST_UPDATED = "July 17, 2026";
 
 export default function TermsPage() {
   return (
@@ -44,10 +44,13 @@ export default function TermsPage() {
             <p>
               EnvHQ lets you store, organize, and sync environment variables. Values are grouped
               by project and environment, can be edited in the web app, and can be pushed to or
-              pulled from your terminal with the <code>envhq</code> CLI. As of today, EnvHQ is{" "}
-              <strong>personal-use only</strong> — every project, environment, and variable is
-              scoped to a single signed-in account. There is no team, organization, or
-              shared-access functionality yet.
+              pulled from your terminal with the <code>envhq</code> CLI. Every project belongs to
+              an organization — every account gets a personal one automatically, and you can also
+              create or be invited to team organizations. Within an org, project access is
+              role-based (Viewer, Editor, Admin), grantable to individual members or groups, and
+              can be capped per environment (e.g. Editor on <code>dev</code> but Viewer-only on{" "}
+              <code>prod</code>). Org membership and invites are handled by our identity
+              provider&apos;s (Clerk) own hosted UI.
             </p>
           </Section>
 
@@ -91,10 +94,18 @@ export default function TermsPage() {
             <p>We take reasonable, currently-implemented measures to protect your data:</p>
             <ul className="list-disc space-y-1.5 pl-5">
               <li>
-                <strong>Encryption at rest:</strong> every variable value is encrypted with
-                AES-256-GCM before being written to the database, using a unique random
-                initialization vector and authentication tag per value. The database never holds
-                plaintext values.
+                <strong>Zero-knowledge, end-to-end encryption:</strong> every variable value is
+                encrypted and decrypted <strong>in your browser or the CLI on your machine</strong>{" "}
+                — never on our servers. Your passphrase derives a key that unlocks your personal
+                keypair, which in turn unwraps a per-project encryption key; values are encrypted
+                with that key using XChaCha20-Poly1305 before they&apos;re ever sent to us. We
+                only ever store and transmit ciphertext — EnvHQ&apos;s operator cannot decrypt
+                your values, with or without database access.
+              </li>
+              <li>
+                <strong>Mandatory Recovery Kit:</strong> alongside your passphrase, we generate a
+                one-time recovery phrase as an independent way to unlock your key if you forget
+                your passphrase. See Section 6 for what happens if you lose both.
               </li>
               <li>
                 <strong>Encryption in transit:</strong> the web app and CLI communicate with our
@@ -111,8 +122,13 @@ export default function TermsPage() {
                 days; tokens can also be scoped to a single project and to read-only access.
               </li>
               <li>
-                <strong>Ownership-scoped access:</strong> every record is tied to your account;
-                the API enforces that you can only read or modify data you own.
+                <strong>Role-based, ownership-scoped access:</strong> every project belongs to an
+                org, and the API enforces your resolved role (Viewer, Editor, Admin) on every
+                request — you can only read or modify data you have a role on.
+              </li>
+              <li>
+                <strong>Versioned history:</strong> every change to an environment is stored as a
+                full, immutable version you can review or roll back to at any time.
               </li>
             </ul>
           </Section>
@@ -124,13 +140,28 @@ export default function TermsPage() {
             </p>
             <ul className="list-disc space-y-1.5 pl-5">
               <li>
-                <strong>This is not end-to-end / zero-knowledge encryption.</strong> Encryption
-                and decryption happen on our servers using a single master encryption key that we
-                hold. This means EnvHQ&apos;s operator is technically capable of decrypting any
-                value stored in the Service. We do not use your stored values for any purpose
-                other than operating the Service, but you should not treat EnvHQ as a vault the
-                operator itself cannot access. Zero-knowledge encryption is on our roadmap but is{" "}
-                <strong>not implemented today</strong>.
+                <strong>
+                  Losing both your passphrase and your recovery phrase means permanently losing
+                  access to your data.
+                </strong>{" "}
+                Because decryption happens client-side under a key only you hold, there is no
+                &quot;forgot password&quot; reset that preserves your data — the operator cannot
+                recover it for you, by design. Store your recovery phrase somewhere safe and
+                independent of your passphrase (e.g. a password manager or a printed copy in a
+                safe place).
+              </li>
+              <li>
+                <strong>Key names are not encrypted.</strong> Only variable <em>values</em> are
+                end-to-end encrypted — environment, project, and variable-key names are visible to
+                the operator, since the sync/diff logic that powers <code>push</code>/
+                <code>pull</code> currently operates on names server-side.
+              </li>
+              <li>
+                <strong>Revoking access doesn&apos;t retroactively revoke what was already seen.</strong>{" "}
+                Removing someone&apos;s access to a project stops them from decrypting anything{" "}
+                <em>going forward</em>, but we do not rotate the underlying encryption key on
+                revoke — a former collaborator who already fetched values before being removed
+                could still have a local copy of what they saw.
               </li>
               <li>
                 <strong>No independent security audit or certification.</strong> The Service has
@@ -138,16 +169,10 @@ export default function TermsPage() {
                 certifications such as SOC 2 or ISO 27001.
               </li>
               <li>
-                <strong>No versioning, backups, or guaranteed recovery.</strong> Deleting or
-                overwriting a variable, environment, or project is, as of today, effectively
-                permanent — there is no user-facing history, snapshot, or &quot;undo&quot;. If it
-                matters, keep a copy of it somewhere else.
-              </li>
-              <li>
-                <strong>Personal-only access model.</strong> There is no team or role-based access
-                control yet, so there is also no built-in way to safely share a project with
-                collaborators today — sharing your login or a CLI token with someone else gives
-                them full access within that token&apos;s scope.
+                <strong>No undo for deleting an entire environment or project.</strong>{" "}
+                Variable-level changes are versioned and recoverable (see Section 5), but deleting
+                an environment or project outright is still permanent — there is no trash or
+                &quot;undo&quot; for that. If it matters, keep a copy of it somewhere else.
               </li>
               <li>
                 <strong>No formal SLA.</strong> We do not guarantee uptime, a support response
@@ -219,10 +244,9 @@ export default function TermsPage() {
 
           <Section n="12" title="Changes to these terms">
             <p>
-              We may update these Terms as the Service evolves, particularly as security features
-              (versioning, team access, zero-knowledge encryption) are built out. We will update
-              the &quot;Last updated&quot; date above when we do. Continued use of the Service
-              after a change constitutes acceptance of the revised Terms.
+              We may update these Terms as the Service evolves. We will update the &quot;Last
+              updated&quot; date above when we do. Continued use of the Service after a change
+              constitutes acceptance of the revised Terms.
             </p>
           </Section>
 

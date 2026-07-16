@@ -12,37 +12,44 @@ export default function SecurityDocsPage() {
       />
 
       <Callout variant="warning">
-        EnvHQ is a free, personal-use tool under active development. Read this whole page before
+        EnvHQ is a free tool under active development. Read this whole page before
         storing anything you cannot afford to lose or have exposed — also see{" "}
         <Link href="/terms" className="underline underline-offset-2">Terms &amp; Conditions</Link>{" "}
         and <Link href="/docs/limitations" className="underline underline-offset-2">Limitations &amp; FAQ</Link>.
       </Callout>
 
-      <H2>Encryption at rest</H2>
+      <H2>Encryption at rest — zero-knowledge, end-to-end</H2>
       <P>
-        Every variable value is encrypted with <strong>AES-256-GCM</strong> before it&apos;s written to
-        the database, using a random 96-bit initialization vector and a GCM authentication tag
-        generated per value. The database only ever stores ciphertext — never plaintext.
+        Every variable value is encrypted and decrypted <strong>client-side</strong> — in your
+        browser, or in the <Code>envhq</Code> CLI on your machine — using{" "}
+        <strong>XChaCha20-Poly1305</strong>. The server only ever stores and transmits ciphertext;
+        it never sees a plaintext value, and never holds a key capable of decrypting one.
       </P>
-      <P>
-        Encryption and decryption happen entirely on the server, using a single master key
-        (<Code>ENV_ENCRYPTION_KEY</Code>) that the EnvHQ operator holds. This is a deliberate
-        current trade-off: it keeps the web UI simple (values can be revealed and edited straight
-        in the browser) and makes key recovery possible, but it also means:
-      </P>
+      <P>The key hierarchy, all derived and held client-side:</P>
       <UL>
         <li>
-          <strong>This is not zero-knowledge / end-to-end encryption.</strong> The operator is
-          technically capable of decrypting any stored value.
+          Your <strong>passphrase</strong> runs through <strong>Argon2id</strong> to derive a{" "}
+          <strong>Master Key</strong>, which unwraps your personal <strong>User Keypair</strong>{" "}
+          (X25519, generated once at setup).
         </li>
         <li>
-          If the master key were ever compromised, every stored value would be at risk — there is
-          no per-user or per-project key isolation today.
+          Each <strong>project</strong> has its own randomly generated{" "}
+          <strong>Data Encryption Key (DEK)</strong>. The DEK is sealed to the public key of every
+          member with access — anyone who can decrypt one variable in a project can decrypt all
+          of them, but a DEK sealed to you is useless to anyone without your private key.
+        </li>
+        <li>
+          A separately generated <strong>Recovery Key</strong> (shown once, as a printable
+          recovery phrase) wraps your User Keypair a second, independent way — the only other way
+          in if you forget your passphrase. See the{" "}
+          <Link href="/docs/limitations" className="underline underline-offset-2">Limitations &amp; FAQ</Link>{" "}
+          page for what happens if you lose both.
         </li>
       </UL>
       <P>
-        Zero-knowledge encryption (client-side encryption with a key the server never sees) is on
-        the roadmap but <strong>not implemented today</strong>.
+        This means EnvHQ&apos;s operator <strong>cannot decrypt your values</strong> — not by
+        choice, but because we never hold a usable key. A database leak alone exposes only
+        ciphertext.
       </P>
 
       <H2>Encryption in transit</H2>
@@ -93,6 +100,15 @@ export default function SecurityDocsPage() {
         <Code>prod</Code> — from the same &quot;Manage access&quot; dialog. Org invitations,
         membership, and roles are managed entirely by Clerk&apos;s own hosted UI.
       </P>
+      <P>
+        Being <em>authorized</em> for a project and being able to <em>decrypt</em> it are separate
+        things: a grant (or org-admin status) controls access through the API, but decrypting a
+        value additionally requires holding a copy of that project&apos;s DEK, sealed to your
+        public key. Granting access wraps a copy for the new member right away; if that doesn&apos;t
+        land immediately (e.g. they hadn&apos;t finished their own key setup yet), any client that
+        already holds the DEK delivers it the next time they open the project — usually within
+        seconds, never more than the next visit.
+      </P>
 
       <H2>Version history</H2>
       <P>
@@ -104,9 +120,21 @@ export default function SecurityDocsPage() {
 
       <H2>What&apos;s not covered today</H2>
       <UL>
+        <li>
+          <strong>No key-name / metadata encryption.</strong> Only variable values are end-to-end
+          encrypted — project, environment, and variable-key names are visible to the operator.
+        </li>
+        <li>
+          <strong>No DEK rotation on revoke.</strong> Removing someone&apos;s access stops them
+          decrypting anything going forward, but doesn&apos;t rotate the project&apos;s key — they
+          could retain a copy of whatever they already fetched before removal.
+        </li>
+        <li>
+          <strong>No passphrase-recovery beyond the Recovery Kit.</strong> Losing both your
+          passphrase and your recovery phrase means permanently losing access to that data — there
+          is no operator-side reset that preserves it.
+        </li>
         <li>No independent third-party security audit or certification (e.g. SOC 2, ISO 27001).</li>
-        <li>No client-side / zero-knowledge encryption — see above.</li>
-        <li>No per-environment role scoping — a grant applies to every environment in a project.</li>
         <li>
           No undo for deleting an entire environment or project (individual variable changes are
           recoverable via version history — see above). See{" "}

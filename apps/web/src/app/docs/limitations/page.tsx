@@ -62,10 +62,20 @@ export default function LimitationsPage() {
       </QA>
       <QA q="Can EnvHQ's operator see my secrets?">
         <P>
-          Technically, yes. Encryption is server-side (AES-256-GCM) using a key the operator
-          holds — this is not zero-knowledge encryption. See the{" "}
+          No. Values are encrypted and decrypted client-side (in your browser or the CLI) under a
+          key derived from your passphrase — the server only ever stores and transmits ciphertext,
+          and never holds a key capable of decrypting it. Key <em>names</em> (project, environment,
+          variable names) aren&apos;t encrypted, only values. See the{" "}
           <Link href="/docs/security" className="underline underline-offset-2">Security model</Link>{" "}
-          page for details and what&apos;s planned.
+          page for the full key hierarchy.
+        </P>
+      </QA>
+      <QA q="What happens if I forget my passphrase?">
+        <P>
+          Use your recovery phrase (shown once, at setup) to unlock your account and set a new
+          passphrase. If you&apos;ve lost <em>both</em> your passphrase and your recovery phrase,
+          your data is permanently unrecoverable — not even the operator can decrypt it for you.
+          There is no other reset path, by design.
         </P>
       </QA>
 
@@ -81,8 +91,11 @@ export default function LimitationsPage() {
       </QA>
       <QA q="Can I give someone access to just one environment, like dev but not prod?">
         <P>
-          Not yet — a role grant applies to the whole project, every environment included.
-          Per-environment scoping is planned but not built yet.
+          You can <em>cap</em> a grant per environment — e.g. Editor project-wide but Viewer-only
+          on <Code>prod</Code> — from the expandable row under a grant on the project&apos;s
+          &quot;Manage access&quot; page. There&apos;s no way to hide an environment from someone
+          entirely while still granting the rest of the project; a cap restricts what they can{" "}
+          <em>do</em> there, not whether they can see it exists.
         </P>
       </QA>
       <QA q="I think my CLI token leaked — what do I do?">
@@ -102,19 +115,21 @@ export default function LimitationsPage() {
       </QA>
       <QA q="Should I store production secrets in EnvHQ?">
         <P>
-          That&apos;s your call, but weigh it against the limitations on this page — especially the
-          lack of zero-knowledge encryption and the fact that deleting an entire environment or
-          project is still unrecoverable — before relying on it as your sole store for anything
-          business-critical.
+          That&apos;s your call, but weigh it against the limitations on this page — especially
+          that deleting an entire environment or project is still unrecoverable, and that losing
+          both your passphrase and recovery phrase means permanently losing that data — before
+          relying on it as your sole store for anything business-critical.
         </P>
       </QA>
       <QA q="What's actively being worked on?">
         <P>
-          Per-environment access scoping (e.g. Editor on <Code>dev</Code> but Viewer-only on{" "}
-          <Code>prod</Code>) is next, followed by zero-knowledge (client-side) encryption further
-          out. The three-way sync engine, version history with rollback, and team/organization
-          access control described elsewhere on this page have already shipped. This page and the
-          Security model page will be updated as each further piece ships.
+          The three-way sync engine, version history with rollback, team/organization access
+          control with per-environment role caps, and zero-knowledge end-to-end encryption
+          described elsewhere on this page and the{" "}
+          <Link href="/docs/security" className="underline underline-offset-2">Security model</Link>{" "}
+          page have all shipped. Key-name/metadata encryption and DEK rotation on revoke (see the
+          Security model page&apos;s &quot;what&apos;s not covered today&quot;) are the main
+          security gaps left open. This page will be updated as further pieces ship.
         </P>
       </QA>
     </div>

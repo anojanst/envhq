@@ -12,8 +12,13 @@ files in bulk, copy them back out, and sync from your terminal with the CLI.
 
 - **Web app** — Next.js (App Router) + Clerk auth + Neon Postgres + Drizzle + shadcn/ui
 - **CLI** — `envhq` (Node/TS) for `push`/`pull` from any project folder
-- **Encryption** — values are AES-256-GCM encrypted at rest; the DB never stores plaintext
-- **Access** — personal-only (v1): every row is scoped to the signed-in user
+- **Encryption** — zero-knowledge, end-to-end: values are encrypted/decrypted client-side (web
+  or CLI) under a per-project key sealed to each member's keypair; the server only ever stores
+  ciphertext
+- **Access** — org-owned projects (every account gets a personal org automatically); role-based
+  access (Viewer/Editor/Admin) to individuals or groups, capped per environment
+- **Versioning** — every change is a full, immutable version; roll back from the web UI or
+  `envhq rollback`
 
 ## Documentation
 
@@ -44,8 +49,7 @@ pnpm install
 
 # Configure env vars
 cp apps/web/.env.example apps/web/.env.local
-# then fill in DATABASE_URL, Clerk keys, and generate ENV_ENCRYPTION_KEY:
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# then fill in DATABASE_URL and Clerk keys
 
 # Create the database tables
 pnpm db:migrate
@@ -59,13 +63,13 @@ pnpm dev            # http://localhost:3000
 1. Push this repo to GitHub and import it in Vercel.
 2. Set the **Root Directory** to `apps/web`.
 3. Add environment variables (from `.env.example`): `DATABASE_URL`,
-   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `ENV_ENCRYPTION_KEY`,
-   and the Clerk routing vars.
+   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and the Clerk routing vars.
 4. Deploy. Run `pnpm db:migrate` against the production `DATABASE_URL` once
    (locally with the prod URL, or via a one-off job).
 
-> Keep `ENV_ENCRYPTION_KEY` stable — rotating it makes existing encrypted values
-> undecryptable. Back it up somewhere safe.
+> A pre-M6 deployment's `ENV_ENCRYPTION_KEY` is dead — no code reads it anymore
+> (encryption moved client-side, see [Security model](https://envhq.dev/docs/security)).
+> Safe to leave set (harmless) or remove.
 
 ## Using the CLI
 
@@ -118,13 +122,22 @@ ENVHQ_DEFAULT_URL=http://localhost:3000 pnpm build
 
 ## Data model
 
-- `projects` — owned by a Clerk `userId`
+- `projects` — owned by an org; every account gets a personal org automatically
 - `environments` — belong to a project; unlimited; unique name per project
-- `env_vars` — key + AES-256-GCM (`ciphertext`, `iv`, `authTag`); unique key per environment
+- `env_vars` — key + client-encrypted `ciphertext`/`iv` (XChaCha20-Poly1305); unique key per
+  environment; the server never holds a key that can decrypt it
+- `environment_versions` — full immutable snapshot per commit, for history/rollback
+- `user_keys` — a user's public key + their private key wrapped two ways (passphrase, recovery
+  phrase); the server only ever sees ciphertext here too
+- `project_keys` — a project's DEK, sealed per member to their public key
+- `access_grants` / `groups` / `group_members` — org-scoped role-based project access
 - `api_tokens` — SHA-256 hashes of personal tokens for CLI auth
+
+See [docs/SYSTEM_DESIGN.md](./docs/SYSTEM_DESIGN.md) for the full schema and the encryption
+key hierarchy.
 
 ## Roadmap
 
-See [docs/ROADMAP.md](./docs/ROADMAP.md) for the full, up-to-date milestone plan
-(CLI auth hardening and CLI-first lifecycle are shipped; sync engine,
-versioning, teams, and zero-knowledge encryption are next).
+See [docs/ROADMAP.md](./docs/ROADMAP.md) for the full milestone history — CLI auth, CLI-first
+lifecycle, the sync engine, versioning, teams/access control, and zero-knowledge encryption have
+all shipped (M1 through M6).
