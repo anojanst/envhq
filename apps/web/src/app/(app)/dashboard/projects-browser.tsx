@@ -53,10 +53,12 @@ export function ProjectsBrowser({
   projects,
   orgs,
   defaultOrgId,
+  callerUserId,
 }: {
   projects: ProjectListItem[];
   orgs: OrgOption[];
   defaultOrgId: string;
+  callerUserId: string;
 }) {
   const [query, setQuery] = useState("");
   const [orgFilter, setOrgFilter] = useState(ALL_ORGS);
@@ -149,7 +151,7 @@ export function ProjectsBrowser({
             ))}
           </select>
         ) : null}
-        <CreateProjectDialog orgs={orgs} defaultOrgId={defaultOrgId} />
+        <CreateProjectDialog orgs={orgs} defaultOrgId={defaultOrgId} callerUserId={callerUserId} />
       </div>
 
       {filtered.length === 0 ? (

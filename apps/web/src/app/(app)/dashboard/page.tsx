@@ -72,10 +72,15 @@ export default async function DashboardPage() {
               variables across dev, staging, and prod.
             </p>
           </div>
-          <CreateProjectDialog orgs={orgs} defaultOrgId={personalOrgId} />
+          <CreateProjectDialog orgs={orgs} defaultOrgId={personalOrgId} callerUserId={userId} />
         </div>
       ) : (
-        <ProjectsBrowser projects={projectList} orgs={orgs} defaultOrgId={personalOrgId} />
+        <ProjectsBrowser
+          projects={projectList}
+          orgs={orgs}
+          defaultOrgId={personalOrgId}
+          callerUserId={userId}
+        />
       )}
     </div>
   );
