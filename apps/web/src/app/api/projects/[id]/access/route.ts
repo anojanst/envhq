@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
-import { getUserId, resolveDisplayNames } from "@/lib/auth";
+import { getUserId } from "@/lib/auth";
 import { getAccessibleProject, isReadOnly, isRole, type EnvScope, type Role } from "@/lib/access";
 import { getClerkOrgRole } from "@/lib/orgs";
-import { getGroup, getGroupNames } from "@/lib/groups";
-import { listGrants, upsertGrant, type SubjectType } from "@/lib/grants";
+import { getGroup } from "@/lib/groups";
+import { listGrants, upsertGrant, withGrantNames, type SubjectType } from "@/lib/grants";
 import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -45,15 +45,6 @@ function parseRequestEnvScope(
   return scope;
 }
 
-/** Resolve each grant's display name — a Clerk user lookup or a `groups` row, depending on subjectType. */
-async function withNames(grants: Awaited<ReturnType<typeof listGrants>>) {
-  const userIds = grants.filter((g) => g.subjectType === "user").map((g) => g.subjectId);
-  const groupIds = grants.filter((g) => g.subjectType === "group").map((g) => g.subjectId);
-  const [userNames, groupNames] = await Promise.all([resolveDisplayNames(userIds), getGroupNames(groupIds)]);
-  const names = { ...userNames, ...groupNames };
-  return grants.map((g) => ({ ...g, name: names[g.subjectId] ?? g.subjectId }));
-}
-
 // List who has direct access to this project (admin-only — this is the
 // "manage access" view, not something a Viewer/Editor needs to see).
 export async function GET(req: Request, { params }: Params) {
@@ -69,7 +60,7 @@ export async function GET(req: Request, { params }: Params) {
     listGrants(id),
     db.select({ id: environments.id, name: environments.name }).from(environments).where(eq(environments.projectId, id)),
   ]);
-  return json({ grants: await withNames(grants), environments: envs });
+  return json({ grants: await withGrantNames(grants), environments: envs });
 }
 
 // Grant (or update the role of) an existing org member or an org group.
@@ -111,6 +102,6 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const grant = await upsertGrant(owned.project.orgId, id, subjectType, subjectId, role as Role, envScope);
-  const [named] = await withNames([grant]);
+  const [named] = await withGrantNames([grant]);
   return json({ grant: named }, 201);
 }

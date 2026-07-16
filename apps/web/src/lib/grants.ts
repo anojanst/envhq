@@ -2,6 +2,8 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accessGrants } from "@/db/schema";
 import { parseEnvScope, type EnvScope, type Role } from "@/lib/access";
+import { resolveDisplayNames } from "@/lib/auth";
+import { getGroupNames } from "@/lib/groups";
 
 /**
  * `access_grants` CRUD (M5 PR2 direct users, PR3b groups). Kept separate
@@ -71,6 +73,15 @@ export async function upsertGrant(
     })
     .returning();
   return toGrantRow(row!);
+}
+
+/** Resolve each grant's display name — a Clerk user lookup or a `groups` row, depending on subjectType. Shared by the access API route and the Access page's SSR fetch. */
+export async function withGrantNames<G extends GrantRow>(grants: G[]): Promise<(G & { name: string })[]> {
+  const userIds = grants.filter((g) => g.subjectType === "user").map((g) => g.subjectId);
+  const groupIds = grants.filter((g) => g.subjectType === "group").map((g) => g.subjectId);
+  const [userNames, groupNames] = await Promise.all([resolveDisplayNames(userIds), getGroupNames(groupIds)]);
+  const names = { ...userNames, ...groupNames };
+  return grants.map((g) => ({ ...g, name: names[g.subjectId] ?? g.subjectId }));
 }
 
 /** Revoke a grant. Returns whether a row was actually deleted (for a 404 vs. no-op). */

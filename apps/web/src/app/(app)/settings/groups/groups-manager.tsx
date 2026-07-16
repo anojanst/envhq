@@ -54,7 +54,7 @@ export function GroupsManager({ initialGroups }: { initialGroups: GroupMeta[] })
   const [busy, setBusy] = useState(false);
 
   const [membersGroup, setMembersGroup] = useState<GroupMeta | null>(null);
-  // `null` doubles as "not loaded yet" — see share-dialog.tsx for the same pattern.
+  // `null` doubles as "not loaded yet" — see access-manager.tsx for the same pattern.
   const [members, setMembers] = useState<Member[] | null>(null);
   const [orgMembers, setOrgMembers] = useState<OrgMember[] | null>(null);
   const [selectedUserId, setSelectedUserId] = useState("");

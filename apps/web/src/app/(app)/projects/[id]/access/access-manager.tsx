@@ -4,14 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight, ShieldAlert, Trash2, User, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/client";
 
@@ -65,46 +58,49 @@ function parseSubject(key: string): { subjectType: SubjectType; subjectId: strin
   return { subjectType: subjectType as SubjectType, subjectId: rest.join(":") };
 }
 
-export function ShareDialog({
+/**
+ * Full-page replacement for the old Manage Access dialog: the per-env
+ * restriction panel needs real width to lay out one row per environment,
+ * which a `sm:max-w-md` dialog couldn't give it without content spilling out
+ * of the box. Grants/environments come from the page's SSR fetch (no load
+ * flash for the main table); the org member/group picker still loads
+ * client-side on mount, same as the dialog did on open.
+ */
+export function AccessManager({
   projectId,
-  open,
-  onOpenChange,
+  initialGrants,
+  initialEnvironments,
 }: {
   projectId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  initialGrants: Grant[];
+  initialEnvironments: EnvironmentOption[];
 }) {
-  // `null` doubles as "not loaded yet" so `loading` derives from data
-  // presence instead of a separate flag — avoids setting state synchronously
-  // at the top of the effect below (react-hooks/set-state-in-effect).
-  const [grants, setGrants] = useState<Grant[] | null>(null);
+  const [grants, setGrants] = useState<Grant[]>(initialGrants);
+  const [environments, setEnvironments] = useState<EnvironmentOption[]>(initialEnvironments);
   const [members, setMembers] = useState<Member[] | null>(null);
   const [groups, setGroups] = useState<GroupOption[] | null>(null);
-  const [environments, setEnvironments] = useState<EnvironmentOption[] | null>(null);
   const [selectedSubject, setSelectedSubject] = useState("");
   const [selectedRole, setSelectedRole] = useState<Role>("viewer");
   const [adding, setAdding] = useState(false);
   const [expandedGrantId, setExpandedGrantId] = useState<string | null>(null);
-  const loading = grants === null || members === null || groups === null || environments === null;
+  const pickersLoading = members === null || groups === null;
 
   useEffect(() => {
-    if (!open) return;
     Promise.all([
-      api<{ grants: Grant[]; environments: EnvironmentOption[] }>(`/api/projects/${projectId}/access`),
       api<{ members: Member[] }>(`/api/projects/${projectId}/access/members`),
       api<{ groups: GroupOption[] }>(`/api/projects/${projectId}/access/groups`),
     ])
-      .then(([g, m, gr]) => {
-        setGrants(g.grants);
-        setEnvironments(g.environments);
+      .then(([m, gr]) => {
         setMembers(m.members);
         setGroups(gr.groups);
       })
       .catch((err) => toast.error((err as Error).message));
-  }, [open, projectId]);
+  }, [projectId]);
 
   async function reloadGrants() {
-    const data = await api<{ grants: Grant[]; environments: EnvironmentOption[] }>(`/api/projects/${projectId}/access`);
+    const data = await api<{ grants: Grant[]; environments: EnvironmentOption[] }>(
+      `/api/projects/${projectId}/access`,
+    );
     setGrants(data.grants);
     setEnvironments(data.environments);
   }
@@ -172,77 +168,102 @@ export function ShareDialog({
     }
   }
 
-  const grantedUserIds = new Set((grants ?? []).filter((g) => g.subjectType === "user").map((g) => g.subjectId));
-  const grantedGroupIds = new Set((grants ?? []).filter((g) => g.subjectType === "group").map((g) => g.subjectId));
+  const grantedUserIds = new Set(grants.filter((g) => g.subjectType === "user").map((g) => g.subjectId));
+  const grantedGroupIds = new Set(grants.filter((g) => g.subjectType === "group").map((g) => g.subjectId));
   const pickableMembers = (members ?? []).filter((m) => !grantedUserIds.has(m.userId));
   const pickableGroups = (groups ?? []).filter((g) => !grantedGroupIds.has(g.id));
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Manage access</DialogTitle>
-          <DialogDescription>Grant org members or groups a role on this project.</DialogDescription>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-3">
-          {loading ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
-          ) : grants.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-6 text-center text-sm text-muted-foreground">
-              <Users className="size-5" />
-              No one has been granted direct access yet.
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {grants.map((g) => {
+    <div className="flex flex-col gap-6">
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Environments</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {grants.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                  <Users className="mx-auto mb-2 size-6" />
+                  No one has been granted direct access yet.
+                </TableCell>
+              </TableRow>
+            ) : (
+              grants.flatMap((g) => {
                 const SubjectIcon = g.subjectType === "group" ? Users : User;
                 const isExpanded = expandedGrantId === g.id;
                 const isRestricted = !!g.envScope && Object.keys(g.envScope).length > 0;
                 const availableCaps = ROLES.filter((r) => ROLE_RANK[r] <= ROLE_RANK[g.role]);
-                return (
-                  <li key={g.id} className="rounded-md border">
-                    <div className="flex items-center justify-between gap-2 px-3 py-2">
+
+                const mainRow = (
+                  <TableRow key={g.id}>
+                    <TableCell className="font-medium">
+                      <span className="flex items-center gap-1.5">
+                        <SubjectIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{g.name}</span>
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        className={selectClass}
+                        value={g.role}
+                        onChange={(e) => changeRole(g, e.target.value as Role)}
+                      >
+                        {ROLES.map((r) => (
+                          <option key={r} value={r}>
+                            {ROLE_LABEL[r]}
+                          </option>
+                        ))}
+                      </select>
+                    </TableCell>
+                    <TableCell>
                       <button
                         type="button"
-                        className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium"
+                        className="flex flex-wrap items-center gap-1.5 text-xs"
                         onClick={() => setExpandedGrantId(isExpanded ? null : g.id)}
-                        title="Restrict access to specific environments"
                       >
                         {isExpanded ? (
                           <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                         ) : (
                           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
                         )}
-                        <SubjectIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{g.name}</span>
-                        {isRestricted && (
-                          <ShieldAlert className="size-3.5 shrink-0 text-amber-600" aria-label="Restricted on some environments" />
+                        {isRestricted ? (
+                          <>
+                            <ShieldAlert className="size-3.5 shrink-0 text-amber-600" aria-label="Restricted on some environments" />
+                            {Object.entries(g.envScope!).map(([env, role]) => (
+                              <span key={env} className="rounded bg-muted px-1.5 py-0.5">
+                                {env}: {ROLE_LABEL[role!]}
+                              </span>
+                            ))}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">All environments</span>
                         )}
                       </button>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <select
-                          className={selectClass}
-                          value={g.role}
-                          onChange={(e) => changeRole(g, e.target.value as Role)}
-                        >
-                          {ROLES.map((r) => (
-                            <option key={r} value={r}>
-                              {ROLE_LABEL[r]}
-                            </option>
-                          ))}
-                        </select>
-                        <Button variant="ghost" size="icon" className="size-7" onClick={() => revoke(g)}>
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-                    </div>
-                    {isExpanded && (
-                      <div className="flex flex-col gap-1.5 border-t bg-muted/30 px-3 py-2">
-                        {(environments ?? []).length === 0 ? (
-                          <p className="text-xs text-muted-foreground">No environments yet.</p>
-                        ) : (
-                          (environments ?? []).map((env) => (
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="icon" className="size-7" onClick={() => revoke(g)}>
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+
+                if (!isExpanded) return [mainRow];
+
+                const expansionRow = (
+                  <TableRow key={`${g.id}-envs`} className="bg-muted/30 hover:bg-muted/30">
+                    <TableCell colSpan={4}>
+                      {environments.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No environments yet.</p>
+                      ) : (
+                        <div className="grid gap-x-6 gap-y-2 py-1 sm:grid-cols-2 lg:grid-cols-3">
+                          {environments.map((env) => (
                             <div key={env.id} className="flex items-center justify-between gap-2">
                               <span className="truncate text-xs text-muted-foreground">{env.name}</span>
                               <select
@@ -258,21 +279,28 @@ export function ShareDialog({
                                 ))}
                               </select>
                             </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </li>
+                          ))}
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
                 );
-              })}
-            </ul>
-          )}
-        </div>
 
-        {!loading && (
-          <form onSubmit={addGrant} className="flex flex-col gap-2 border-t pt-4">
+                return [mainRow, expansionRow];
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="rounded-lg border p-4">
+        <h2 className="mb-3 text-sm font-medium">Add access</h2>
+        {pickersLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <form onSubmit={addGrant} className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <select
-              className={cn(selectClass, "w-full")}
+              className={cn(selectClass, "flex-1")}
               value={selectedSubject}
               onChange={(e) => setSelectedSubject(e.target.value)}
             >
@@ -296,31 +324,23 @@ export function ShareDialog({
                 </optgroup>
               )}
             </select>
-            <div className="flex items-center gap-2">
-              <select
-                className={cn(selectClass, "flex-1")}
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value as Role)}
-              >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {ROLE_LABEL[r]}
-                  </option>
-                ))}
-              </select>
-              <Button type="submit" disabled={adding || !selectedSubject}>
-                {adding ? "Adding…" : "Add"}
-              </Button>
-            </div>
+            <select
+              className={selectClass}
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value as Role)}
+            >
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABEL[r]}
+                </option>
+              ))}
+            </select>
+            <Button type="submit" disabled={adding || !selectedSubject}>
+              {adding ? "Adding…" : "Add"}
+            </Button>
           </form>
         )}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }
