@@ -8,14 +8,13 @@ export const runtime = "nodejs";
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * Groups eligible to be granted access to this project — the Share
- * dialog's group picker source. Deliberately project-scoped rather than a
- * generic "my org's groups" call: resolving org from `owned.project.orgId`
- * (same pattern as `access/members/route.ts`) means this is always correct
- * even when the caller's currently-active org (M5 PR4's switcher) differs
- * from the project's own org — `/api/groups` resolves org via
- * `resolveDefaultOrgId` (always the personal org), which would silently
- * list the wrong org's groups for a project that lives elsewhere.
+ * Groups eligible to be granted access to this project — the Access page's
+ * group picker source. Deliberately project-scoped rather than a generic
+ * "my org's groups" call: resolving org from `owned.project.orgId` (same
+ * pattern as `access/members/route.ts`) means this is always correct
+ * regardless of which org context the caller happens to be browsing —
+ * `/api/groups` takes its own explicit `orgId`, which a naive reuse here
+ * could easily mismatch against the project actually being shared.
  */
 export async function GET(req: Request, { params }: Params) {
   const { userId, expired, scope } = await getUserId(req);

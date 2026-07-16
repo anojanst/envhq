@@ -18,16 +18,24 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { ProjectAvatar, EnvBadge } from "@/components/project-visuals";
-import { cn } from "@/lib/utils";
+import { cn, nativeSelectClass } from "@/lib/utils";
 import { api } from "@/lib/client";
+import type { OrgOption } from "./projects-browser";
 
 const NAME_PLACEHOLDER = "acme-api";
 const MAX_LENGTH = 60;
 
-export function CreateProjectDialog() {
+export function CreateProjectDialog({
+  orgs,
+  defaultOrgId,
+}: {
+  orgs: OrgOption[];
+  defaultOrgId: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [orgId, setOrgId] = useState(defaultOrgId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,9 +45,10 @@ export function CreateProjectDialog() {
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (!next) {
-      // Dialog is gone either way; don't carry a stale name/error into the
-      // next open (matches the create-environment dialog's reset-on-close).
+      // Dialog is gone either way; don't carry a stale name/org/error into
+      // the next open (matches the create-environment dialog's reset-on-close).
       setName("");
+      setOrgId(defaultOrgId);
       setError(null);
     }
   }
@@ -50,7 +59,7 @@ export function CreateProjectDialog() {
     setSaving(true);
     setError(null);
     try {
-      await api("/api/projects", { method: "POST", body: { name: trimmed } });
+      await api("/api/projects", { method: "POST", body: { name: trimmed, orgId } });
       toast.success(`Project "${trimmed}" created`);
       handleOpenChange(false);
       router.refresh();
@@ -117,6 +126,24 @@ export function CreateProjectDialog() {
                 </p>
               ) : null}
             </div>
+
+            {orgs.length > 1 ? (
+              <div className="grid gap-2">
+                <Label htmlFor="project-org">Organization</Label>
+                <select
+                  id="project-org"
+                  className={nativeSelectClass}
+                  value={orgId}
+                  onChange={(e) => setOrgId(e.target.value)}
+                >
+                  {orgs.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
           </div>
 
           <DialogFooter>

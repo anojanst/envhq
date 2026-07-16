@@ -9,15 +9,19 @@ export const runtime = "nodejs";
 const UNIQUE_VIOLATION = "23505";
 
 // Groups are org-level; every route in this file/subtree is gated on Clerk
-// org admin, not a project role — there's no project in scope. Resolves
-// whichever org is active in the caller's session (M5 PR4's switcher),
-// falling back to the personal org — same pattern as api/projects/route.ts.
+// org admin, not a project role — there's no project in scope. An explicit
+// orgId (query param for GET, body for POST) names which org; omitting it
+// falls back to the personal org — same pattern as api/projects/route.ts.
+// There's no session-level "active org" to fall back to first anymore (the
+// web sidebar's org switcher was removed — Settings > Groups now sends its
+// own page-local `?org=` selection through explicitly).
 export async function GET(req: Request) {
-  const { userId, expired, orgId: activeOrgId } = await getUserId(req);
+  const { userId, expired } = await getUserId(req);
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();
 
-  const orgId = await resolveRequestedOrgId(userId, activeOrgId);
+  const requestedOrgId = new URL(req.url).searchParams.get("orgId");
+  const orgId = await resolveRequestedOrgId(userId, requestedOrgId);
   if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return forbidden();
 
   const groups = await listGroups(orgId);
@@ -25,14 +29,15 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { userId, expired, orgId: activeOrgId } = await getUserId(req);
+  const { userId, expired } = await getUserId(req);
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();
 
-  const orgId = await resolveRequestedOrgId(userId, activeOrgId);
+  const body = await req.json().catch(() => null);
+  const requestedOrgId = typeof body?.orgId === "string" ? body.orgId : null;
+  const orgId = await resolveRequestedOrgId(userId, requestedOrgId);
   if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return forbidden();
 
-  const body = await req.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!name) return badRequest("name is required");
 

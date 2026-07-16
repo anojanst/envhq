@@ -41,6 +41,7 @@ interface TokenMeta {
 interface ProjectOption {
   id: string;
   name: string;
+  orgName: string;
 }
 
 const EXPIRY_OPTIONS = [
@@ -77,6 +78,7 @@ export function TokensManager({
   const [projectId, setProjectId] = useState("");
   const [capability, setCapability] = useState("write");
   const [expiresInDays, setExpiresInDays] = useState("90");
+  const multiOrg = new Set(projects.map((p) => p.orgName)).size > 1;
   const [busy, setBusy] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -172,7 +174,7 @@ export function TokensManager({
                     <option value="">All projects</option>
                     {projects.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name}
+                        {multiOrg ? `${p.name} (${p.orgName})` : p.name}
                       </option>
                     ))}
                   </select>

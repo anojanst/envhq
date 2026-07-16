@@ -12,9 +12,11 @@ export default function WebAppDocsPage() {
 
       <H2>Dashboard</H2>
       <P>
-        Lists every project you can access in the active organization (see{" "}
+        Lists every project you can access across every organization you belong to (see{" "}
         <a href="#teams-and-sharing" className="underline underline-offset-2">Teams &amp; sharing</a>{" "}
-        below) — your own, plus any a teammate has shared with you. From here you can:
+        below) — your own, plus any a teammate has shared with you. An organization filter next
+        to the search box narrows the list down to one org at a time; it only appears once
+        you&apos;re in more than one. From here you can:
       </P>
       <UL>
         <li>create a new project (a <Code>dev</Code> environment is added automatically);</li>
@@ -56,10 +58,11 @@ export default function WebAppDocsPage() {
 
       <H2 id="teams-and-sharing">Teams &amp; sharing</H2>
       <P>
-        Every account gets a personal organization automatically. Use the org switcher in the
-        sidebar to create or switch to a <strong>team</strong> organization and invite people to
-        it — invitations, pending status, member roles, and removal are handled entirely by
-        Clerk&apos;s own organization UI at <Code>Teams</Code> in the sidebar.
+        Every account gets a personal organization automatically. Create or join a{" "}
+        <strong>team</strong> organization from <Code>Teams</Code> in the sidebar — invitations,
+        pending status, member roles, and removal are handled entirely by Clerk&apos;s own
+        organization UI there. When you belong to more than one org, a picker on that page lets
+        you switch which one you&apos;re managing.
       </P>
       <UL>
         <li>

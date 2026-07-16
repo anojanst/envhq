@@ -22,7 +22,7 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, nativeSelectClass as selectClass } from "@/lib/utils";
 import { api } from "@/lib/client";
 
 interface GroupMeta {
@@ -44,10 +44,14 @@ interface OrgMember {
   imageUrl: string;
 }
 
-const selectClass =
-  "h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
-
-export function GroupsManager({ initialGroups }: { initialGroups: GroupMeta[] }) {
+export function GroupsManager({
+  orgId,
+  initialGroups,
+}: {
+  /** `null` when `?org=` named an org the caller doesn't belong to (tampered URL) — the manager renders a plain message instead. */
+  orgId: string | null;
+  initialGroups: GroupMeta[];
+}) {
   const [groups, setGroups] = useState<GroupMeta[]>(initialGroups);
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
@@ -61,7 +65,7 @@ export function GroupsManager({ initialGroups }: { initialGroups: GroupMeta[] })
   const [adding, setAdding] = useState(false);
 
   async function reload() {
-    const data = await api<{ groups: GroupMeta[] }>("/api/groups");
+    const data = await api<{ groups: GroupMeta[] }>(`/api/groups?orgId=${orgId}`);
     setGroups(data.groups);
   }
 
@@ -69,7 +73,7 @@ export function GroupsManager({ initialGroups }: { initialGroups: GroupMeta[] })
     e.preventDefault();
     setBusy(true);
     try {
-      await api("/api/groups", { method: "POST", body: { name: name.trim() } });
+      await api("/api/groups", { method: "POST", body: { name: name.trim(), orgId } });
       toast.success("Group created");
       setName("");
       setCreateOpen(false);
@@ -99,7 +103,7 @@ export function GroupsManager({ initialGroups }: { initialGroups: GroupMeta[] })
     setSelectedUserId("");
     Promise.all([
       api<{ members: Member[] }>(`/api/groups/${group.id}/members`),
-      api<{ members: OrgMember[] }>("/api/orgs/members"),
+      api<{ members: OrgMember[] }>(`/api/orgs/members?orgId=${orgId}`),
     ])
       .then(([m, om]) => {
         setMembers(m.members);
@@ -145,6 +149,14 @@ export function GroupsManager({ initialGroups }: { initialGroups: GroupMeta[] })
 
   const memberIds = new Set((members ?? []).map((m) => m.userId));
   const pickable = (orgMembers ?? []).filter((m) => !memberIds.has(m.userId));
+
+  if (!orgId) {
+    return (
+      <p className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+        You don&rsquo;t have access to that organization.
+      </p>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">

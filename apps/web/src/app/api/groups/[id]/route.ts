@@ -1,21 +1,25 @@
 import { getUserId } from "@/lib/auth";
-import { resolveRequestedOrgId, getClerkOrgRole } from "@/lib/orgs";
-import { deleteGroup } from "@/lib/groups";
-import { json, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
+import { getClerkOrgRole } from "@/lib/orgs";
+import { deleteGroup, getGroupOrgId } from "@/lib/groups";
+import { json, unauthorized, tokenExpired, notFound } from "@/lib/api";
 
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function DELETE(req: Request, { params }: Params) {
-  const { userId, expired, orgId: activeOrgId } = await getUserId(req);
+  const { userId, expired } = await getUserId(req);
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();
 
-  const orgId = await resolveRequestedOrgId(userId, activeOrgId);
-  if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return forbidden();
-
   const { id } = await params;
+  // The group's own org is the source of truth for which org to check the
+  // caller's role against — not a session-level "active org." Doesn't-exist
+  // and not-admin-of-its-org both 404 (not 403), same "don't reveal whether
+  // it exists" convention as the project access layer.
+  const orgId = await getGroupOrgId(id);
+  if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return notFound("Group not found");
+
   const deleted = await deleteGroup(orgId, id);
   if (!deleted) return notFound("Group not found");
 

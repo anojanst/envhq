@@ -84,12 +84,13 @@ export async function listMyOrgs(userId: string): Promise<{ id: string; name: st
 }
 
 /**
- * Resolves which org an org-context-less request (project list/create) acts
- * on: an explicit `requestedOrgId` if the caller names one and is a Clerk
- * member of it, else the caller's personal org. Shared by both the web
- * (no org-switcher UI yet, so this is unused in practice until one exists)
- * and the CLI (no `--org` flag until a later milestone) — same fallback
- * either way.
+ * Resolves which org an org-context-less request (project list/create, groups,
+ * org members) acts on: an explicit `requestedOrgId` if the caller names one
+ * and is a Clerk member of it, else the caller's personal org. Shared by the
+ * web app (an explicit `orgId`/`?org=` from a project-creation picker or a
+ * page-local `OrgPicker` — there's no session-level "active org" to prefer
+ * since the sidebar's org switcher was removed) and the CLI (`--org`, M5 PR5)
+ * — same fallback either way.
  *
  * Returns `null` if `requestedOrgId` was given but the caller isn't a member
  * — callers should treat that as a 403, not silently fall back.

@@ -17,10 +17,13 @@ export interface TokenScope {
  *                     should return a distinct `token_expired` 401 so the CLI
  *                     knows to re-run the browser login rather than give up
  *   - `scope`       → present only for CLI tokens; used to enforce PAT scoping
- *   - `orgId`       → the org currently active in a Clerk session (set via
- *                     `<OrganizationSwitcher>`'s `setActive()`, M5 PR4);
- *                     `undefined` for CLI bearer tokens, which have no
- *                     session-level "active org" concept
+ *   - `orgId`       → whatever org Clerk considers "active" in the session,
+ *                     if any; `undefined` for CLI bearer tokens, which have
+ *                     no session concept at all. Not used for authorization
+ *                     anywhere anymore — every org-scoped route takes an
+ *                     explicit `orgId` (query param / body / a page-local
+ *                     picker) since the sidebar's org switcher was removed.
+ *                     Kept on `AuthResult` in case a future feature wants it.
  */
 export interface AuthResult {
   userId: string | null;

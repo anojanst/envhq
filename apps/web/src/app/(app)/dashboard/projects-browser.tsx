@@ -16,7 +16,13 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { ProjectAvatar, EnvBadge } from "@/components/project-visuals";
+import { nativeSelectClass } from "@/lib/utils";
 import { CreateProjectDialog } from "./create-project-dialog";
+
+export interface OrgOption {
+  id: string;
+  name: string;
+}
 
 // Compact page-number window with ellipses for larger counts.
 function pageWindow(current: number, total: number): (number | "ellipsis")[] {
@@ -36,26 +42,39 @@ export interface ProjectListItem {
   name: string;
   createdLabel: string;
   envs: string[];
-  /** Only present in the cross-org "all my orgs" view — disambiguates same-named projects across orgs. */
-  orgName?: string;
+  orgId: string;
+  orgName: string;
 }
 
 const PAGE_SIZE = 9;
+const ALL_ORGS = "";
 
-export function ProjectsBrowser({ projects }: { projects: ProjectListItem[] }) {
+export function ProjectsBrowser({
+  projects,
+  orgs,
+  defaultOrgId,
+}: {
+  projects: ProjectListItem[];
+  orgs: OrgOption[];
+  defaultOrgId: string;
+}) {
   const [query, setQuery] = useState("");
+  const [orgFilter, setOrgFilter] = useState(ALL_ORGS);
   const [page, setPage] = useState(1);
+  const multiOrg = orgs.length > 1;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter(
-      (p) =>
+    return projects.filter((p) => {
+      if (orgFilter && p.orgId !== orgFilter) return false;
+      if (!q) return true;
+      return (
         p.name.toLowerCase().includes(q) ||
         p.envs.some((e) => e.toLowerCase().includes(q)) ||
-        (p.orgName?.toLowerCase().includes(q) ?? false),
-    );
-  }, [projects, query]);
+        p.orgName.toLowerCase().includes(q)
+      );
+    });
+  }, [projects, query, orgFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, pageCount);
@@ -64,6 +83,11 @@ export function ProjectsBrowser({ projects }: { projects: ProjectListItem[] }) {
 
   function onSearch(value: string) {
     setQuery(value);
+    setPage(1);
+  }
+
+  function onOrgFilterChange(value: string) {
+    setOrgFilter(value);
     setPage(1);
   }
 
@@ -110,22 +134,49 @@ export function ProjectsBrowser({ projects }: { projects: ProjectListItem[] }) {
             <Search className="size-4" /> Search
           </Button>
         </form>
-        <CreateProjectDialog />
+        {multiOrg ? (
+          <select
+            className={nativeSelectClass}
+            value={orgFilter}
+            onChange={(e) => onOrgFilterChange(e.target.value)}
+            aria-label="Filter by organization"
+          >
+            <option value={ALL_ORGS}>All orgs</option>
+            {orgs.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        <CreateProjectDialog orgs={orgs} defaultOrgId={defaultOrgId} />
       </div>
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
           <SearchX className="size-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
-            No projects match{" "}
-            <span className="font-medium text-foreground">“{query.trim()}”</span>.
+            {query.trim() ? (
+              <>
+                No projects match{" "}
+                <span className="font-medium text-foreground">“{query.trim()}”</span>.
+              </>
+            ) : (
+              <>
+                No projects in{" "}
+                <span className="font-medium text-foreground">
+                  {orgs.find((o) => o.id === orgFilter)?.name ?? "this org"}
+                </span>
+                .
+              </>
+            )}
           </p>
         </div>
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {visible.map((project) => (
-              <ProjectCard key={project.id} project={project} />
+              <ProjectCard key={project.id} project={project} showOrg={multiOrg} />
             ))}
           </div>
 
@@ -195,7 +246,7 @@ export function ProjectsBrowser({ projects }: { projects: ProjectListItem[] }) {
   );
 }
 
-function ProjectCard({ project }: { project: ProjectListItem }) {
+function ProjectCard({ project, showOrg }: { project: ProjectListItem; showOrg: boolean }) {
   const shown = project.envs.slice(0, 4);
   const overflow = project.envs.length - shown.length;
 
@@ -213,7 +264,7 @@ function ProjectCard({ project }: { project: ProjectListItem }) {
                 <span className="truncate font-medium">{project.name}</span>
                 <ArrowUpRight className="size-4 shrink-0 -translate-x-1 text-muted-foreground opacity-0 transition-all group-hover:translate-x-0 group-hover:text-brand group-hover:opacity-100" />
               </div>
-              {project.orgName ? (
+              {showOrg ? (
                 <p className="truncate text-xs text-muted-foreground">{project.orgName}</p>
               ) : null}
               <p className="text-sm text-muted-foreground">

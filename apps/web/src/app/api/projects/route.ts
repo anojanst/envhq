@@ -12,14 +12,15 @@ const UNIQUE_VIOLATION = "23505";
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
-  const { userId, expired, scope, orgId: activeOrgId } = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();
 
-  // An explicit ?orgId= wins (lets any caller name an org directly); else
-  // prefer the session's active org (M5 PR4's switcher); CLI PATs have no
-  // session, so this falls through to the personal-org default either way.
-  const requestedOrgId = new URL(req.url).searchParams.get("orgId") ?? activeOrgId;
+  // CLI-only route (the web dashboard reads projects via lib/access.ts
+  // directly, not this endpoint) — an explicit ?orgId= names which org
+  // (the CLI's `--org` flag, M5 PR5), else the personal-org default. No
+  // session-level "active org" to prefer anymore.
+  const requestedOrgId = new URL(req.url).searchParams.get("orgId");
   const orgId = await resolveRequestedOrgId(userId, requestedOrgId);
   if (!orgId) return forbidden("You're not a member of that org.");
 
@@ -29,7 +30,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { userId, expired, scope, orgId: activeOrgId } = await getUserId(req);
+  const { userId, expired, scope } = await getUserId(req);
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();
   if (!isFullAccess(scope)) return forbidden("This token can't create projects.");
@@ -38,8 +39,11 @@ export async function POST(req: Request) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!name) return badRequest("name is required");
 
-  // Same precedence as GET: explicit body param, else the session's active org.
-  const requestedOrgId = (typeof body?.orgId === "string" ? body.orgId : null) ?? activeOrgId;
+  // An explicit body orgId names which org — the "New project" dialog always
+  // sends one (the user picks explicitly rather than it being silently
+  // assigned from whatever org happened to be active); the personal-org
+  // default only really applies to the CLI omitting `--org`.
+  const requestedOrgId = typeof body?.orgId === "string" ? body.orgId : null;
   const orgId = await resolveRequestedOrgId(userId, requestedOrgId);
   if (!orgId) return forbidden("You're not a member of that org.");
 

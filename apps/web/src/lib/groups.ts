@@ -65,6 +65,20 @@ export async function getGroup(orgId: string, groupId: string) {
   return rows[0];
 }
 
+/**
+ * A group's own org id, or `null` if it doesn't exist. For routes that
+ * target a specific group by id (delete, member list/add/remove) — the
+ * group's own org is the source of truth for which org to check the
+ * caller's admin role against, not a session-level "active org" (there is
+ * none now that the org switcher is gone, and even when there was one, a
+ * group in a *different* org than whatever happened to be active would
+ * have 404'd incorrectly).
+ */
+export async function getGroupOrgId(groupId: string): Promise<string | null> {
+  const rows = await db.select({ orgId: groups.orgId }).from(groups).where(eq(groups.id, groupId)).limit(1);
+  return rows[0]?.orgId ?? null;
+}
+
 /** Create a group. Throws on duplicate name within the org (23505) — caller catches. */
 export async function createGroup(orgId: string, name: string): Promise<GroupRow> {
   const [row] = await db.insert(groups).values({ orgId, name }).returning();

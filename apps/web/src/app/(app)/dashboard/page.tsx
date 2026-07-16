@@ -1,33 +1,29 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { FolderTree } from "lucide-react";
-import { listAccessibleProjectsWithEnvs, listAccessibleProjectsWithEnvsAcrossOrgs } from "@/lib/access";
-import { resolveRequestedOrgId } from "@/lib/orgs";
+import { listAccessibleProjectsWithEnvsAcrossOrgs } from "@/lib/access";
+import { getOrCreatePersonalOrg, listMyOrgs } from "@/lib/orgs";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ProjectsBrowser, type ProjectListItem } from "./projects-browser";
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ all?: string }>;
-}) {
-  const { userId, orgId: activeOrgId } = await auth();
+export default async function DashboardPage() {
+  const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
-  const { all } = await searchParams;
-  const showAll = all === "1";
+  // Every user gets a personal org lazily on first touch (M5 PR1) — force it
+  // to exist here so a brand-new account's very first dashboard load has
+  // somewhere to land, since nothing else on this always-cross-org page
+  // would otherwise trigger its creation. Also doubles as the "New project"
+  // dialog's default org selection.
+  const personalOrgId = await getOrCreatePersonalOrg(userId);
+  const orgs = await listMyOrgs(userId);
 
-  // Prefer whichever org is active in the sidebar switcher (M5 PR4); falls
-  // back to the personal org if none is active yet (e.g. first-ever load).
-  // One pass: projects (newest first) with their environment names (oldest first).
-  type Row = { id: string; name: string; createdAt: Date; envName: string | null; orgName?: string };
-  const rows: Row[] = showAll
-    ? await listAccessibleProjectsWithEnvsAcrossOrgs(userId)
-    : await (async () => {
-        const orgId = await resolveRequestedOrgId(userId, activeOrgId);
-        return orgId ? listAccessibleProjectsWithEnvs(userId, orgId) : [];
-      })();
+  // One pass across every org the user belongs to: projects (newest first)
+  // with their environment names (oldest first). The org filter (in
+  // ProjectsBrowser) is a client-side filter of this same fetch, not a
+  // separate query — no reason to round-trip the server just to narrow down
+  // data already in hand.
+  const rows = await listAccessibleProjectsWithEnvsAcrossOrgs(userId);
 
   const byId = new Map<string, ProjectListItem>();
   for (const r of rows) {
@@ -39,6 +35,7 @@ export default async function DashboardPage({
         name: r.name,
         createdLabel: timeAgo(r.createdAt),
         envs: [],
+        orgId: r.orgId,
         orgName: r.orgName,
       };
       byId.set(r.id, p);
@@ -57,12 +54,6 @@ export default async function DashboardPage({
               {projectList.length}
             </span>
           ) : null}
-          <Link
-            href={showAll ? "/dashboard" : "/dashboard?all=1"}
-            className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            {showAll ? "Show current org only" : "Show all my orgs"}
-          </Link>
         </div>
         <p className="text-sm text-muted-foreground">
           Each project groups its own set of environments.
@@ -81,10 +72,10 @@ export default async function DashboardPage({
               variables across dev, staging, and prod.
             </p>
           </div>
-          <CreateProjectDialog />
+          <CreateProjectDialog orgs={orgs} defaultOrgId={personalOrgId} />
         </div>
       ) : (
-        <ProjectsBrowser projects={projectList} />
+        <ProjectsBrowser projects={projectList} orgs={orgs} defaultOrgId={personalOrgId} />
       )}
     </div>
   );

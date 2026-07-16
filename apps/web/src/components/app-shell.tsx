@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UserButton, OrganizationSwitcher } from "@clerk/nextjs";
+import { UserButton } from "@clerk/nextjs";
 import { Folder, Settings, Users, type LucideIcon } from "lucide-react";
 import { BrandMark } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -66,9 +66,13 @@ export function AppShell({
       <SidebarProvider defaultOpen={defaultOpen}>
         <AppSidebar />
         <SidebarInset>
-          <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur">
+          {/* Sidebar is off-canvas on mobile (closed by default), so it needs
+              an entry point outside itself there. Desktop collapses the
+              sidebar in place instead, so its trigger lives in the sidebar
+              header — no bar needed. */}
+          <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur md:hidden">
             <SidebarTrigger />
-            <Link href="/dashboard" aria-label="EnvHQ home" className="md:hidden">
+            <Link href="/dashboard" aria-label="EnvHQ home">
               <span className="font-semibold tracking-tight">
                 env<span className="text-brand">HQ</span>
               </span>
@@ -87,16 +91,15 @@ function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <Link
-          href="/dashboard"
-          aria-label="EnvHQ home"
-          className="flex items-center gap-2 px-1 py-1"
-        >
-          <BrandMark className="shrink-0" />
-          <span className="font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            env<span className="text-brand">HQ</span>
-          </span>
-        </Link>
+        <div className="flex items-center justify-between gap-2 px-1 py-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-2">
+          <Link href="/dashboard" aria-label="EnvHQ home" className="flex min-w-0 items-center gap-2">
+            <BrandMark className="shrink-0" />
+            <span className="truncate font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+              env<span className="text-brand">HQ</span>
+            </span>
+          </Link>
+          <SidebarTrigger className="shrink-0" />
+        </div>
       </SidebarHeader>
 
       <SidebarContent>
@@ -140,14 +143,6 @@ function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <div className="flex items-center gap-2 px-1 group-data-[collapsible=icon]:hidden">
-          <OrganizationSwitcher
-            hidePersonal
-            afterSelectOrganizationUrl="/dashboard"
-            organizationProfileUrl="/teams"
-            organizationProfileMode="navigation"
-          />
-        </div>
         <div className="flex items-center justify-between gap-2 px-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-2">
           <UserButton />
           <ThemeToggle />

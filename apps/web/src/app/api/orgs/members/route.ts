@@ -7,13 +7,16 @@ export const runtime = "nodejs";
 
 // Org members picker source for the groups admin page — org-admin gated
 // (same gate as the rest of the group-management routes), distinct from
-// `api/projects/[id]/access/members` (PR2), which is project-scoped.
+// `api/projects/[id]/access/members` (PR2), which is project-scoped. Takes
+// an explicit `?orgId=` (no session-level "active org" anymore — Settings >
+// Groups sends its page-local `?org=` selection through explicitly).
 export async function GET(req: Request) {
-  const { userId, expired, orgId: activeOrgId } = await getUserId(req);
+  const { userId, expired } = await getUserId(req);
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();
 
-  const orgId = await resolveRequestedOrgId(userId, activeOrgId);
+  const requestedOrgId = new URL(req.url).searchParams.get("orgId");
+  const orgId = await resolveRequestedOrgId(userId, requestedOrgId);
   if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return forbidden();
 
   const client = await clerkClient();

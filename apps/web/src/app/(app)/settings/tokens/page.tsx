@@ -3,21 +3,21 @@ import { redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apiTokens, projects } from "@/db/schema";
-import { listAccessibleProjects } from "@/lib/access";
-import { resolveRequestedOrgId } from "@/lib/orgs";
+import { listAccessibleProjectsWithEnvsAcrossOrgs } from "@/lib/access";
 import { TokensManager } from "./tokens-manager";
 
 export default async function TokensPage() {
-  const { userId, orgId: activeOrgId } = await auth();
+  const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
-  // Project-scoping dropdown: every project the user can access in the
-  // currently active org (M5 PR4), not just ones they personally created —
-  // this used to be `eq(projects.userId, userId)`, which missed projects
-  // reachable only via an org role or an access_grants row.
-  const orgId = await resolveRequestedOrgId(userId, activeOrgId);
-
-  const [tokens, accessibleProjects] = await Promise.all([
+  // Project-scoping dropdown: every project the user can access across every
+  // org they belong to, not just ones they personally created (this used to
+  // be `eq(projects.userId, userId)`, which missed projects reachable only
+  // via an org role or an access_grants row). Tokens are user-owned, not
+  // org-scoped, so there's no need to pick "which org" first here the way
+  // Settings > Groups has to — showing every accessible project at once
+  // sidesteps that entirely.
+  const [tokens, accessibleRows] = await Promise.all([
     db
       .select({
         id: apiTokens.id,
@@ -34,9 +34,13 @@ export default async function TokensPage() {
       .leftJoin(projects, eq(apiTokens.projectId, projects.id))
       .where(eq(apiTokens.userId, userId))
       .orderBy(desc(apiTokens.createdAt)),
-    orgId ? listAccessibleProjects(userId, orgId) : Promise.resolve([]),
+    listAccessibleProjectsWithEnvsAcrossOrgs(userId),
   ]);
-  const projectRows = accessibleProjects.map((p) => ({ id: p.id, name: p.name }));
+  const projectRows = [...new Map(accessibleRows.map((p) => [p.id, p])).values()].map((p) => ({
+    id: p.id,
+    name: p.name,
+    orgName: p.orgName,
+  }));
 
   return (
     <div className="flex flex-col gap-6">

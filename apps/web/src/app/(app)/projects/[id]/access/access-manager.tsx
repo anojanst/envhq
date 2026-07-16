@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { ChevronDown, ChevronRight, ShieldAlert, Trash2, User, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
+import { cn, nativeSelectClass as selectClass } from "@/lib/utils";
 import { api } from "@/lib/client";
 
 type Role = "viewer" | "editor" | "admin";
@@ -44,9 +44,6 @@ interface EnvironmentOption {
 const ROLES: Role[] = ["viewer", "editor", "admin"];
 const ROLE_RANK: Record<Role, number> = { viewer: 1, editor: 2, admin: 3 };
 const ROLE_LABEL: Record<Role, string> = { viewer: "Viewer", editor: "Editor", admin: "Admin" };
-
-const selectClass =
-  "h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 /** Encodes a picker option's subject as one string value; `parseSubject` reverses it. */
 function subjectKey(subjectType: SubjectType, subjectId: string) {
