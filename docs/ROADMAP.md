@@ -450,10 +450,9 @@ was the biggest commitment and benefited from M5's key model (grants already
 existed and could be re-wrapped instead of designed from scratch).
 
 M1–M6 are fully shipped. The CLI package is published on npm as `envhq`
-(currently `0.6.0` at last publish — bump it before publishing a build with
-M6's client-side encryption support, per M1's publish checklist above).
-`packages/cli/package.json` is the source of truth for the current published
-version.
+(currently `0.8.0` at last publish, which already includes M6's client-side
+encryption support). `packages/cli/package.json` is the source of truth for
+the current published version.
 
 **What's left** is the "Deferred, not built" list under M6 above — none of it
 blocks normal use; see PLAN.md §6 and `docs/security` for the current,

@@ -1,6 +1,6 @@
 import { and, eq, sql, isNull, desc } from "drizzle-orm";
 import { db } from "@/db";
-import { environments, envVars, environmentVersions, type VersionSnapshotEntry } from "@/db/schema";
+import { environments, envVars, environmentVersions, projects, type VersionSnapshotEntry } from "@/db/schema";
 import { deleteMany } from "./env-store";
 
 export type CommitOutcome<T> =
@@ -43,10 +43,18 @@ export async function commitVersion<T>(
   const newVersion = bumped[0]!.version;
   const result = await applyChanges();
 
-  const activeRows = await db
-    .select()
-    .from(envVars)
-    .where(and(eq(envVars.environmentId, environmentId), isNull(envVars.deletedAt)));
+  const [activeRows, projectKeyVersion] = await Promise.all([
+    db
+      .select()
+      .from(envVars)
+      .where(and(eq(envVars.environmentId, environmentId), isNull(envVars.deletedAt))),
+    db
+      .select({ keyVersion: projects.keyVersion })
+      .from(environments)
+      .innerJoin(projects, eq(environments.projectId, projects.id))
+      .where(eq(environments.id, environmentId))
+      .then((rows) => rows[0]!.keyVersion),
+  ]);
 
   await db.insert(environmentVersions).values({
     environmentId,
@@ -58,6 +66,7 @@ export async function commitVersion<T>(
       iv: row.iv,
       authTag: row.authTag,
     })),
+    keyVersion: projectKeyVersion,
     createdBy: userId,
   });
 
@@ -78,17 +87,17 @@ export async function listVersions(environmentId: string) {
     .orderBy(desc(environmentVersions.version));
 }
 
-/** One version's raw snapshot entries, or `null` if that version doesn't exist for this environment. */
+/** One version's raw snapshot entries + the DEK generation they're encrypted under, or `null` if that version doesn't exist for this environment. */
 export async function getVersionSnapshot(
   environmentId: string,
   version: number,
-): Promise<VersionSnapshotEntry[] | null> {
+): Promise<{ snapshot: VersionSnapshotEntry[]; keyVersion: number } | null> {
   const rows = await db
-    .select({ snapshot: environmentVersions.snapshot })
+    .select({ snapshot: environmentVersions.snapshot, keyVersion: environmentVersions.keyVersion })
     .from(environmentVersions)
     .where(and(eq(environmentVersions.environmentId, environmentId), eq(environmentVersions.version, version)))
     .limit(1);
-  return rows[0]?.snapshot ?? null;
+  return rows[0] ?? null;
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   uuid,
   text,
   integer,
+  boolean,
   timestamp,
   unique,
   uniqueIndex,
@@ -23,6 +24,15 @@ export const projects = pgTable(
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
     name: text("name").notNull(),
+    /**
+     * DEK generation counter (rotation on revoke). Bumped only by
+     * `finalizeRotation` once every `env_vars` row has been re-encrypted and
+     * re-wrapped under a new DEK. `keyRotationPending` is a soft hint (set by
+     * every revoke path) that a rotation is recommended, not a lock —
+     * cleared on successful finalize.
+     */
+    keyVersion: integer("key_version").notNull().default(1),
+    keyRotationPending: boolean("key_rotation_pending").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -99,6 +109,8 @@ export const projectKeys = pgTable(
     subjectUserId: text("subject_user_id").notNull(),
     wrappedDek: text("wrapped_dek").notNull(),
     wrappedByUserId: text("wrapped_by_user_id").notNull(),
+    /** Which DEK generation (`projects.keyVersion`) this wrap seals. */
+    keyVersion: integer("key_version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
@@ -158,6 +170,8 @@ export const envVars = pgTable(
     valueCiphertext: text("value_ciphertext").notNull(),
     iv: text("iv").notNull(),
     authTag: text("auth_tag"),
+    /** Which DEK generation (`projects.keyVersion`) this ciphertext is under. */
+    keyVersion: integer("key_version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -197,6 +211,14 @@ export const environmentVersions = pgTable(
     version: integer("version").notNull(),
     message: text("message"),
     snapshot: jsonb("snapshot").notNull().$type<VersionSnapshotEntry[]>(),
+    /**
+     * The project's `keyVersion` at commit time, frozen forever. A snapshot's
+     * ciphertext is never re-encrypted on rotation (see `lib/project-keys.ts`
+     * rotation functions), so a stale `keyVersion` here means this version
+     * can no longer be decrypted/rolled back to — enforced at the rollback
+     * route.
+     */
+    keyVersion: integer("key_version").notNull().default(1),
     createdBy: text("created_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },

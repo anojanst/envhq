@@ -1,7 +1,7 @@
 import { getUserId } from "@/lib/auth";
 import { getAccessibleEnvironment, isReadOnly } from "@/lib/access";
 import { commitVersion, getVersionSnapshot, restoreSnapshot } from "@/lib/version-store";
-import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
+import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden, conflict } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -31,15 +31,20 @@ export async function POST(req: Request, { params }: Params) {
   if (baseVersion === null) return badRequest("baseVersion is required");
   const message = typeof body?.message === "string" ? body.message : null;
 
-  const snapshot = await getVersionSnapshot(id, targetVersion);
-  if (!snapshot) return notFound(`Version ${targetVersion} not found`);
+  const versionSnapshot = await getVersionSnapshot(id, targetVersion);
+  if (!versionSnapshot) return notFound(`Version ${targetVersion} not found`);
+  if (versionSnapshot.keyVersion < owned.project.keyVersion) {
+    return conflict(
+      "This version predates a key rotation and can no longer be restored — its values are encrypted under a retired key.",
+    );
+  }
 
   const outcome = await commitVersion(
     id,
     baseVersion,
     userId,
     message ?? `Rollback to v${targetVersion}`,
-    () => restoreSnapshot(id, snapshot),
+    () => restoreSnapshot(id, versionSnapshot.snapshot),
   );
 
   if (outcome.conflict) {

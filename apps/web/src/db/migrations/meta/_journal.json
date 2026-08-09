@@ -78,6 +78,13 @@
       "when": 1784196355370,
       "tag": "0010_serious_prism",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785657878436,
+      "tag": "0011_gray_white_tiger",
+      "breakpoints": true
     }
   ]
 }

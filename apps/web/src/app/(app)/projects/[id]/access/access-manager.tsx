@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, ShieldAlert, Trash2, User, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, KeyRound, ShieldAlert, Trash2, User, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn, nativeSelectClass as selectClass } from "@/lib/utils";
 import { api } from "@/lib/client";
 import { useProjectDek } from "@/hooks/use-project-dek";
 import { useProjectKeyReconciliation, reconcileProjectKeys } from "@/hooks/use-project-key-reconciliation";
+import { useKeyRotation, type RotationPhase } from "@/hooks/use-key-rotation";
 
 type Role = "viewer" | "editor" | "admin";
 type SubjectType = "user" | "group";
@@ -41,6 +42,11 @@ interface GroupOption {
 interface EnvironmentOption {
   id: string;
   name: string;
+}
+
+interface RotationStatus {
+  currentKeyVersion: number;
+  rotationPending: boolean;
 }
 
 const ROLES: Role[] = ["viewer", "editor", "admin"];
@@ -83,8 +89,19 @@ export function AccessManager({
   const [adding, setAdding] = useState(false);
   const [expandedGrantId, setExpandedGrantId] = useState<string | null>(null);
   const pickersLoading = members === null || groups === null;
-  const { dek } = useProjectDek(projectId);
+  const { status: dekStatus, dek } = useProjectDek(projectId);
   useProjectKeyReconciliation(projectId, dek);
+
+  const [rotationStatus, setRotationStatus] = useState<RotationStatus | null>(null);
+  const rotation = useKeyRotation();
+
+  const reloadRotationStatus = useCallback(async () => {
+    try {
+      setRotationStatus(await api<RotationStatus>(`/api/projects/${projectId}/keys/rotation-status`));
+    } catch {
+      // Non-fatal — the "Encryption" section just falls back to "status unknown".
+    }
+  }, [projectId]);
 
   useEffect(() => {
     Promise.all([
@@ -96,7 +113,39 @@ export function AccessManager({
         setGroups(gr.groups);
       })
       .catch((err) => toast.error((err as Error).message));
+    api<RotationStatus>(`/api/projects/${projectId}/keys/rotation-status`)
+      .then(setRotationStatus)
+      .catch(() => {
+        // Non-fatal — the "Encryption" section just falls back to "status unknown".
+      });
   }, [projectId]);
+
+  async function rotateKey() {
+    if (!dek || !rotationStatus) return;
+    try {
+      const { members: keyMembers, totalAccessible } = await api<{
+        members: { userId: string; publicKey: string }[];
+        totalAccessible: number;
+      }>(`/api/projects/${projectId}/keys/members`);
+      if (keyMembers.length < totalAccessible) {
+        toast.error(
+          "Some members haven't finished setting up encryption yet — rotation can't wrap a key for them. Try again once everyone has.",
+        );
+        return;
+      }
+      await rotation.run({
+        projectId,
+        currentDek: dek,
+        targetKeyVersion: rotationStatus.currentKeyVersion + 1,
+        environmentIds: environments.map((e) => e.id),
+        members: keyMembers,
+      });
+      toast.success("Encryption key rotated");
+      await reloadRotationStatus();
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }
 
   async function reloadGrants() {
     const data = await api<{ grants: Grant[]; environments: EnvironmentOption[] }>(
@@ -169,6 +218,7 @@ export function AccessManager({
       await api(`/api/projects/${projectId}/access/${grant.id}`, { method: "DELETE" });
       toast.success("Access removed");
       await reloadGrants();
+      await reloadRotationStatus();
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -181,6 +231,13 @@ export function AccessManager({
 
   return (
     <div className="flex flex-col gap-6">
+      <EncryptionSection
+        status={rotationStatus}
+        phase={rotation.phase}
+        dekReady={dekStatus === "ready"}
+        onRotate={rotateKey}
+      />
+
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
@@ -346,6 +403,66 @@ export function AccessManager({
             </Button>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+const ROTATION_PHASE_LABEL: Partial<Record<RotationPhase, string>> = {
+  fetching: "Fetching current values…",
+  reencrypting: "Decrypting and re-encrypting…",
+  uploading: "Uploading new ciphertext…",
+  finalizing: "Re-wrapping key for every member…",
+};
+
+/**
+ * DEK rotation on revoke: generates a fresh project key, re-encrypts every
+ * live value under it, and re-wraps it to every currently authorized member
+ * — so a revoked member's cached copy of the old key no longer opens
+ * current values. Surfaced here rather than a separate page: it's a single
+ * bounded action (confirm → run → done), not a management surface.
+ */
+function EncryptionSection({
+  status,
+  phase,
+  dekReady,
+  onRotate,
+}: {
+  status: RotationStatus | null;
+  phase: RotationPhase;
+  dekReady: boolean;
+  onRotate: () => void;
+}) {
+  const running = phase !== "idle" && phase !== "done" && phase !== "error";
+
+  return (
+    <div className="rounded-lg border p-4">
+      <div className="mb-3 flex items-center gap-1.5">
+        <KeyRound className="size-3.5 text-muted-foreground" />
+        <h2 className="text-sm font-medium">Encryption</h2>
+      </div>
+
+      {status?.rotationPending && !running && (
+        <div className="mb-3 rounded-md border border-amber-600/30 bg-amber-600/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+          Access was recently revoked on this project. Rotate the encryption key so the current
+          values are no longer readable with the old one.
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-muted-foreground">
+          {status ? `Key generation ${status.currentKeyVersion}` : "Loading key status…"}
+          {running && ROTATION_PHASE_LABEL[phase] ? ` — ${ROTATION_PHASE_LABEL[phase]}` : ""}
+        </p>
+        <Button
+          variant={status?.rotationPending ? "default" : "outline"}
+          size="sm"
+          disabled={!status || !dekReady || running}
+          onClick={onRotate}
+          title={!dekReady ? "Unlock your encryption session to rotate the key" : undefined}
+        >
+          {running ? "Rotating…" : "Rotate encryption key"}
+        </Button>
       </div>
     </div>
   );
