@@ -29,3 +29,4 @@ coverage/
 
 # local Claude Code config (dev-server launch config, permission settings)
 .claude/
+apps/web/.agents/*

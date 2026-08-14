@@ -16,9 +16,9 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
     <main className="flex flex-1 flex-col">
       <PublicHeader />
 
-      <div className="mx-auto flex w-full max-w-5xl flex-1 gap-8 px-6 py-10">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 gap-8 px-6 pb-10 pt-4">
         <aside className="hidden w-48 shrink-0 sm:block">
-          <div className="sticky top-10">
+          <div className="sticky top-24">
             <DocsNav />
           </div>
         </aside>

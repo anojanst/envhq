@@ -2,6 +2,7 @@
   "name": "envhq-monorepo",
   "version": "0.1.0",
   "private": true,
+  "license": "SEE LICENSE IN LICENSING.md",
   "packageManager": "pnpm@11.10.0",
   "engines": {
     "node": ">=22.13"

@@ -1,0 +1,29 @@
+EnvHQ
+Copyright (c) 2026 Anojan ST
+
+This repository is licensed under multiple licenses. See LICENSING.md for the
+full breakdown. In summary:
+
+  - apps/**              Elastic License 2.0 (see LICENSE)
+  - packages/cli/**      MIT License (see packages/cli/LICENSE)
+  - packages/parser/**   MIT License (see packages/parser/LICENSE)
+  - packages/crypto/**   MIT License (see packages/crypto/LICENSE)
+
+Commits made before 2026-08-11 remain available under the MIT License.
+
+
+TRADEMARKS
+
+"EnvHQ" and the EnvHQ name, logo, and brand are trademarks of Anojan ST.
+
+No license granted in this repository — neither the Elastic License 2.0 nor the
+MIT License — conveys any right to use these trademarks. In particular, you may
+not use the EnvHQ name or logo to identify a fork, a modified version, or any
+derivative work in a way that suggests it is EnvHQ or is endorsed by, affiliated
+with, or supported by the EnvHQ project or its maintainers.
+
+You may make nominative fair use of the name to describe compatibility or
+provenance, for example "compatible with EnvHQ" or "based on EnvHQ", provided
+the statement is accurate and does not imply endorsement.
+
+Any use of the licensor's trademarks remains subject to applicable law.

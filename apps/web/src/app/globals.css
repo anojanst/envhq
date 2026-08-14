@@ -117,6 +117,147 @@
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-archivo);
+}
+
+/**
+ * The marketing page commits to dark regardless of the app theme, so the
+ * surface reads as one deliberate material instead of following a toggle the
+ * visitor has not made yet. Scoped to the landing wrapper: it overrides the
+ * inherited tokens for its subtree in either app theme, and the accent stays
+ * EnvHQ emerald so the page and the product are the same brand.
+ */
+.landing-dark {
+  color-scheme: dark;
+
+  /* Cool blue-black ground rather than neutral charcoal, and a cool grey for
+     secondary text. Warm-neutral greys read as "dark mode of a light site";
+     the blue cast is what makes this kind of page feel like its own surface.
+     It also sits closer to the hero artwork's own ground, so the two meet
+     without a seam. */
+  --background: oklch(0.135 0.018 262);
+  --foreground: oklch(0.93 0.003 262);
+  --card: oklch(0.185 0.016 262);
+  --card-foreground: oklch(0.93 0.003 262);
+  --popover: oklch(0.185 0.016 262);
+  --popover-foreground: oklch(0.93 0.003 262);
+
+  --primary: oklch(0.74 0.15 162);
+  --primary-foreground: oklch(0.14 0.006 260);
+  --brand: oklch(0.74 0.15 162);
+  --brand-foreground: oklch(0.14 0.006 260);
+
+  --secondary: oklch(0.25 0.016 262);
+  --secondary-foreground: oklch(0.93 0.003 262);
+  --muted: oklch(0.22 0.016 262);
+  --muted-foreground: oklch(0.71 0.024 265);
+  --accent: oklch(0.25 0.016 262);
+  --accent-foreground: oklch(0.93 0.003 262);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.74 0.15 162);
+
+  /* `@theme inline` declares --color-* on :root as var(--token), so they
+     resolve there once, against the light values. Overriding --border alone
+     would leave the base `* { border-color: var(--color-border) }` rule
+     painting light grey hairlines on this dark surface, so re-alias them. */
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+}
+
+@theme {
+  /* Motion tokens. The built-in CSS easings are too weak to read as
+     intentional; these are the strong ease-out / ease-in-out pair. Entering
+     and exiting elements use `ease-fluid`, on-screen movement uses `ease-snap`. */
+  --ease-fluid: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-snap: cubic-bezier(0.77, 0, 0.175, 1);
+
+  /* First-paint entrance for the landing hero. Pair with `motion-safe:` and an
+     animation-delay to stagger a group. */
+  --animate-rise: rise 480ms var(--ease-fluid) both;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+  }
+}
+
+@layer base {
+  /* Translucent chrome falls back to a solid surface when the reader has asked
+     for less transparency. */
+  @media (prefers-reduced-transparency: reduce) {
+    .translucent-chrome {
+      background-color: var(--color-background);
+      backdrop-filter: none;
+    }
+  }
+}
+
+/* Marketing display type. Sentence case at a large size with tight negative
+   tracking, which is what reads as confident at this scale: uppercase buys
+   presence but costs legibility, and the size is already doing that work.
+   Headlines only. */
+@utility display-type {
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+/* A surface that reads as lit and sitting above the page rather than as a hole
+   cut into it: hairline, a brighter highlight along the top edge where light
+   would catch, and a soft drop beneath. All three live in one box-shadow
+   because Tailwind's `ring-*` utilities also write box-shadow, and the two
+   would otherwise overwrite each other. */
+@utility lift {
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 18px 44px -26px rgb(0 0 0 / 0.9);
+}
+
+/* Cut corners on accent-filled interactive elements and tags. Surfaces keep
+   the app's radius scale; only these get notched. The focus ring is moved
+   inside because clip-path would otherwise cut it off. */
+@utility notch {
+  clip-path: polygon(
+    0 0,
+    calc(100% - 0.625rem) 0,
+    100% 0.625rem,
+    100% 100%,
+    0.625rem 100%,
+    0 calc(100% - 0.625rem)
+  );
+  border-radius: 0;
+}
+
+@keyframes reveal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* Scroll reveal for the marketing page. Driven by a view timeline rather than
+   an observer, so it runs off the main thread and can never strand content:
+   browsers without view timelines, and readers who ask for reduced motion,
+   just get the finished state. Stagger a row with `[--reveal-start:12%]`. */
+@utility reveal {
+  --reveal-start: 5%;
+
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      animation: reveal-rise linear both;
+      animation-timeline: view();
+      animation-range: entry var(--reveal-start) entry calc(var(--reveal-start) + 50%);
+    }
+  }
 }
 
 @layer base {
@@ -130,3 +271,4 @@
     font-family: var(--font-sans), system-ui, sans-serif;
   }
 }
+
