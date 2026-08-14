@@ -63,9 +63,13 @@ function AccordionPanel({
       // transform equivalent for a collapse. Base UI supplies the measured
       // height, so this never animates to `auto`. Kept short because it costs
       // layout on every frame.
+      // Closed by default and opened by `data-open`, rather than open by
+      // default and clamped shut by `data-starting-style`. Base UI leaves
+      // `data-starting-style` on the element alongside `data-open`, so the
+      // clamp never lifts and the panel stays at zero height.
       className={cn(
-        "h-(--accordion-panel-height) overflow-hidden transition-[height] duration-200 ease-fluid",
-        "data-ending-style:h-0 data-starting-style:h-0 motion-reduce:transition-none",
+        "h-0 overflow-hidden transition-[height] duration-200 ease-fluid",
+        "data-open:h-(--accordion-panel-height) motion-reduce:transition-none",
         className
       )}
       {...props}
