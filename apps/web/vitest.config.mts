@@ -21,17 +21,54 @@ import path from "node:path";
 // schema, SQL, and constraints are real, which is what an authorization
 // suite needs to be trustworthy.
 //
-// This config does not provision that Postgres instance — no suite added
-// here needs one yet (`src/lib/api.ts` only imports `next/server`). Wiring
-// it up (service container + seed fixtures) is scoped to the ticket that
-// adds the authorization matrix suite.
+// Wiring (HQ-19, `apps/web/src/test-support/`): a `TEST_DATABASE_URL`-backed
+// node-postgres client (`test-support/db.ts`) is substituted for the
+// production `db` export (`test-support/mock-db.setup.ts`) via `vi.mock`,
+// scoped to the `authz-db` project below so DB-free suites never need
+// Postgres at all. Migrations run once via `test-support/migrate.global-setup.ts`.
 export default defineConfig({
-  test: {
-    environment: "node",
-  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
     },
+  },
+  test: {
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          environment: "node",
+          exclude: [
+            "**/node_modules/**",
+            "**/dist/**",
+            "src/lib/access-matrix.test.ts",
+            "src/lib/access.list.test.ts",
+          ],
+          // apps/web/src/db/index.ts throws at import time if DATABASE_URL
+          // is unset, and access.ts (imported by access.helpers.test.ts for
+          // its pure helpers) pulls that module in transitively. This never
+          // resolves to a real connection here — `neon()` only builds a
+          // query function, it doesn't connect eagerly — and nothing in the
+          // "unit" project ever issues a query. Same placeholder pattern the
+          // CI build step already uses.
+          env: { DATABASE_URL: "postgres://placeholder:placeholder@localhost:5432/placeholder" },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "authz-db",
+          environment: "node",
+          include: ["src/lib/access-matrix.test.ts", "src/lib/access.list.test.ts"],
+          setupFiles: ["./src/test-support/mock-db.setup.ts", "./src/test-support/mock-orgs.ts"],
+          globalSetup: ["./src/test-support/migrate.global-setup.ts"],
+          // Only two files touch the shared Postgres service container —
+          // serializing them is cheap and avoids reasoning about concurrent
+          // truncate/insert seeding against the one instance.
+          fileParallelism: false,
+        },
+      },
+    ],
   },
 });

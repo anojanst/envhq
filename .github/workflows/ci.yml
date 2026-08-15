@@ -12,6 +12,20 @@ concurrency:
 jobs:
   web:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: envhq_test
+          POSTGRES_PASSWORD: envhq_test
+          POSTGRES_DB: envhq_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U envhq_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
@@ -22,6 +36,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @envhq/web lint
       - run: pnpm --filter @envhq/web test
+        env:
+          # Real Postgres for the authz-db test project (HQ-19) — distinct
+          # from production's DATABASE_URL, which uses Neon's neon-http
+          # driver and can't talk to a plain Postgres. See vitest.config.mts.
+          TEST_DATABASE_URL: postgres://envhq_test:envhq_test@localhost:5432/envhq_test
       - run: pnpm --filter @envhq/web build
         env:
           # Build-time-only placeholders so route/type analysis has something

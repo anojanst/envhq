@@ -1,0 +1,191 @@
+{
+  "_comment": "Shared golden corpus for apps/web/src/lib/access.ts's authorization decision matrix (ADR-008, HQ-19). Consumed today by apps/web/src/lib/access-matrix.test.ts; a future Go reimplementation of authorization must replay these same cases row-for-row and agree with the TypeScript implementation. Keep this file plain JSON: no comments other than this field, no references to TypeScript types/enums, no helper functions or closures embedded in rows, no computed values. Every id under `entities` is a fixture-local logical id, remapped to a real generated database id at seed time by whichever runner consumes this file.",
+  "entities": {
+    "projects": [
+      { "id": "proj-a", "orgId": "org-1", "name": "Project A" },
+      { "id": "proj-b", "orgId": "org-1", "name": "Project B (no relationship to any caller in this corpus)" }
+    ],
+    "environments": [
+      { "id": "env-a-dev", "projectId": "proj-a", "name": "dev" },
+      { "id": "env-a-prod", "projectId": "proj-a", "name": "prod" }
+    ],
+    "envVars": [
+      { "id": "var-a-dev-1", "environmentId": "env-a-dev", "key": "API_KEY" }
+    ],
+    "groups": [
+      { "id": "group-eng", "orgId": "org-1", "name": "Engineering" }
+    ],
+    "groupMembers": [
+      { "groupId": "group-eng", "userId": "user-bob" },
+      { "groupId": "group-eng", "userId": "user-erin" }
+    ],
+    "accessGrants": [
+      { "id": "g1", "projectId": "proj-a", "subjectType": "user", "subjectId": "user-alice", "role": "editor", "envScope": null },
+      { "id": "g2", "projectId": "proj-a", "subjectType": "group", "subjectId": "group-eng", "role": "admin", "envScope": { "prod": "viewer" } },
+      { "id": "g3", "projectId": "proj-a", "subjectType": "user", "subjectId": "user-bob", "role": "editor", "envScope": null },
+      { "id": "g4", "projectId": "proj-a", "subjectType": "user", "subjectId": "user-carol", "role": "editor", "envScope": "not-json" }
+    ]
+  },
+  "cases": [
+    {
+      "name": "in_scope/project: direct editor grant sees own project at viewer requirement",
+      "dimension": "in_scope",
+      "surface": "project",
+      "caller": { "userId": "user-alice", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "projectId": "proj-a" },
+      "requiredRole": "viewer",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "editor" }
+    },
+    {
+      "name": "in_scope/environment: direct editor grant reaches an uncapped environment",
+      "dimension": "in_scope",
+      "surface": "environment",
+      "caller": { "userId": "user-alice", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "environmentId": "env-a-dev" },
+      "requiredRole": "viewer",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "editor" }
+    },
+    {
+      "name": "in_scope/var: direct editor grant reaches a var inside their project",
+      "dimension": "in_scope",
+      "surface": "var",
+      "caller": { "userId": "user-alice", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "envVarId": "var-a-dev-1" },
+      "requiredRole": "viewer",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "editor" }
+    },
+    {
+      "name": "cross_project: caller with a grant only on proj-a gets denied on proj-b",
+      "dimension": "cross_project",
+      "surface": "project",
+      "caller": { "userId": "user-alice", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "projectId": "proj-b" },
+      "requiredRole": "viewer",
+      "scope": null,
+      "expect": { "outcome": "deny" }
+    },
+    {
+      "name": "cross_project: project-scoped token can't reach a project outside its scope even with a real grant",
+      "dimension": "cross_project",
+      "surface": "project",
+      "caller": { "userId": "user-alice", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "projectId": "proj-a" },
+      "requiredRole": "viewer",
+      "scope": { "projectId": "proj-b", "capability": "write" },
+      "expect": { "outcome": "deny" }
+    },
+    {
+      "name": "cross_project control: a token scoped to the target project itself still resolves normally",
+      "dimension": "in_scope",
+      "surface": "project",
+      "caller": { "userId": "user-alice", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "projectId": "proj-a" },
+      "requiredRole": "viewer",
+      "scope": { "projectId": "proj-a", "capability": "write" },
+      "expect": { "outcome": "allow", "role": "editor" }
+    },
+    {
+      "name": "org_admin/project: org admin reaches a project with no access_grants row at all",
+      "dimension": "org_admin",
+      "surface": "project",
+      "caller": { "userId": "user-dave", "orgId": "org-1", "isOrgAdmin": true },
+      "target": { "projectId": "proj-a" },
+      "requiredRole": "admin",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "admin" }
+    },
+    {
+      "name": "org_admin/environment: org admin is full access in prod, unaffected by any env_scope cap",
+      "dimension": "org_admin",
+      "surface": "environment",
+      "caller": { "userId": "user-dave", "orgId": "org-1", "isOrgAdmin": true },
+      "target": { "environmentId": "env-a-prod" },
+      "requiredRole": "admin",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "admin" }
+    },
+    {
+      "name": "privilege_escalation: editor cannot reach the admin-only access-management requirement",
+      "dimension": "privilege_escalation",
+      "surface": "project",
+      "caller": { "userId": "user-alice", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "projectId": "proj-a" },
+      "requiredRole": "admin",
+      "scope": null,
+      "expect": { "outcome": "deny" }
+    },
+    {
+      "name": "privilege_escalation control: the same editor is allowed at their own role level",
+      "dimension": "privilege_escalation",
+      "surface": "project",
+      "caller": { "userId": "user-alice", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "projectId": "proj-a" },
+      "requiredRole": "editor",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "editor" }
+    },
+    {
+      "name": "env_cap: group-derived admin is capped to viewer in prod, in isolation (no other grant to interfere)",
+      "dimension": "env_cap",
+      "surface": "environment",
+      "caller": { "userId": "user-erin", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "environmentId": "env-a-prod" },
+      "requiredRole": "viewer",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "viewer" }
+    },
+    {
+      "name": "env_cap: group-derived admin capped to viewer in prod cannot meet an editor requirement, in isolation",
+      "dimension": "env_cap",
+      "surface": "environment",
+      "caller": { "userId": "user-erin", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "environmentId": "env-a-prod" },
+      "requiredRole": "editor",
+      "scope": null,
+      "expect": { "outcome": "deny" }
+    },
+    {
+      "name": "env_cap: the same caller's capped-admin group grant loses to their own uncapped direct editor grant in prod",
+      "dimension": "env_cap",
+      "surface": "environment",
+      "caller": { "userId": "user-bob", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "environmentId": "env-a-prod" },
+      "requiredRole": "editor",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "editor" }
+    },
+    {
+      "name": "env_cap: outside prod, the same caller's group-derived admin is uncapped and wins outright",
+      "dimension": "env_cap",
+      "surface": "environment",
+      "caller": { "userId": "user-bob", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "environmentId": "env-a-dev" },
+      "requiredRole": "admin",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "admin" }
+    },
+    {
+      "name": "env_cap: getAccessibleProject has no environment name, so a per-env cap can never apply to it",
+      "dimension": "env_cap",
+      "surface": "project",
+      "caller": { "userId": "user-bob", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "projectId": "proj-a" },
+      "requiredRole": "admin",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "admin" }
+    },
+    {
+      "name": "malformed_env_scope: unparseable env_scope is treated as uncapped, never as an escalation beyond the grant's own role",
+      "dimension": "malformed_env_scope",
+      "surface": "environment",
+      "caller": { "userId": "user-carol", "orgId": "org-1", "isOrgAdmin": false },
+      "target": { "environmentId": "env-a-prod" },
+      "requiredRole": "editor",
+      "scope": null,
+      "expect": { "outcome": "allow", "role": "editor" }
+    }
+  ]
+}
