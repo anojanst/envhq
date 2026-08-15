@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { isRole, parseEnvScope, isReadOnly, isFullAccess } from "./access";
 import type { TokenScope } from "./auth";
 
@@ -13,40 +13,61 @@ describe("isRole", () => {
 });
 
 describe("parseEnvScope", () => {
-  test("null input returns null", () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  test("null input returns null, silently — the ordinary case for a grant with no per-env cap", () => {
     expect(parseEnvScope(null)).toBeNull();
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  test("empty string returns null", () => {
+  test("empty string returns null, silently", () => {
     expect(parseEnvScope("")).toBeNull();
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  test("valid JSON object is parsed as-is", () => {
+  test("valid JSON object is parsed as-is, silently", () => {
     expect(parseEnvScope('{"prod":"viewer"}')).toEqual({ prod: "viewer" });
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  test("malformed JSON (unparseable) returns null, not a thrown error", () => {
+  test("malformed JSON (unparseable) returns null, not a thrown error, and logs so the corruption is visible", () => {
     expect(parseEnvScope("not-json")).toBeNull();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy.mock.calls[0][0]).toContain("env_scope");
   });
 
-  test("a JSON literal null returns null", () => {
+  test("a JSON literal null returns null, silently — a distinct, deliberate \"no cap\" encoding, not corruption", () => {
     expect(parseEnvScope("null")).toBeNull();
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  test("a JSON number returns null (not an object)", () => {
+  test("a JSON number is valid JSON but the wrong shape — returns null and logs", () => {
     expect(parseEnvScope("5")).toBeNull();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
-  test("a JSON string returns null (not an object)", () => {
+  test("a JSON string is valid JSON but the wrong shape — returns null and logs", () => {
     expect(parseEnvScope('"hello"')).toBeNull();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
-  test("a JSON array passes the typeof \"object\" check (arrays are objects in JS) and is returned as-is", () => {
+  test("a JSON array passes the typeof \"object\" check (arrays are objects in JS) and is returned as-is, silently", () => {
     // Documents actual current behavior, not a recommendation: `capRoleForEnv`
     // then does `envScope[envName]` on this value, which is `undefined` for
     // any string key on a plain array, so it behaves the same as an uncapped
     // grant in practice — never an escalation, just an unintended pass-through.
+    // Not flagged as malformed since it's syntactically and structurally the
+    // shape the parser accepts, even though it's not a useful EnvScope.
     expect(parseEnvScope("[]")).toEqual([]);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });
 

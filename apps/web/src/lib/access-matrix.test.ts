@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import fixture from "./access-matrix.fixtures.json";
 import { testDb } from "@/test-support/db";
 import { seedFixtureWorld, type FixtureWorld } from "@/test-support/seed-fixture";
@@ -61,6 +61,16 @@ let world: FixtureWorld;
 
 beforeAll(async () => {
   world = await seedFixtureWorld(testDb, fixture.entities);
+});
+
+// The "malformed_env_scope" row deliberately exercises parseEnvScope's
+// console.error path (see access.ts) — silenced here so CI output stays
+// clean; the log itself is asserted directly in access.helpers.test.ts.
+beforeAll(() => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
+afterAll(() => {
+  vi.restoreAllMocks();
 });
 
 describe.each(cases)("$dimension: $name", (c) => {

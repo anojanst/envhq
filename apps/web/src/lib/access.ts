@@ -43,15 +43,38 @@ function meetsRole(have: Role, need: Role): boolean {
   return ROLE_RANK[have] >= ROLE_RANK[need];
 }
 
-/** Parses the `access_grants.env_scope` text column; malformed JSON (shouldn't happen — we control writes) is treated as no restriction. */
+/**
+ * Parses the `access_grants.env_scope` text column; malformed JSON (shouldn't
+ * happen — we control writes) is treated as no restriction — see the
+ * "malformed_env_scope" dimension in `access-matrix.fixtures.json` for why
+ * that's a deliberate, tested trade-off rather than an oversight: it never
+ * lets a grant exceed its own role, but it does mean a corrupted cap
+ * silently stops restricting. Logged (not silent) so corruption is at least
+ * visible, without changing the access decision. A bare JSON `null` is a
+ * distinct, valid "no cap" encoding and does not log.
+ */
 export function parseEnvScope(raw: string | null): EnvScope | null {
   if (!raw) return null;
+
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : null;
+    parsed = JSON.parse(raw);
   } catch {
+    console.error("access.ts: access_grants.env_scope failed to parse as JSON — treating this grant as uncapped", {
+      raw,
+    });
     return null;
   }
+
+  if (parsed === null) return null;
+  if (typeof parsed !== "object") {
+    console.error(
+      "access.ts: access_grants.env_scope parsed but is not an object — treating this grant as uncapped",
+      { raw },
+    );
+    return null;
+  }
+  return parsed as EnvScope;
 }
 
 /** Caps `role` down to the grant's env-specific restriction, if `envName` has one. Never escalates. */
