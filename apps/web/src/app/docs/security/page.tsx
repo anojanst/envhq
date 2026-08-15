@@ -109,6 +109,17 @@ export default function SecurityDocsPage() {
         already holds the DEK delivers it the next time they open the project — usually within
         seconds, never more than the next visit.
       </P>
+      <P>
+        Revoking someone&apos;s access removes their ability to decrypt anything{" "}
+        <em>going forward</em>, but the project&apos;s key isn&apos;t replaced automatically — a
+        former member could still hold a working copy of it from before you revoked them. Any
+        project admin can close that gap from the project&apos;s &quot;Manage access&quot; page:
+        its <strong>Encryption</strong> section re-encrypts every current value under a brand-new
+        key and re-wraps it only to people who currently have access, so a lingering old copy no
+        longer opens anything current. A banner appears there whenever a revoke has left this
+        pending. Version history from before a rotation stays under its original key and can no
+        longer be rolled back to, by design, rather than being silently re-encrypted.
+      </P>
 
       <H2>Version history</H2>
       <P>
@@ -123,11 +134,6 @@ export default function SecurityDocsPage() {
         <li>
           <strong>No key-name / metadata encryption.</strong> Only variable values are end-to-end
           encrypted — project, environment, and variable-key names are visible to the operator.
-        </li>
-        <li>
-          <strong>No DEK rotation on revoke.</strong> Removing someone&apos;s access stops them
-          decrypting anything going forward, but doesn&apos;t rotate the project&apos;s key — they
-          could retain a copy of whatever they already fetched before removal.
         </li>
         <li>
           <strong>No passphrase-recovery beyond the Recovery Kit.</strong> Losing both your

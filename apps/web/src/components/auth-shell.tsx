@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { Logo } from "@/components/brand";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 /**
- * Branded frame for the Clerk auth pages: app header (logo + theme toggle) and a
- * centered column with a heading above the Clerk widget.
+ * Branded frame for the Clerk auth pages. Committed dark like the rest of the
+ * logged-out journey, so signing in is not a jarring flip to light halfway
+ * through. No theme toggle: it would change nothing the visitor can see here.
  */
 export function AuthShell({
   title,
@@ -16,12 +16,11 @@ export function AuthShell({
   children: React.ReactNode;
 }) {
   return (
-    <main className="flex flex-1 flex-col">
-      <header className="flex items-center justify-between px-6 py-4">
+    <main className="public-dark flex flex-1 flex-col bg-background text-foreground">
+      <header className="flex items-center px-6 py-4">
         <Link href="/">
           <Logo />
         </Link>
-        <ThemeToggle />
       </header>
 
       <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-16">

@@ -182,7 +182,7 @@ export default async function LandingPage() {
   if (userId) redirect("/dashboard");
 
   return (
-    <main className="landing-dark flex flex-1 flex-col bg-background text-foreground">
+    <main className="public-dark flex flex-1 flex-col bg-background text-foreground">
       <PublicHeader />
 
       {/* Hero: copy on the left, the brand artwork on the right.

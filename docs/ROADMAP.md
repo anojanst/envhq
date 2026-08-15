@@ -422,15 +422,44 @@ decisions.*
   indistinguishable in the project-creation org picker and causing confusing cross-account access
   (`getOrCreatePersonalOrg` now falls back through email first).
 
-**Deferred, not built:** key-name/metadata encryption (only values are end-to-end encrypted);
-DEK rotation on revoke; a full passphrase-rotation/"forgot passphrase" *reset* flow beyond the
-already-shipped recovery-phrase *unlock* path; the keyed-HMAC (`valueTag`) conflict-detection
-optimization from PLAN.md §6 (the `commit` route's 409 path works today, just decrypts more than
-strictly necessary on a rare version race); WebAuthn/platform-bound "remember this device" for
-the web; sender-constrained (DPoP) CLI tokens.
+**Deferred, not built:** key-name/metadata encryption (only values are end-to-end encrypted); a
+full passphrase-rotation/"forgot passphrase" *reset* flow beyond the already-shipped
+recovery-phrase *unlock* path; the keyed-HMAC (`valueTag`) conflict-detection optimization from
+PLAN.md §6 (the `commit` route's 409 path works today, just decrypts more than strictly necessary
+on a rare version race); WebAuthn/platform-bound "remember this device" for the web;
+sender-constrained (DPoP) CLI tokens.
 
 **Done when:** the server can no longer decrypt any secret, and sharing works by
 re-wrapping keys to members. — **Met.**
+
+### Post-M6 follow-up — DEK rotation on revoke ✅ (shipped 2026-08-09)
+
+Closes the gap PR6 explicitly deferred: revoking access deleted a member's `project_keys` wrap,
+but the DEK itself never changed, so a former member's cached copy still decrypted current values
+indefinitely — a real exposure if ciphertext later leaked (e.g. a DB backup). Two-phase,
+admin-gated, client-driven (the server never gets a key that can decrypt anything, same
+zero-knowledge invariant as the rest of M6):
+
+1. **Migrate** — `POST /api/projects/[id]/keys/rotate`, called repeatedly in chunks, re-encrypts
+   every live `env_vars` row under a freshly generated DEK at the next `keyVersion`
+   (`migrateVarsBatch`). Doesn't touch `project_keys` or bump the project's `keyVersion` yet, so
+   other clients keep working against the old DEK mid-rotation.
+2. **Finalize** — `POST /api/projects/[id]/keys/rotate/finalize` only proceeds once every row is
+   confirmed migrated and the caller's wrap set (`GET /api/projects/[id]/keys/members`) matches
+   the project's *current* real membership; then swaps every member's wrap and bumps
+   `projects.keyVersion` in one step (`finalizeRotation`).
+
+Surfaced as an "Encryption" section on the project access page (admin-only), with a banner
+whenever `projects.keyRotationPending` is set (i.e. a revoke happened since the last rotation).
+**Historical version snapshots are intentionally left under their original key** — each
+snapshot's `keyVersion` is stamped at commit time, and rolling back to one older than the
+project's current `keyVersion` now 409s instead of silently restoring values encrypted under a
+retired key; re-migrating old snapshots is a scoped-out follow-up, documented rather than
+glossed over. Schema: `0011_gray_white_tiger.sql` adds `keyVersion` to `projects` / `env_vars` /
+`environment_versions` / `project_keys`, plus `projects.keyRotationPending`.
+
+See [docs/SYSTEM_DESIGN.md §6](./SYSTEM_DESIGN.md) for the as-built reference and
+[docs/security](../apps/web/src/app/docs/security/page.tsx) for the user-facing framing.
 
 ---
 

@@ -38,7 +38,8 @@ export function EnvironmentHistory({ environmentId }: { environmentId: string })
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [versions, setVersions] = useState<VersionEntry[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Starts true: the mount effect below kicks off a fetch immediately.
+  const [loading, setLoading] = useState(true);
   const [rollbackTarget, setRollbackTarget] = useState<number | null>(null);
   const [rollingBack, setRollingBack] = useState(false);
 
@@ -60,9 +61,21 @@ export function EnvironmentHistory({ environmentId }: { environmentId: string })
   // visible summary strip below needs a version to show before the user
   // ever opens the sheet.
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let ignore = false;
+    api<{ versions: VersionEntry[] }>(`/api/environments/${environmentId}/versions`)
+      .then((data) => {
+        if (!ignore) setVersions(data.versions);
+      })
+      .catch((err) => {
+        if (!ignore) toast.error((err as Error).message);
+      })
+      .finally(() => {
+        if (!ignore) setLoading(false);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [environmentId]);
 
   async function rollback(version: number) {
     // Use the newest entry from the versions list we just loaded when the

@@ -16,10 +16,11 @@ what exists today.
 > where they describe what was literally shipped at the time.
 
 Last updated: v1 + UX pass (theme, brand, multiline editor, top-center toasts) + rebrand to EnvHQ.
-**§5 (data model) and §6 (encryption) are current through M6** (zero-knowledge encryption,
-2026-07-17). Other sections (§7 auth, §11 CLI, API reference) predate M2–M5 and haven't been
-refreshed to match — cross-check against [ROADMAP.md](./ROADMAP.md)'s milestone notes for
-anything not encryption-related.
+**§5 (data model) and §6 (encryption) are current through DEK rotation on revoke**
+(2026-08-09, a post-M6 follow-up — see [ROADMAP.md](./ROADMAP.md)'s M6 section). Other sections
+(§7 auth, §11 CLI, API reference) predate M2–M5 and haven't been refreshed to match — cross-check
+against ROADMAP.md's milestone notes for anything not encryption-related. **§17 (licensing)**
+covers the 2026-08-11 move to a per-directory source-available license.
 
 ---
 
@@ -125,6 +126,8 @@ Postgres, migrated incrementally (`apps/web/src/db/migrations/`). All timestamps
 | user_id | text | Clerk userId of the creator; audit-only, not the auth scope |
 | org_id | text | Clerk Organization id; **the actual auth scope** |
 | name | text | **unique(org_id, name)** |
+| key_version | integer | current DEK generation for the project; default `1`, bumped only by a rotation finalize |
+| key_rotation_pending | boolean | set when a revoke leaves the DEK stale; cleared by a rotation finalize |
 | created_at, updated_at | timestamptz | index on `org_id` |
 
 **`personal_orgs`** — maps a Clerk userId to their auto-provisioned personal org (M5). One row
@@ -148,6 +151,7 @@ per user, `user_id` PK; `INSERT ... ON CONFLICT DO NOTHING` is the atomic get-or
 | value_ciphertext | text | base64 XChaCha20-Poly1305 ciphertext (tag included) |
 | iv | text | base64 AEAD nonce (legacy column name, kept to avoid a rename migration) |
 | auth_tag | text nullable | unused for new writes — XChaCha20-Poly1305's tag lives in `value_ciphertext`, unlike the AES-256-GCM scheme this column was named for pre-M6 |
+| key_version | integer | which DEK generation `value_ciphertext` is encrypted under; default `1`, bumped by a rotation's migrate step |
 | deleted_at | timestamptz nullable | soft-delete (M3) |
 | created_at, updated_at | | index on `environment_id` |
 
@@ -159,6 +163,7 @@ per user, `user_id` PK; `INSERT ... ON CONFLICT DO NOTHING` is the atomic get-or
 | version | integer | **unique(environment_id, version)** |
 | message | text nullable | commit message |
 | snapshot | jsonb | array of `{key, valueCiphertext, iv, authTag}` — ciphertext copied directly, never decrypted |
+| key_version | integer | which DEK generation this snapshot's ciphertext is encrypted under; a rollback to a snapshot older than the project's current `key_version` is blocked (§6) |
 | created_by | text | Clerk userId |
 | created_at | | index on `environment_id` |
 
@@ -178,6 +183,7 @@ per user, `user_id` PK; `INSERT ... ON CONFLICT DO NOTHING` is the atomic get-or
 | subject_user_id | text | who this wrap is for |
 | wrapped_dek | text | the DEK, sealed (`crypto_box_seal`-equivalent) to `subject_user_id`'s public key |
 | wrapped_by_user_id | text | who performed the wrap (audit) |
+| key_version | integer | which DEK generation this wrap corresponds to; default `1`, bumped by a rotation finalize |
 | | | **unique(project_id, subject_user_id)**, index on `project_id` |
 
 **`access_grants`** — project-level role grant to a user or group (M5).
@@ -246,8 +252,28 @@ fail. Delivery is two-pronged: granting access wraps the DEK for the new member 
 (`access-manager.tsx`, right after the grant succeeds), and `GET /api/projects/[id]/keys/pending`
 + `useProjectKeyReconciliation` opportunistically wrap it for anyone still missing one, on every
 env-editor/access-page visit by a client that already holds it. Revoking access deletes the
-corresponding `project_keys` row(s) — but does not rotate the DEK, so a former member retains
-whatever they already fetched before removal (see `docs/security` for the user-facing framing).
+corresponding `project_keys` row(s) and sets `projects.key_rotation_pending` — the DEK itself is
+**not** rotated automatically (see `docs/security` for the user-facing framing); an admin rotates
+it explicitly (below).
+
+**DEK rotation on revoke** (project access page, "Encryption" section, admin-gated): a two-phase,
+client-driven flow so a former member's cached DEK stops decrypting current values.
+1. **Migrate** — `POST /api/projects/[id]/keys/rotate`, called repeatedly in chunks, re-encrypts
+   every live `env_vars` row under a freshly generated DEK at `key_version + 1`
+   (`migrateVarsBatch` in `lib/project-keys.ts`). It doesn't touch `project_keys` or bump
+   `projects.key_version` yet, so other clients keep working against the old DEK mid-rotation.
+2. **Finalize** — `POST /api/projects/[id]/keys/rotate/finalize` only proceeds once every row is
+   confirmed migrated and the supplied wrap set — fetched via `GET /api/projects/[id]/keys/members`,
+   the project's *current* full membership, not just those missing a wrap — exactly matches the
+   project's real membership (`finalizeRotation`); it then swaps every `project_keys` row to the
+   new DEK and bumps `projects.key_version` in one step, clearing `key_rotation_pending`.
+   `GET /api/projects/[id]/keys/rotation-status` feeds the access page's banner.
+
+**Historical version snapshots are intentionally left under their original key** —
+`environment_versions.key_version` is stamped per snapshot, and rolling back to one older than
+the project's current `key_version` now 409s (`environments/[id]/versions/[version]/rollback/route.ts`)
+rather than silently restoring values encrypted under a retired key. Re-migrating old snapshots is
+a documented, scoped-out follow-up, not an oversight.
 
 **Not encrypted:** key *names* (project/environment/variable) — only values. The three-way
 sync/diff protocol (`push`/`pull`) operates on key names server-side by design.
@@ -299,6 +325,20 @@ not owned, `400` bad input, `409` conflict.
 | POST | `/api/tokens` | create `{name}` → returns plaintext **once** |
 | DELETE | `/api/tokens/[id]` | revoke |
 
+### Project key management (M6 zero-knowledge encryption + DEK rotation)
+
+Under `/api/projects/[id]/keys`; all require project access, rotation endpoints admin-only.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/projects/[id]/keys` | register a wrapped DEK — self (right after project creation) or `{subjectUserId}` to deliver a copy to another authorized member |
+| GET | `/api/projects/[id]/keys/me` | the caller's own wrapped DEK, or 404 (`anyKeyExists` distinguishes "not delivered yet" from "nobody has one") |
+| GET | `/api/projects/[id]/keys/pending` | authorized members with no wrap yet + their public keys, for opportunistic delivery |
+| GET | `/api/projects/[id]/keys/members` | admin-only — every authorized member + public key, the wrap set a rotation's finalize needs |
+| GET | `/api/projects/[id]/keys/rotation-status` | admin-only — current `keyVersion` + whether a rotation is pending |
+| POST | `/api/projects/[id]/keys/rotate` | admin-only — re-encrypt a batch of `env_vars` rows under the next `keyVersion` (chunked, repeatable) |
+| POST | `/api/projects/[id]/keys/rotate/finalize` | admin-only — swap every member's wrap to the new DEK and bump `projects.keyVersion`; 409 if migration incomplete or membership changed mid-rotation |
+
 ## 9. Web app
 
 - **Rendering pattern:** pages are **React Server Components** that read the DB
@@ -311,6 +351,9 @@ not owned, `400` bad input, `409` conflict.
 - **Env editor** (`env-editor.tsx`): masked table with reveal toggle, per-row
   copy, copy-all-as-`.env`, paste-`.env` dialog (upsert), add/edit/delete;
   values are **auto-growing multiline textareas**, revealed values wrap.
+- **Access page** (`projects/[id]/access/access-manager.tsx`): grants management plus an
+  admin-only "Encryption" section showing the project's current key generation and a "Rotate
+  encryption key" action; a banner appears whenever a revoke has left rotation pending (§6).
 - **Theming:** `next-themes`, class strategy, **default light**, toggle in header.
   Design tokens in `globals.css` (neutral base + **emerald brand** `--brand`),
   light + dark. shadcn base-nova uses `@base-ui/react` — **`render={<Component/>}`
@@ -406,10 +449,10 @@ into the CLI by tsup). Runs on server and client.
 
 M1 through M6 have all shipped (deletion-aware three-way sync, versioning, CLI browser login,
 teams/orgs with per-env role caps, zero-knowledge encryption — see [ROADMAP.md](./ROADMAP.md)).
-What's left, per M6 PR6's own "explicitly deferred" list:
+What's left, per M6 PR6's own "explicitly deferred" list (DEK rotation on revoke was on this
+list too, but has since shipped as a post-M6 follow-up, 2026-08-09 — see §6):
 
 - Key-name/metadata encryption (only values are end-to-end encrypted today).
-- DEK rotation on revoke (a revoked member keeps whatever they already fetched).
 - Passphrase rotation / a full "forgot passphrase" reset flow beyond the already-shipped
   recovery-phrase *unlock* path (`unlockWithRecoveryPhrase`) — there's no UI yet to unwrap via
   recovery and then set a *new* passphrase.
@@ -438,3 +481,24 @@ See [PLAN.md](./PLAN.md) + [ROADMAP.md](./ROADMAP.md).
 | Shared parser | `packages/parser/src/index.ts` |
 | CLI entry | `packages/cli/src/index.ts` |
 | CLI config/URL | `packages/cli/src/config.ts` |
+
+## 17. Licensing
+
+Source-available since **2026-08-11** (was MIT before that date; commits prior to it stay MIT).
+Licensing is **per-directory**, not one blanket license — see [LICENSING.md](../LICENSING.md) for
+the authoritative table:
+
+| Path | License | Why |
+|---|---|---|
+| `apps/**` | Elastic License 2.0 (root `LICENSE`) | The server, access control, and entitlement logic — the commercially-licensed part. |
+| `packages/cli/**` | MIT | A client — frictionless to install, embed in CI, vendor. |
+| `packages/parser/**` | MIT | General-purpose `.env` parser; not the product. |
+| `packages/crypto/**` | MIT | Auditability is the whole trust argument for a zero-knowledge product — must stay independently inspectable. |
+
+Elastic License 2.0 permits reading, modifying, and self-hosting — including running it for your
+own org's employees/contractors, the intended use — but prohibits offering EnvHQ as a
+hosted/managed service to third parties, circumventing license-key-gated functionality, or
+removing license/copyright notices. **No license-key gating exists in the code today** — the
+"circumvent the license key" clause is groundwork for a future entitlement mechanism, not an
+enforced feature yet. Contributions go through the [Developer Certificate of Origin](../CONTRIBUTING.md)
+(sign-off on commits), not a CLA.

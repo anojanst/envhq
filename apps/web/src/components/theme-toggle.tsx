@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
-
-  const isDark = mounted && resolvedTheme === "dark";
+  // resolvedTheme is undefined on the server and until next-themes mounts on
+  // the client, so this already renders the light icon during that window —
+  // no separate "mounted" state/effect needed.
+  const isDark = resolvedTheme === "dark";
 
   return (
     <Button

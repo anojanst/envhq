@@ -104,6 +104,16 @@ export default function LimitationsPage() {
           create a new one and update wherever the old one was used (e.g. CI secrets).
         </P>
       </QA>
+      <QA q="If someone loses access to a project, can they still read values they already saw?">
+        <P>
+          Not going forward through the app or CLI — their access is revoked immediately. But if
+          they&apos;d already fetched the project&apos;s encryption key to their device before
+          removal, that copy still works on its own until an admin rotates the key. From the
+          project&apos;s <strong>Manage access</strong> page, the <strong>Encryption</strong>{" "}
+          section re-encrypts every current value under a new key and re-wraps it only to people
+          who currently have access — a banner there reminds you to do this right after a revoke.
+        </P>
+      </QA>
 
       <H2>General</H2>
       <QA q="Where is my data hosted?">
@@ -127,9 +137,10 @@ export default function LimitationsPage() {
           control with per-environment role caps, and zero-knowledge end-to-end encryption
           described elsewhere on this page and the{" "}
           <Link href="/docs/security" className="underline underline-offset-2">Security model</Link>{" "}
-          page have all shipped. Key-name/metadata encryption and DEK rotation on revoke (see the
-          Security model page&apos;s &quot;what&apos;s not covered today&quot;) are the main
-          security gaps left open. This page will be updated as further pieces ship.
+          page have all shipped, including DEK rotation on revoke (2026-08-09). Key-name/metadata
+          encryption (see the Security model page&apos;s &quot;what&apos;s not covered
+          today&quot;) is the main security gap left open. This page will be updated as further
+          pieces ship.
         </P>
       </QA>
     </div>

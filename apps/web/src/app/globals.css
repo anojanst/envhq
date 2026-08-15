@@ -5,6 +5,10 @@
 :root {
   --radius: 0.625rem;
 
+  /* Ground for the logged-out pages. Declared here rather than only inside
+     .public-dark so <body> can use the same value. */
+  --public-dark-bg: oklch(0.135 0.018 262);
+
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -121,13 +125,17 @@
 }
 
 /**
- * The marketing page commits to dark regardless of the app theme, so the
- * surface reads as one deliberate material instead of following a toggle the
- * visitor has not made yet. Scoped to the landing wrapper: it overrides the
- * inherited tokens for its subtree in either app theme, and the accent stays
- * EnvHQ emerald so the page and the product are the same brand.
+ * Every logged-out surface commits to dark regardless of the app theme, so the
+ * whole pre-signup journey reads as one deliberate material instead of
+ * following a toggle the visitor has not made yet. Applied to the landing,
+ * docs, terms and the auth pages. It overrides the inherited tokens for its
+ * subtree in either app theme, and the accent stays EnvHQ emerald so the
+ * public pages and the product are the same brand.
+ *
+ * Note: this is CSS only. Clerk's hosted widgets do not read these tokens, so
+ * `ClerkThemeProvider` forces a matching dark palette on the auth routes.
  */
-.landing-dark {
+.public-dark {
   color-scheme: dark;
 
   /* Cool blue-black ground rather than neutral charcoal, and a cool grey for
@@ -135,7 +143,7 @@
      the blue cast is what makes this kind of page feel like its own surface.
      It also sits closer to the hero artwork's own ground, so the two meet
      without a seam. */
-  --background: oklch(0.135 0.018 262);
+  --background: var(--public-dark-bg);
   --foreground: oklch(0.93 0.003 262);
   --card: oklch(0.185 0.016 262);
   --card-foreground: oklch(0.93 0.003 262);
@@ -166,6 +174,15 @@
      painting light grey hairlines on this dark surface, so re-alias them. */
   --color-border: var(--border);
   --color-ring: var(--ring);
+}
+
+/* The dark scope lives on <main>, so overscroll bounce and any strip the main
+   element does not cover would otherwise flash the light body behind it.
+   Deliberately unlayered: <body> carries Tailwind's `bg-background` utility,
+   and anything inside `@layer base` loses to it. */
+body:has(.public-dark) {
+  background-color: var(--public-dark-bg);
+  color-scheme: dark;
 }
 
 @theme {

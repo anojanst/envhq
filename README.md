@@ -140,4 +140,10 @@ key hierarchy.
 
 See [docs/ROADMAP.md](./docs/ROADMAP.md) for the full milestone history — CLI auth, CLI-first
 lifecycle, the sync engine, versioning, teams/access control, and zero-knowledge encryption have
-all shipped (M1 through M6).
+all shipped (M1 through M6), plus DEK rotation on revoke as a post-M6 follow-up.
+
+## License
+
+Source-available, not open source — see [LICENSING.md](./LICENSING.md). `apps/**` (the server) is
+Elastic License 2.0; `packages/cli`, `packages/parser`, and `packages/crypto` (the clients and the
+crypto) are MIT. Self-hosting for your own org is explicitly permitted and the intended use.

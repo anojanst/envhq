@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function DocsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex flex-1 flex-col">
+    <main className="public-dark flex flex-1 flex-col bg-background text-foreground">
       <PublicHeader />
 
       <div className="mx-auto flex w-full max-w-5xl flex-1 gap-8 px-6 pb-10 pt-4">

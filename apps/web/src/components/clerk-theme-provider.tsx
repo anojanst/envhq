@@ -1,34 +1,49 @@
 "use client";
 
 import { ClerkProvider } from "@clerk/nextjs";
+import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
+
+/** Logged-out routes that commit to dark via the `.public-dark` scope. */
+const PUBLIC_DARK_ROUTES = ["/sign-in", "/sign-up"];
 
 /**
  * Wraps Clerk's provider so its hosted components (SignIn, SignUp, UserButton)
- * follow the app's active theme and emerald brand instead of Clerk's default
- * light look. Values mirror the design tokens in `globals.css`. Must render
+ * follow the emerald brand instead of Clerk's default light look. Must render
  * inside `ThemeProvider` (next-themes) so `useTheme` resolves.
+ *
+ * Clerk renders its own markup with its own variables, so it cannot inherit the
+ * `.public-dark` CSS scope the way the rest of the page does. Left alone it
+ * would put a light card in the middle of a dark auth page, so the auth routes
+ * force dark here. Inside the app it still follows the user's chosen theme.
  */
 export function ClerkThemeProvider({ children }: { children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();
-  const dark = resolvedTheme === "dark";
+  const pathname = usePathname();
+
+  const onPublicDarkRoute = PUBLIC_DARK_ROUTES.some((route) =>
+    pathname?.startsWith(route),
+  );
+  const dark = onPublicDarkRoute || resolvedTheme === "dark";
 
   return (
     <ClerkProvider
       appearance={{
         variables: {
           // emerald --brand, per theme
-          colorPrimary: dark ? "oklch(0.72 0.15 162)" : "oklch(0.62 0.14 163)",
+          colorPrimary: dark ? "oklch(0.74 0.15 162)" : "oklch(0.62 0.14 163)",
           borderRadius: "0.625rem",
           fontFamily: "var(--font-geist-sans)",
           ...(dark
             ? {
-                colorBackground: "oklch(0.205 0 0)",
-                colorInputBackground: "oklch(0.269 0 0)",
-                colorText: "oklch(0.985 0 0)",
-                colorInputText: "oklch(0.985 0 0)",
-                colorTextSecondary: "oklch(0.708 0 0)",
-                colorNeutral: "oklch(0.985 0 0)",
+                // Mirrors the `.public-dark` tokens in globals.css: the cool
+                // blue-black ground, not the neutral charcoal these used to be.
+                colorBackground: "oklch(0.185 0.016 262)",
+                colorInputBackground: "oklch(0.22 0.016 262)",
+                colorText: "oklch(0.93 0.003 262)",
+                colorInputText: "oklch(0.93 0.003 262)",
+                colorTextSecondary: "oklch(0.71 0.024 265)",
+                colorNeutral: "oklch(0.93 0.003 262)",
               }
             : {}),
         },

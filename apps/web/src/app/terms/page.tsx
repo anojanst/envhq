@@ -14,7 +14,7 @@ const LAST_UPDATED = "July 17, 2026";
 
 export default function TermsPage() {
   return (
-    <main className="flex flex-1 flex-col">
+    <main className="public-dark flex flex-1 flex-col bg-background text-foreground">
       <PublicHeader />
 
       <div className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
