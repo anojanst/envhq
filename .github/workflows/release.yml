@@ -1,0 +1,50 @@
+name: Release
+
+# Tagging convention (see docs/RELEASE_POLICY.md): this workflow only ever
+# produces `envhq@X.Y.Z`-style tags for the publishable CLI package via
+# Changesets' own tagging. Whole-product enterprise release tags
+# (`product-vX.Y.Z`) are a separate, manually-gated process — see
+# enterprise-tag.yml — because they're cut from a different clock (a 14-day
+# SaaS production soak, not "changesets landed on main").
+#
+# One-time maintainer setup before this can actually publish:
+#   1. Create an npm access token with publish rights for the `envhq`
+#      package (Automation token recommended).
+#   2. Add it as a repository secret named NPM_TOKEN.
+# Until that secret exists, this workflow will still open/update the
+# "Version Packages" PR — it just can't complete the publish step.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create Release PR or publish to npm
+        uses: changesets/action@v1
+        with:
+          publish: pnpm release
+          version: pnpm version-packages
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

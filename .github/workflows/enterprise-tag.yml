@@ -1,0 +1,60 @@
+name: Enterprise Release Tag
+
+# Manually-triggered, human-gated cut of a whole-product enterprise release
+# tag — see docs/RELEASE_POLICY.md for the full policy this encodes.
+#
+# NOT tied to the `envhq` CLI package's own version (see release.yml for
+# that) — this tags the whole repository state at a specific commit that has
+# already satisfied the 14-day SaaS production soak (ADR-011). Tagging
+# convention: `product-vX.Y.Z`, deliberately distinct from Changesets'
+# `envhq@X.Y.Z` package tags, since the two are cut from different clocks.
+#
+# There is no automated production-health signal to gate this on yet (no
+# SaaS deployment/monitoring integration exists today). Until there is, this
+# gate is a human one: the `enterprise-release` GitHub Environment must be
+# configured with required reviewers (repo Settings > Environments) so that
+# running this workflow pauses for an explicit approval — the approver
+# checks the soak criteria in docs/RELEASE_POLICY.md before approving. This
+# workflow is not a real gate until that Environment is configured; creating
+# it is a one-time maintainer step, not something this workflow file can do
+# on its own.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Full commit SHA that has completed the 14-day soak (or is invoking the documented security-fix exception path)"
+        required: true
+      version:
+        description: "Product version to tag, e.g. 1.0.0 (without the product-v prefix)"
+        required: true
+      exception_reason:
+        description: "Leave blank for a normal soak-gated release. Fill in only when invoking the documented security-fix exception path (docs/RELEASE_POLICY.md) to bypass the soak, and state the reason."
+        required: false
+
+concurrency:
+  group: enterprise-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    environment: enterprise-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.commit_sha }}
+
+      - name: Record exception usage
+        if: ${{ github.event.inputs.exception_reason != '' }}
+        run: echo "::warning::Soak-bypass exception invoked — ${{ github.event.inputs.exception_reason }}"
+
+      - name: Create and push the enterprise release tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "product-v${{ github.event.inputs.version }}" "${{ github.event.inputs.commit_sha }}" -m "Enterprise release product-v${{ github.event.inputs.version }}"
+          git push origin "product-v${{ github.event.inputs.version }}"

@@ -21,7 +21,9 @@ if (!connectionString) {
 const caCert = process.env.DATABASE_CA_CERT;
 
 function createClient() {
-  return postgres(connectionString, {
+  // Non-null: the throw above guarantees this by the time createClient runs;
+  // TS doesn't carry that narrowing across the function boundary on its own.
+  return postgres(connectionString!, {
     max: Number(process.env.DATABASE_POOL_MAX ?? 10),
     ...(caCert ? { ssl: { ca: caCert, rejectUnauthorized: true } } : {}),
   });

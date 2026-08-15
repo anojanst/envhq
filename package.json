@@ -12,6 +12,13 @@
     "build": "pnpm --filter @envhq/web build",
     "db:generate": "pnpm --filter @envhq/web db:generate",
     "db:migrate": "pnpm --filter @envhq/web db:migrate",
-    "cli": "pnpm --filter envhq start"
+    "cli": "pnpm --filter envhq start",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^1.0.0",
+    "@changesets/cli": "^3.0.0"
   }
 }
