@@ -1,7 +1,8 @@
 import { getUserId } from "@/lib/auth";
-import { getAccessibleProject } from "@/lib/access";
+import { getAccessibleProject, isReadOnly } from "@/lib/access";
 import { getProjectKeyForUser, createProjectKey } from "@/lib/project-keys";
 import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden, conflict } from "@/lib/api";
+import { isUniqueViolation } from "@/lib/db-errors";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,7 @@ export async function POST(req: Request, { params }: Params) {
   const { userId, expired, scope } = await getUserId(req);
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();
+  if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
   const body = await req.json().catch(() => null);
@@ -49,7 +51,7 @@ export async function POST(req: Request, { params }: Params) {
     await createProjectKey(id, subjectUserId, wrappedDek, userId);
   } catch (err) {
     // Race: two concurrent registration attempts both passed the pre-check above.
-    if ((err as { code?: string }).code === "23505") {
+    if (isUniqueViolation(err)) {
       return conflict("A key is already registered for that user on this project");
     }
     throw err;

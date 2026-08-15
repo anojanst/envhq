@@ -1,7 +1,7 @@
 import { getUserId } from "@/lib/auth";
-import { getAccessibleProject } from "@/lib/access";
+import { getAccessibleProject, isReadOnly } from "@/lib/access";
 import { migrateVarsBatch } from "@/lib/project-keys";
-import { json, badRequest, unauthorized, tokenExpired, notFound } from "@/lib/api";
+import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -17,6 +17,7 @@ export async function POST(req: Request, { params }: Params) {
   const { userId, expired, scope } = await getUserId(req);
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();
+  if (isReadOnly(scope)) return forbidden("This token is read-only.");
   const { id } = await params;
 
   const owned = await getAccessibleProject(userId, id, "admin", scope);

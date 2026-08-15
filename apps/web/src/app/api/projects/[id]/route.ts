@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { projects, environments } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
 import { getAccessibleProject, isReadOnly } from "@/lib/access";
-import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
+import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden, conflict } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -42,13 +42,16 @@ export async function PATCH(req: Request, { params }: Params) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!name) return badRequest("name is required");
 
-  const [updated] = await db
-    .update(projects)
-    .set({ name, updatedAt: new Date() })
-    .where(eq(projects.id, id))
-    .returning();
-
-  return json({ project: updated });
+  try {
+    const [updated] = await db
+      .update(projects)
+      .set({ name, updatedAt: new Date() })
+      .where(eq(projects.id, id))
+      .returning();
+    return json({ project: updated });
+  } catch {
+    return conflict(`A project named "${name}" already exists.`);
+  }
 }
 
 export async function DELETE(req: Request, { params }: Params) {

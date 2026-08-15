@@ -7,9 +7,7 @@ import { resolveRequestedOrgId, getClerkOrgRole } from "@/lib/orgs";
 import { getGroup } from "@/lib/groups";
 import { upsertGrant, type SubjectType } from "@/lib/grants";
 import { json, badRequest, unauthorized, tokenExpired, forbidden, conflict } from "@/lib/api";
-
-/** Postgres unique_violation error code. */
-const UNIQUE_VIOLATION = "23505";
+import { isUniqueViolation } from "@/lib/db-errors";
 
 export const runtime = "nodejs";
 
@@ -90,7 +88,7 @@ export async function POST(req: Request) {
   try {
     [project] = await db.insert(projects).values({ userId, orgId, name }).returning();
   } catch (err) {
-    if (typeof err === "object" && err !== null && "code" in err && err.code === UNIQUE_VIOLATION) {
+    if (isUniqueViolation(err)) {
       return conflict(`A project named "${name}" already exists.`);
     }
     throw err;

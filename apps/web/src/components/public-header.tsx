@@ -24,7 +24,7 @@ export function PublicHeader() {
   return (
     <header className="sticky top-0 z-30">
       <div className="translucent-chrome bg-background/75 backdrop-blur-xl backdrop-saturate-150">
-        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-6">
+        <div className="mx-auto flex h-20 w-full max-w-[1320px] items-center justify-between gap-4 px-6">
           <Link
             href="/"
             aria-label="EnvHQ home"

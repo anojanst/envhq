@@ -7,12 +7,14 @@ Repo-specific guidance for Claude Code sessions working on EnvHQ.
 pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 
 - `apps/web` — the product: Next.js app (UI + API routes + DB), package `@envhq/web`.
+  - `openapi.yaml` — hand-written OpenAPI 3.1 spec, the source-of-truth contract for every route under `src/app/api` (ADR-010); lint with `pnpm --filter @envhq/web lint:openapi`
   - `src/app/(app)/` — authenticated app pages: `dashboard`, `projects`, `teams`, `settings`, `cli`
   - `src/app/api/` — Next.js route handlers: `orgs`, `projects`, `environments`, `vars`, `groups`, `tokens`, `users`, `cli`, `me`
   - `src/app/sign-in`, `src/app/sign-up` — Clerk-hosted auth pages
   - `src/app/docs/` — public docs site (`getting-started`, `cli`, `security`, `limitations`, `web-app`) — distinct from the internal `docs/` at repo root
   - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client
-  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` (key management), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`
+  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` (key management), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation)
+  - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db` and `contract` vitest projects; `contract/` holds the openapi.yaml-vs-live-routes contract suite
   - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
 - `packages/crypto` — `@envhq/crypto`, shared encryption primitives (noble libs)
@@ -22,8 +24,9 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 
 Commands (run from repo root unless noted):
 - `pnpm dev` / `pnpm build` — run/build the web app
-- `pnpm --filter @envhq/web test` / `test:watch` — vitest
+- `pnpm --filter @envhq/web test` / `test:watch` — vitest (the `authz-db` and `contract` projects need a real Postgres via `TEST_DATABASE_URL`, e.g. `postgres://envhq_test:envhq_test@localhost:5432/envhq_test`)
 - `pnpm --filter @envhq/web lint` — eslint
+- `pnpm --filter @envhq/web lint:openapi` — lints `openapi.yaml` with Redocly
 - `pnpm db:generate` / `pnpm db:migrate` — Drizzle migrations
 - `pnpm --filter @envhq/web db:studio` — Drizzle Studio
 - `pnpm cli` — run the CLI locally

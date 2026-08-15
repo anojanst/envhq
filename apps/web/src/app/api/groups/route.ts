@@ -2,11 +2,9 @@ import { getUserId } from "@/lib/auth";
 import { resolveRequestedOrgId, getClerkOrgRole } from "@/lib/orgs";
 import { listGroups, createGroup } from "@/lib/groups";
 import { json, badRequest, unauthorized, tokenExpired, forbidden, conflict } from "@/lib/api";
+import { isUniqueViolation } from "@/lib/db-errors";
 
 export const runtime = "nodejs";
-
-/** Postgres unique_violation error code. */
-const UNIQUE_VIOLATION = "23505";
 
 // Groups are org-level; every route in this file/subtree is gated on Clerk
 // org admin, not a project role — there's no project in scope. An explicit
@@ -45,7 +43,7 @@ export async function POST(req: Request) {
     const group = await createGroup(orgId, name);
     return json({ group }, 201);
   } catch (err) {
-    if (typeof err === "object" && err !== null && "code" in err && err.code === UNIQUE_VIOLATION) {
+    if (isUniqueViolation(err)) {
       return conflict(`A group named "${name}" already exists.`);
     }
     throw err;

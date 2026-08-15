@@ -185,9 +185,10 @@ export default async function LandingPage() {
     <main className="public-dark flex flex-1 flex-col bg-background text-foreground">
       <PublicHeader />
 
-      {/* Hero: copy on the left, the brand artwork on the right.
-          Sized against the header so header plus hero is exactly one screen. */}
-      <section className="relative flex min-h-[calc(100dvh-5rem)] flex-col justify-center overflow-x-clip py-12">
+      {/* Hero: copy on the left, the brand artwork on the right. The 6rem is
+          the header's own height (a 5rem bar plus its 1rem scroll-edge fade),
+          so header plus hero is exactly one screen. Keep the two in step. */}
+      <section className="relative flex min-h-[calc(100dvh-6rem)] flex-col justify-center overflow-x-clip py-12">
         {/* Two lights, not one. The ambient wash sits behind the artwork at top
             right; a second, tighter source under the command rail lifts it off
             the ground so the hero reads as layers rather than one flat plane. */}

@@ -44,6 +44,7 @@ export default defineConfig({
             "**/dist/**",
             "src/lib/access-matrix.test.ts",
             "src/lib/access.list.test.ts",
+            "src/test-support/contract/**/*.test.ts",
           ],
           // apps/web/src/db/index.ts throws at import time if DATABASE_URL
           // is unset, and access.ts (imported by access.helpers.test.ts for
@@ -66,6 +67,26 @@ export default defineConfig({
           // Only two files touch the shared Postgres service container —
           // serializing them is cheap and avoids reasoning about concurrent
           // truncate/insert seeding against the one instance.
+          fileParallelism: false,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          // HQ-53's contract suite: replays requests through the real route
+          // handlers (in-process, no live server) against a real Postgres
+          // instance, and validates every response against openapi.yaml —
+          // same real-DB rationale as "authz-db" above.
+          name: "contract",
+          environment: "node",
+          include: ["src/test-support/contract/**/*.test.ts"],
+          setupFiles: [
+            "./src/test-support/mock-db.setup.ts",
+            "./src/test-support/mock-orgs.ts",
+            "./src/test-support/mock-clerk.setup.ts",
+          ],
+          globalSetup: ["./src/test-support/migrate.global-setup.ts"],
+          // Same shared-container reasoning as "authz-db".
           fileParallelism: false,
         },
       },

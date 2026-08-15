@@ -1,6 +1,7 @@
 import { getUserId } from "@/lib/auth";
 import { getUserKeys, createUserKeys } from "@/lib/user-keys";
 import { json, badRequest, unauthorized, tokenExpired, notFound, conflict } from "@/lib/api";
+import { isUniqueViolation } from "@/lib/db-errors";
 
 export const runtime = "nodejs";
 
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
     await createUserKeys(userId, fields);
   } catch (err) {
     // Race: two concurrent setup attempts both passed the pre-check above.
-    if ((err as { code?: string }).code === "23505") {
+    if (isUniqueViolation(err)) {
       return conflict("Zero-knowledge identity already set up");
     }
     throw err;

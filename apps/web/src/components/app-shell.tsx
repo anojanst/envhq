@@ -96,7 +96,7 @@ function AppSidebar() {
       <SidebarHeader>
         <div className="flex items-center justify-between gap-2 px-1 py-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-2">
           <Link href="/dashboard" aria-label="EnvHQ home" className="flex min-w-0 items-center gap-2">
-            <BrandMark className="shrink-0" />
+            <BrandMark className="size-7 shrink-0" />
             <span className="truncate font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
               env<span className="text-brand">HQ</span>
             </span>

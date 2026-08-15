@@ -1,0 +1,2466 @@
+openapi: 3.1.0
+info:
+  title: EnvHQ API
+  version: "0.1.0"
+  license:
+    name: Elastic-2.0
+    identifier: Elastic-2.0
+  description: |
+    Hand-written, spec-first contract for EnvHQ's Next.js API routes
+    (ADR-010). This document describes the 34 route handlers under
+    `apps/web/src/app/api` exactly as they behave today — it does not
+    describe aspirational or planned behavior. Paths are unversioned,
+    matching the current code; the `/api/v1` prefix decided in ADR-010 is a
+    separate, not-yet-implemented change.
+
+    Two authentication schemes are accepted interchangeably by nearly every
+    route: a CLI personal access token (bearer) or a Clerk web session
+    (cookie). The one exception, `POST /api/cli/token`, is deliberately
+    public.
+tags:
+  - name: Cli
+    description: CLI browser-login (PKCE loopback) exchange.
+  - name: Environments
+    description: Environment CRUD, variable commits, version history and rollback.
+  - name: Groups
+    description: Org-scoped named groups of users, for group-based access grants.
+  - name: Me
+    description: Caller identity.
+  - name: Orgs
+    description: Clerk organizations the caller belongs to.
+  - name: Projects
+    description: Project CRUD, access grants, and zero-knowledge DEK key management.
+  - name: Tokens
+    description: CLI personal access token management.
+  - name: Users
+    description: The caller's zero-knowledge identity (User Keypair material).
+  - name: Vars
+    description: Individual environment variable mutation.
+servers:
+  - url: /
+    description: Same-origin (the Next.js app serves its own API routes).
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        CLI personal access token (PAT), sent as `Authorization: Bearer
+        <token>`. Resolved in `apps/web/src/lib/auth.ts`'s `getUserId`.
+        Tokens carry an optional project scope and a `read`/`write`
+        capability enforced per-route.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: __session
+      description: Clerk web session cookie, used by the browser app.
+  parameters:
+    idPathParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    orgIdQueryParam:
+      name: orgId
+      in: query
+      required: false
+      description: >-
+        Explicit org to act on. Falls back to the caller's personal org if
+        omitted (`resolveRequestedOrgId`).
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: >-
+        No valid bearer token or session cookie was presented, OR a bearer
+        token matched but is past its `expiresAt`. The two cases are
+        distinguished by `error`'s exact value: `token_expired` tells the
+        CLI to transparently re-run its browser login instead of treating
+        the token as permanently invalid. Six published CLI versions branch
+        on this literal string; it must never change.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            noCredential:
+              value: { error: Unauthorized }
+            tokenExpired:
+              value: { error: token_expired }
+    ReadOnlyForbidden:
+      description: The bearer token's capability is `read`; this route mutates state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error: This token is read-only.
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          const: true
+    Role:
+      type: string
+      enum: [viewer, editor, admin]
+    SubjectType:
+      type: string
+      enum: [user, group]
+    EnvScope:
+      type: [object, "null"]
+      description: >-
+        Per-environment role cap keyed by environment name (e.g. `{"prod":
+        "viewer"}`); an environment absent from the map is uncapped. `null`
+        means no restriction at all.
+      additionalProperties:
+        $ref: '#/components/schemas/Role'
+    Project:
+      type: object
+      description: apps/web/src/db/schema.ts `projects`.
+      required: [id, userId, orgId, name, keyVersion, keyRotationPending, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          description: Creator, audit-only.
+        orgId:
+          type: string
+        name:
+          type: string
+        keyVersion:
+          type: integer
+          description: DEK generation counter, bumped only by a completed rotation finalize.
+        keyRotationPending:
+          type: boolean
+          description: Soft hint that a rotation is recommended (a revoke happened since the last one).
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Environment:
+      type: object
+      description: apps/web/src/db/schema.ts `environments`.
+      required: [id, projectId, name, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        version:
+          type: integer
+          description: Server-owned linear version counter, bumped only via commit's atomic CAS update.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    EncryptedPair:
+      type: object
+      description: A single key's ciphertext, as the server stores and returns it — it cannot decrypt this.
+      required: [key, ciphertext, iv]
+      properties:
+        key:
+          type: string
+        ciphertext:
+          type: string
+        iv:
+          type: string
+          description: AEAD nonce (legacy column name predates XChaCha20-Poly1305 adoption).
+    EncryptedVarRow:
+      description: "`EncryptedPair` plus its row id and last-write timestamp."
+      allOf:
+        - $ref: '#/components/schemas/EncryptedPair'
+        - type: object
+          required: [id, updatedAt]
+          properties:
+            id:
+              type: string
+              format: uuid
+            updatedAt:
+              type: string
+              format: date-time
+    EnvironmentVersionSummary:
+      type: object
+      required: [version, message, createdBy, createdByName, createdAt]
+      properties:
+        version:
+          type: integer
+        message:
+          type: [string, "null"]
+        createdBy:
+          type: string
+          description: Clerk user id.
+        createdByName:
+          type: string
+          description: Resolved display name for `createdBy` (`resolveDisplayNames`).
+        createdAt:
+          type: string
+          format: date-time
+    VersionConflictWithPairs:
+      type: object
+      description: >-
+        The CAS-loss 409 shape unique to `commit` — includes the live
+        ciphertext for just the keys the caller was trying to change, so the
+        CLI can build a yours-vs-server diff without the server ever
+        decrypting anything.
+      required: [error, currentVersion, serverPairs]
+      properties:
+        error:
+          const: version_conflict
+        currentVersion:
+          type: integer
+        serverPairs:
+          type: array
+          items:
+            $ref: '#/components/schemas/EncryptedPair'
+    VersionConflictSimple:
+      type: object
+      description: >-
+        The CAS-loss 409 shape unique to `rollback` — no `serverPairs`,
+        since a rollback conflict is whole-environment, not per-key.
+      required: [error, currentVersion]
+      properties:
+        error:
+          const: version_conflict
+        currentVersion:
+          type: integer
+    AccessGrant:
+      type: object
+      description: apps/web/src/lib/grants.ts `GrantRow`, with its resolved display name.
+      required: [id, subjectType, subjectId, role, envScope, createdAt, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        subjectType:
+          $ref: '#/components/schemas/SubjectType'
+        subjectId:
+          type: string
+          description: A Clerk user id, or a group id, depending on `subjectType`.
+        role:
+          $ref: '#/components/schemas/Role'
+        envScope:
+          $ref: '#/components/schemas/EnvScope'
+        createdAt:
+          type: string
+          format: date-time
+        name:
+          type: string
+          description: Resolved display name (Clerk user, or group name).
+    Group:
+      type: object
+      description: apps/web/src/lib/groups.ts `GroupRow`.
+      required: [id, name, memberCount, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        memberCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    GroupMember:
+      type: object
+      required: [userId, name, createdAt]
+      properties:
+        userId:
+          type: string
+        name:
+          type: string
+          description: Resolved display name.
+        createdAt:
+          type: string
+          format: date-time
+    OrgMember:
+      type: object
+      description: Clerk-derived membership row, shared shape between org members and project access members.
+      required: [userId, name, email, imageUrl]
+      properties:
+        userId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        imageUrl:
+          type: string
+    Org:
+      type: object
+      required: [id, name, role]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, member]
+    ApiTokenSummary:
+      type: object
+      description: A token list row — never includes the secret.
+      required: [id, name, kind, capability, projectId, projectName, expiresAt, lastUsedAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [pat, cli_session]
+        capability:
+          type: string
+          enum: [read, write]
+        projectId:
+          type: [string, "null"]
+          format: uuid
+        projectName:
+          type: [string, "null"]
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        lastUsedAt:
+          type: [string, "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    ApiTokenCreated:
+      type: object
+      description: >-
+        The one and only response that carries the plaintext secret — shown
+        exactly once, never retrievable again.
+      required: [token, id, name, capability, projectId, expiresAt, createdAt]
+      properties:
+        token:
+          type: string
+          description: Plaintext PAT. Only the SHA-256 hash is persisted server-side.
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        capability:
+          type: string
+          enum: [read, write]
+        projectId:
+          type: [string, "null"]
+          format: uuid
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    UserKeysPublic:
+      type: object
+      description: >-
+        A user's zero-knowledge identity (`apps/web/src/db/schema.ts`
+        `userKeys`) — the server only ever holds ciphertext/public material
+        here.
+      required:
+        - publicKey
+        - kdfSalt
+        - kdfT
+        - kdfM
+        - kdfP
+        - wrappedPrivateKey
+        - wrappedPrivateKeyNonce
+        - wrappedPrivateKeyByRecovery
+        - wrappedPrivateKeyByRecoveryNonce
+        - createdAt
+      properties:
+        publicKey:
+          type: string
+        kdfSalt:
+          type: string
+        kdfT:
+          type: integer
+        kdfM:
+          type: integer
+        kdfP:
+          type: integer
+        wrappedPrivateKey:
+          type: string
+        wrappedPrivateKeyNonce:
+          type: string
+        wrappedPrivateKeyByRecovery:
+          type: string
+        wrappedPrivateKeyByRecoveryNonce:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ProjectKeyNotFound:
+      type: object
+      description: >-
+        Non-standard 404 body unique to `GET /api/projects/{id}/keys/me` —
+        carries an extra field beyond the usual `{error}` envelope so the
+        client can distinguish "nobody has a key on this project yet" from
+        "you specifically aren't wrapped in yet." Modeled faithfully, not
+        collapsed into `ErrorEnvelope`.
+      required: [error, anyKeyExists]
+      properties:
+        error:
+          type: string
+        anyKeyExists:
+          type: boolean
+    ProjectMemberKey:
+      type: object
+      required: [userId, publicKey]
+      properties:
+        userId:
+          type: string
+        publicKey:
+          type: string
+    RotationStatus:
+      type: object
+      required: [currentKeyVersion, rotationPending]
+      properties:
+        currentKeyVersion:
+          type: integer
+        rotationPending:
+          type: boolean
+paths:
+  /api/cli/authorize:
+    post:
+      tags: [Cli]
+      operationId: authorizeCli
+      summary: Mint a one-time CLI login code
+      description: >-
+        Called by the browser-based CLI-approve page once the user is
+        signed in. Mints a single-use PKCE-bound code the browser hands back
+        to the CLI's loopback listener.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, codeChallenge, port]
+              properties:
+                state:
+                  type: string
+                codeChallenge:
+                  type: string
+                port:
+                  type: integer
+                  minimum: 1
+                  maximum: 65535
+                  description: The CLI's loopback listener port.
+      responses:
+        "200":
+          description: Code minted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code]
+                properties:
+                  code:
+                    type: string
+        "400":
+          description: Missing/invalid state, codeChallenge, or port.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                missingFields:
+                  value: { error: state and codeChallenge are required }
+                badPort:
+                  value: { error: port must be a valid loopback port }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+  /api/cli/token:
+    post:
+      tags: [Cli]
+      operationId: exchangeCliToken
+      summary: Exchange a one-time code + PKCE verifier for a CLI session token
+      security: []
+      description: >-
+        Deliberately public — no cookie/bearer auth. Security comes from the
+        code being single-use and bound to the verifier, which never left
+        the CLI. Every failure reason (unknown code, consumed code, expired
+        code, PKCE mismatch) collapses into one opaque `invalid_grant` error
+        so the response can't be used as an oracle for which check failed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, verifier]
+              properties:
+                code:
+                  type: string
+                verifier:
+                  type: string
+      responses:
+        "200":
+          description: A 7-day CLI session token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expiresAt, userId]
+                properties:
+                  token:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  userId:
+                    type: string
+        "400":
+          description: Missing fields, or the code/verifier pair is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                missingFields:
+                  value: { error: code and verifier are required }
+                invalidGrant:
+                  value: { error: invalid_grant }
+  /api/environments/{id}/commit:
+    post:
+      tags: [Environments]
+      operationId: commitEnvironment
+      summary: Atomically apply an upsert/delete batch and bump the environment's version
+      description: >-
+        Ciphertext-only three-way commit. Requires editor role. On a lost
+        compare-and-swap, returns the live ciphertext for just the keys the
+        caller touched so the CLI can build a diff.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseVersion]
+              properties:
+                baseVersion:
+                  type: integer
+                upsert:
+                  type: array
+                  default: []
+                  items:
+                    $ref: '#/components/schemas/EncryptedPair'
+                delete:
+                  type: array
+                  default: []
+                  items:
+                    type: string
+                message:
+                  type: [string, "null"]
+      responses:
+        "200":
+          description: Commit applied.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, created, updated, deleted]
+                properties:
+                  version:
+                    type: integer
+                  created:
+                    type: integer
+                  updated:
+                    type: integer
+                  deleted:
+                    type: integer
+        "400":
+          description: baseVersion missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: baseVersion is required
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Environment not found, or caller lacks editor role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Environment not found
+        "409":
+          description: Lost the compare-and-swap against `baseVersion`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionConflictWithPairs'
+  /api/environments/{id}/export:
+    get:
+      tags: [Environments]
+      operationId: exportEnvironment
+      summary: Export an environment's active variables as ciphertext
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: Ciphertext pairs — decrypted client-side.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pairs, count, version]
+                properties:
+                  pairs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EncryptedPair'
+                  count:
+                    type: integer
+                  version:
+                    type: integer
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Environment not found, or caller lacks viewer role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Environment not found
+  /api/environments/{id}/import:
+    post:
+      tags: [Environments]
+      operationId: importEnvironmentVars
+      summary: Upsert a batch of already-encrypted pairs, committing a new version
+      description: >-
+        Optimistic commit against the environment's current version (the
+        caller doesn't supply `baseVersion`), so a concurrent write in
+        between surfaces as the generic version-conflict shape rather than
+        the caller's own stale read.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pairs]
+              properties:
+                pairs:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/EncryptedPair'
+      responses:
+        "200":
+          description: Import applied.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created, updated, total]
+                properties:
+                  created:
+                    type: integer
+                  updated:
+                    type: integer
+                  total:
+                    type: integer
+        "400":
+          description: pairs missing or empty after filtering malformed entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: pairs is required
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Environment not found, or caller lacks editor role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Environment not found
+        "409":
+          description: The environment changed between the caller's read and this write.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: This environment changed elsewhere — refresh and try again.
+  /api/environments/{id}:
+    get:
+      tags: [Environments]
+      operationId: getEnvironment
+      summary: Fetch an environment, its project, and its active variables
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [environment, project, vars]
+                properties:
+                  environment:
+                    $ref: '#/components/schemas/Environment'
+                  project:
+                    $ref: '#/components/schemas/Project'
+                  vars:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EncryptedVarRow'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Environment not found, or caller lacks viewer role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Environment not found
+    patch:
+      tags: [Environments]
+      operationId: renameEnvironment
+      summary: Rename an environment
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        "200":
+          description: Renamed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [environment]
+                properties:
+                  environment:
+                    $ref: '#/components/schemas/Environment'
+        "400":
+          description: name missing/blank.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: name is required
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Environment not found, or caller lacks editor role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Environment not found
+        "409":
+          description: Another environment in the project already has this name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: An environment named "prod" already exists in this project
+    delete:
+      tags: [Environments]
+      operationId: deleteEnvironment
+      summary: Delete an environment
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Environment not found, or caller lacks editor role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Environment not found
+  /api/environments/{id}/vars:
+    post:
+      tags: [Environments]
+      operationId: upsertEnvironmentVar
+      summary: Create or update a single variable
+      description: >-
+        The only operation whose success status varies: `201` when the key
+        didn't exist yet, `200` when it did. Bumps the environment's version
+        via the same optimistic-commit path as import.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, ciphertext, iv]
+              properties:
+                key:
+                  type: string
+                  pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                ciphertext:
+                  type: string
+                iv:
+                  type: string
+      responses:
+        "200":
+          description: Existing key updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, created]
+                properties:
+                  key:
+                    type: string
+                  created:
+                    const: false
+        "201":
+          description: New key created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, created]
+                properties:
+                  key:
+                    type: string
+                  created:
+                    const: true
+        "400":
+          description: Missing key/ciphertext/iv, or key fails the identifier pattern.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                keyRequired:
+                  value: { error: key is required }
+                keyFormat:
+                  value: { error: "key must start with a letter or _ and contain only letters, digits, _" }
+                valueRequired:
+                  value: { error: ciphertext and iv are required }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Environment not found, or caller lacks editor role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Environment not found
+        "409":
+          description: The environment changed between the caller's read and this write.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: This environment changed elsewhere — refresh and try again.
+  /api/environments/{id}/versions/{version}/rollback:
+    post:
+      tags: [Environments]
+      operationId: rollbackEnvironment
+      summary: Roll back to a historical version
+      description: >-
+        Implemented as a new forward version (git-revert style), not a
+        reset — the version counter only ever increases.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseVersion]
+              properties:
+                baseVersion:
+                  type: integer
+                message:
+                  type: [string, "null"]
+      responses:
+        "200":
+          description: Rolled back.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version]
+                properties:
+                  version:
+                    type: integer
+        "400":
+          description: Invalid version path param, or baseVersion missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                invalidVersion:
+                  value: { error: Invalid version }
+                baseVersionRequired:
+                  value: { error: baseVersion is required }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Environment not found, or the target version's snapshot doesn't exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                environmentNotFound:
+                  value: { error: Environment not found }
+                versionNotFound:
+                  value: { error: "Version 3 not found" }
+        "409":
+          description: >-
+            Either the target version predates a key rotation and can no
+            longer be decrypted, or a lost compare-and-swap against
+            `baseVersion`.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - $ref: '#/components/schemas/VersionConflictSimple'
+              examples:
+                retiredKey:
+                  value:
+                    error: This version predates a key rotation and can no longer be restored — its values are encrypted under a retired key.
+                versionConflict:
+                  value: { error: version_conflict, currentVersion: 7 }
+  /api/environments/{id}/versions:
+    get:
+      tags: [Environments]
+      operationId: listEnvironmentVersions
+      summary: List an environment's version history, newest first
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [versions]
+                properties:
+                  versions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EnvironmentVersionSummary'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Environment not found, or caller lacks viewer role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Environment not found
+  /api/groups/{id}/members/{userId}:
+    delete:
+      tags: [Groups]
+      operationId: removeGroupMember
+      summary: Remove a member from a group
+      description: >-
+        Requires Clerk org-admin on the group's org. Not found and
+        not-authorized are indistinguishable (both 404) — deliberate,
+        matching the same info-leak defense used project/environment-wide:
+        a caller shouldn't learn a group id is real just because they lack
+        admin rights on it.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Group not found (or caller isn't org-admin), or the user wasn't a member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                groupNotFound:
+                  value: { error: Group not found }
+                notAMember:
+                  value: { error: Member not found in this group }
+  /api/groups/{id}/members:
+    get:
+      tags: [Groups]
+      operationId: listGroupMembers
+      summary: List a group's members
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroupMember'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Group not found, or caller isn't org-admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Group not found
+    post:
+      tags: [Groups]
+      operationId: addGroupMember
+      summary: Add a member to a group
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  type: string
+      responses:
+        "201":
+          description: Added — returns the full updated member list, not just the new member.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroupMember'
+        "400":
+          description: userId missing, or not a member of this org.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                userIdRequired:
+                  value: { error: userId is required }
+                notOrgMember:
+                  value: { error: "That user isn't a member of this org" }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Group not found, or caller isn't org-admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Group not found
+  /api/groups/{id}:
+    delete:
+      tags: [Groups]
+      operationId: deleteGroup
+      summary: Delete a group
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Group not found, or caller isn't org-admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Group not found
+  /api/groups:
+    get:
+      tags: [Groups]
+      operationId: listGroups
+      summary: List an org's groups
+      description: >-
+        Unlike `/api/groups/{id}/*`, this list endpoint uses a plain 403 for
+        non-admins rather than 404 — there's no specific group id in the URL
+        to hide the existence of.
+      parameters:
+        - $ref: '#/components/parameters/orgIdQueryParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [groups]
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Group'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: Caller isn't org-admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Forbidden
+    post:
+      tags: [Groups]
+      operationId: createGroup
+      summary: Create a group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                orgId:
+                  type: string
+                name:
+                  type: string
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [group]
+                properties:
+                  group:
+                    $ref: '#/components/schemas/Group'
+        "400":
+          description: name missing/blank.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: name is required
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: Caller isn't org-admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Forbidden
+        "409":
+          description: A group with this name already exists in the org.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: A group named "Engineering" already exists.
+  /api/me:
+    get:
+      tags: [Me]
+      operationId: getMe
+      summary: Resolve the caller's identity
+      description: Trivial whoami, used by the CLI to validate a token.
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [userId]
+                properties:
+                  userId:
+                    type: string
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+  /api/orgs/members:
+    get:
+      tags: [Orgs]
+      operationId: listOrgMembers
+      summary: List an org's members
+      parameters:
+        - $ref: '#/components/parameters/orgIdQueryParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrgMember'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: Caller isn't org-admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Forbidden
+  /api/orgs:
+    get:
+      tags: [Orgs]
+      operationId: listMyOrgs
+      summary: List every org the caller belongs to
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orgs]
+                properties:
+                  orgs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Org'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+  /api/projects/{id}/access/{grantId}:
+    delete:
+      tags: [Projects]
+      operationId: deleteProjectAccessGrant
+      summary: Revoke an access grant
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+        - name: grantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Project not found (or caller isn't admin), or grant not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                projectNotFound:
+                  value: { error: Project not found }
+                grantNotFound:
+                  value: { error: Grant not found }
+  /api/projects/{id}/access/groups:
+    get:
+      tags: [Projects]
+      operationId: listProjectAccessGroupOptions
+      summary: List the project's org's groups, for the Share dialog's group picker
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [groups]
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Group'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Project not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+  /api/projects/{id}/access/members:
+    get:
+      tags: [Projects]
+      operationId: listProjectAccessMemberOptions
+      summary: List the project's org's members, for the Share dialog's user picker
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrgMember'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Project not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+  /api/projects/{id}/access:
+    get:
+      tags: [Projects]
+      operationId: listProjectAccess
+      summary: List a project's access grants and environments
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [grants, environments]
+                properties:
+                  grants:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccessGrant'
+                  environments:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name]
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Project not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+    post:
+      tags: [Projects]
+      operationId: upsertProjectAccess
+      summary: Grant (or update) a user's or group's role on a project
+      description: >-
+        Always returns 201, even when updating an existing grant's role.
+        `envScope` is only applied when the key is present in the request
+        body at all — omitting it leaves an existing grant's env-scope
+        untouched; `null` or `{}` explicitly clears it.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectId, role]
+              properties:
+                subjectType:
+                  $ref: '#/components/schemas/SubjectType'
+                  default: user
+                subjectId:
+                  type: string
+                role:
+                  $ref: '#/components/schemas/Role'
+                envScope:
+                  $ref: '#/components/schemas/EnvScope'
+      responses:
+        "201":
+          description: Grant created or updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [grant]
+                properties:
+                  grant:
+                    $ref: '#/components/schemas/AccessGrant'
+        "400":
+          description: Invalid subjectId, role, envScope, or a subject that doesn't belong to this project's org.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                subjectIdRequired:
+                  value: { error: subjectId is required }
+                invalidRole:
+                  value: { error: "role must be one of viewer, editor, admin" }
+                userNotInOrg:
+                  value: { error: "That user isn't a member of this project's org" }
+                groupNotInOrg:
+                  value: { error: "That group doesn't belong to this project's org" }
+                invalidEnvScope:
+                  value: { error: "envScope must map real environment names to a role no higher than the grant's own role" }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Project not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+  /api/projects/{id}/environments:
+    post:
+      tags: [Projects]
+      operationId: createProjectEnvironment
+      summary: Create an environment in a project, optionally cloning another's variables
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                from:
+                  type: string
+                  format: uuid
+                  description: Source environment id to clone ciphertext from (no re-encryption).
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [environment]
+                properties:
+                  environment:
+                    $ref: '#/components/schemas/Environment'
+        "400":
+          description: name missing, or `from` doesn't belong to this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                nameRequired:
+                  value: { error: name is required }
+                sourceNotFound:
+                  value: { error: Source environment not found in this project }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Project not found, or caller lacks editor role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+        "409":
+          description: An environment with this name already exists in the project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: An environment named "staging" already exists in this project
+  /api/projects/{id}/keys/me:
+    get:
+      tags: [Projects]
+      operationId: getMyProjectKey
+      summary: Fetch the caller's own wrapped DEK for a project
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [wrappedDek]
+                properties:
+                  wrappedDek:
+                    type: string
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Project not found, or no key is registered for the caller yet.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ErrorEnvelope'
+                  - $ref: '#/components/schemas/ProjectKeyNotFound'
+              examples:
+                projectNotFound:
+                  value: { error: Project not found }
+                noKeyYet:
+                  value: { error: "No key registered for you on this project yet", anyKeyExists: true }
+  /api/projects/{id}/keys/members:
+    get:
+      tags: [Projects]
+      operationId: listProjectKeyMembers
+      summary: List every authorized member who already holds a key wrap
+      description: Used to rewrap-for-everyone on rotation.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members, totalAccessible]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProjectMemberKey'
+                  totalAccessible:
+                    type: integer
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Project not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+  /api/projects/{id}/keys/pending:
+    get:
+      tags: [Projects]
+      operationId: listPendingProjectKeyMembers
+      summary: List authorized members who lack a key wrap yet
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pending]
+                properties:
+                  pending:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProjectMemberKey'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Project not found, or caller lacks viewer role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+  /api/projects/{id}/keys/rotate/finalize:
+    post:
+      tags: [Projects]
+      operationId: finalizeProjectKeyRotation
+      summary: Complete a DEK rotation
+      description: >-
+        The irreversible step: swaps every `project_keys` wrap to the new
+        DEK and bumps `projects.keyVersion`. Only proceeds once every
+        `env_vars` row is confirmed re-encrypted, and only accepts a wrap
+        set that exactly matches the project's real current membership.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetKeyVersion, wraps]
+              properties:
+                targetKeyVersion:
+                  type: integer
+                  minimum: 1
+                wraps:
+                  type: array
+                  items:
+                    type: object
+                    required: [subjectUserId, wrappedDek]
+                    properties:
+                      subjectUserId:
+                        type: string
+                      wrappedDek:
+                        type: string
+      responses:
+        "200":
+          description: Rotation finalized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "400":
+          description: Invalid targetKeyVersion or wraps shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                targetKeyVersion:
+                  value: { error: targetKeyVersion must be a positive integer }
+                wrapsShape:
+                  value: { error: "wraps must be an array of {subjectUserId, wrappedDek}" }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Project not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+        "409":
+          description: Some variables still need migrating, or the supplied wraps don't match current membership.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pendingMigration:
+                  value: { error: "3 value(s) still need migrating before finalize" }
+                membershipMismatch:
+                  value: { error: "The supplied key wraps don't match the project's current members — refresh and try again" }
+  /api/projects/{id}/keys/rotate:
+    post:
+      tags: [Projects]
+      operationId: migrateProjectKeyBatch
+      summary: Re-encrypt a batch of variables under a new DEK generation
+      description: >-
+        Chunked, idempotent/resumable batch step of a rotation. Doesn't
+        touch `project_keys` or bump `projects.keyVersion` — see `finalize`.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetKeyVersion, rows]
+              properties:
+                targetKeyVersion:
+                  type: integer
+                  minimum: 1
+                rows:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, ciphertext, iv]
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      ciphertext:
+                        type: string
+                      iv:
+                        type: string
+      responses:
+        "200":
+          description: Batch migrated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, migrated]
+                properties:
+                  ok:
+                    const: true
+                  migrated:
+                    type: integer
+        "400":
+          description: Invalid targetKeyVersion or rows shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                targetKeyVersion:
+                  value: { error: targetKeyVersion must be a positive integer }
+                rowsShape:
+                  value: { error: "rows must be an array of {id, ciphertext, iv}" }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Project not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+  /api/projects/{id}/keys/rotation-status:
+    get:
+      tags: [Projects]
+      operationId: getProjectKeyRotationStatus
+      summary: Fetch a project's current DEK generation and whether rotation is recommended
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotationStatus'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Project not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+  /api/projects/{id}/keys:
+    post:
+      tags: [Projects]
+      operationId: registerProjectKey
+      summary: Register a wrapped DEK, for the caller or (with editor role) another authorized member
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [wrappedDek]
+              properties:
+                wrappedDek:
+                  type: string
+                subjectUserId:
+                  type: string
+                  description: Defaults to the caller. Registering for someone else requires editor role.
+      responses:
+        "201":
+          description: Registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "400":
+          description: wrappedDek missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: wrappedDek is required
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: The read-only PAT gate, or the target user doesn't have project access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                readOnly:
+                  value: { error: This token is read-only. }
+                targetNoAccess:
+                  value: { error: "That user doesn't have access to this project" }
+        "404":
+          description: Project not found, or caller doesn't meet the required role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+        "409":
+          description: A key is already registered for that user on this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: A key is already registered for that user on this project
+  /api/projects/{id}:
+    get:
+      tags: [Projects]
+      operationId: getProject
+      summary: Fetch a project and its environments
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project, environments]
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+                  environments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Environment'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Project not found, or caller lacks viewer role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+    patch:
+      tags: [Projects]
+      operationId: renameProject
+      summary: Rename a project
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        "200":
+          description: Renamed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project]
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+        "400":
+          description: name missing/blank.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: name is required
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Project not found, or caller lacks editor role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+        "409":
+          description: Another project in the org already has this name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: A project named "Payments" already exists.
+    delete:
+      tags: [Projects]
+      operationId: deleteProject
+      summary: Delete a project
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Project not found, or caller lacks admin role on it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+  /api/projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: List projects the caller can access in an org
+      description: CLI-only surface — the web dashboard reads `lib/access.ts` directly instead.
+      parameters:
+        - $ref: '#/components/parameters/orgIdQueryParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [projects]
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: Caller isn't a member of the requested org.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: "You're not a member of that org."
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Create a project, its initial environments, and any initial access grants
+      description: >-
+        The creator always receives an explicit admin grant, in addition to
+        any `grants` requested. Defaults to a single `dev` environment;
+        passing an empty `environments` array opts out entirely.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                orgId:
+                  type: string
+                grants:
+                  type: array
+                  items:
+                    type: object
+                    required: [subjectId, role]
+                    properties:
+                      subjectType:
+                        $ref: '#/components/schemas/SubjectType'
+                        default: user
+                      subjectId:
+                        type: string
+                      role:
+                        $ref: '#/components/schemas/Role'
+                environments:
+                  type: array
+                  default: [dev]
+                  items:
+                    type: string
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project, environments]
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+                  environments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Environment'
+        "400":
+          description: Invalid name, or an initial grant's subject/role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                nameRequired:
+                  value: { error: name is required }
+                grantShape:
+                  value: { error: Each grant needs a subjectId and a valid role }
+                grantUserNotInOrg:
+                  value: { error: "A granted user isn't a member of this org" }
+                grantGroupNotInOrg:
+                  value: { error: "A granted group doesn't belong to this org" }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: The token can't create projects, or the caller isn't a member of the requested org.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                tokenScoped:
+                  value: { error: This token can't create projects. }
+                notOrgMember:
+                  value: { error: "You're not a member of that org." }
+        "409":
+          description: A project with this name already exists in the org.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: A project named "Payments" already exists.
+  /api/tokens/{id}:
+    delete:
+      tags: [Tokens]
+      operationId: deleteToken
+      summary: Revoke one of the caller's own tokens
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: Revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: A scoped/read-only token attempted to manage tokens.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: This token can't manage tokens.
+        "404":
+          description: Token not found, or not owned by the caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Token not found
+  /api/tokens:
+    get:
+      tags: [Tokens]
+      operationId: listTokens
+      summary: List the caller's own tokens
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tokens]
+                properties:
+                  tokens:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiTokenSummary'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Tokens]
+      operationId: createToken
+      summary: Create a new personal access token
+      description: The plaintext secret is returned exactly once, in this response only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                capability:
+                  type: string
+                  enum: [read, write]
+                  default: write
+                projectId:
+                  type: string
+                  format: uuid
+                  description: Scopes the token to one project. Omit for an all-projects token.
+                expiresInDays:
+                  type: number
+                  description: Omit or non-positive for a non-expiring token.
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenCreated'
+        "400":
+          description: name missing, or projectId doesn't resolve to an accessible project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                nameRequired:
+                  value: { error: name is required }
+                unknownProject:
+                  value: { error: Unknown project }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: A scoped/read-only token attempted to create another token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: This token can't create tokens.
+  /api/users/me/keys:
+    get:
+      tags: [Users]
+      operationId: getMyUserKeys
+      summary: Fetch the caller's zero-knowledge identity material
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserKeysPublic'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: The caller hasn't completed zero-knowledge onboarding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Zero-knowledge identity not set up
+    post:
+      tags: [Users]
+      operationId: createMyUserKeys
+      summary: One-time creation of the caller's zero-knowledge identity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - publicKey
+                - kdfSalt
+                - kdfT
+                - kdfM
+                - kdfP
+                - wrappedPrivateKey
+                - wrappedPrivateKeyNonce
+                - wrappedPrivateKeyByRecovery
+                - wrappedPrivateKeyByRecoveryNonce
+              properties:
+                publicKey:
+                  type: string
+                kdfSalt:
+                  type: string
+                kdfT:
+                  type: integer
+                kdfM:
+                  type: integer
+                kdfP:
+                  type: integer
+                wrappedPrivateKey:
+                  type: string
+                wrappedPrivateKeyNonce:
+                  type: string
+                wrappedPrivateKeyByRecovery:
+                  type: string
+                wrappedPrivateKeyByRecoveryNonce:
+                  type: string
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "400":
+          description: Missing or invalid key material.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Missing or invalid key material
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "409":
+          description: The caller already has a zero-knowledge identity (no update path — one-time only).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Zero-knowledge identity already set up
+  /api/vars/{id}:
+    patch:
+      tags: [Vars]
+      operationId: updateVar
+      summary: Update a variable's key and/or value
+      description: >-
+        All fields optional, but at least one of `key` or (`ciphertext` +
+        `iv`) must be present. A rename to a key that collides with another
+        active variable in the same environment is pre-checked and returned
+        as a 409 before touching the version counter.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key:
+                  type: string
+                  pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                ciphertext:
+                  type: string
+                iv:
+                  type: string
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [variable]
+                properties:
+                  variable:
+                    type: object
+                    required: [id, key]
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      key:
+                        type: string
+        "400":
+          description: Invalid key format, or no fields to update.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                invalidKey:
+                  value: { error: Invalid key format }
+                nothingToUpdate:
+                  value: { error: Nothing to update }
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Variable not found, or caller lacks editor role on its environment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Variable not found
+        "409":
+          description: The new key collides with an existing variable, or the environment changed underneath this write.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                keyCollision:
+                  value: { error: A variable with that key already exists in this environment }
+                versionConflict:
+                  value: { error: This environment changed elsewhere — refresh and try again. }
+    delete:
+      tags: [Vars]
+      operationId: deleteVar
+      summary: Soft-delete a variable
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/ReadOnlyForbidden'
+        "404":
+          description: Variable not found, or caller lacks editor role on its environment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Variable not found
+        "409":
+          description: The environment changed underneath this write.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: This environment changed elsewhere — refresh and try again.
