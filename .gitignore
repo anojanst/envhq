@@ -28,5 +28,5 @@ next-env.d.ts
 coverage/
 
 # local Claude Code config (dev-server launch config, permission settings)
-.claude/
+.claude/settings.local.json
 apps/web/.agents/*
