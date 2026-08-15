@@ -21,6 +21,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @envhq/web lint
+      - run: pnpm --filter @envhq/web test
       - run: pnpm --filter @envhq/web build
         env:
           # Build-time-only placeholders so route/type analysis has something
