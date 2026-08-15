@@ -2,6 +2,34 @@
 
 Repo-specific guidance for Claude Code sessions working on EnvHQ.
 
+## Repo Map
+
+pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
+
+- `apps/web` — the product: Next.js app (UI + API routes + DB), package `@envhq/web`.
+  - `src/app/(app)/` — authenticated app pages: `dashboard`, `projects`, `teams`, `settings`, `cli`
+  - `src/app/api/` — Next.js route handlers: `orgs`, `projects`, `environments`, `vars`, `groups`, `tokens`, `users`, `cli`, `me`
+  - `src/app/sign-in`, `src/app/sign-up` — Clerk-hosted auth pages
+  - `src/app/docs/` — public docs site (`getting-started`, `cli`, `security`, `limitations`, `web-app`) — distinct from the internal `docs/` at repo root
+  - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client
+  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` (key management), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`
+  - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`
+- `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
+- `packages/crypto` — `@envhq/crypto`, shared encryption primitives (noble libs)
+- `packages/parser` — `@envhq/parser`, env file parsing
+- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`
+- root `package.json` — workspace scripts fan out via `pnpm --filter`
+
+Commands (run from repo root unless noted):
+- `pnpm dev` / `pnpm build` — run/build the web app
+- `pnpm --filter @envhq/web test` / `test:watch` — vitest
+- `pnpm --filter @envhq/web lint` — eslint
+- `pnpm db:generate` / `pnpm db:migrate` — Drizzle migrations
+- `pnpm --filter @envhq/web db:studio` — Drizzle Studio
+- `pnpm cli` — run the CLI locally
+
+**Keep this map current.** Before marking any task done, check whether it added/removed/moved a top-level directory or package, changed what a `src/lib` file is responsible for, or added a new route group. If so, update this section in the same change — don't defer it to a follow-up task.
+
 ## UI/UX
 
 When touching `apps/web` UI, act as a senior product-design engineer, not just
