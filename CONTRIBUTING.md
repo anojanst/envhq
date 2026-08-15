@@ -14,69 +14,39 @@ touching:
 - `apps/**` → Elastic License 2.0
 - `packages/cli/**`, `packages/parser/**`, `packages/crypto/**` → MIT
 
-## Developer Certificate of Origin
+## Contributor License Agreement
 
-All contributions require a sign-off certifying the Developer Certificate of
-Origin, reproduced verbatim below. Add it by committing with `-s`:
+**Every contribution requires a signed CLA before it can be merged** — this
+applies repo-wide, to `packages/**` as well as `apps/**`, even though MIT
+(which governs the `packages/**` paths) doesn't itself require one. One
+agreement, applied uniformly, is simpler to explain and enforce than two
+regimes split by directory.
 
-```bash
-git commit -s -m "Your commit message"
-```
+Why a CLA rather than the more common Developer Certificate of Origin (DCO):
+the [Elastic License 2.0](./LICENSE) governing `apps/**` grants us a
+license that is explicitly **non-sublicensable**. A DCO only certifies that
+you have the right to contribute your code under the project's license — it
+grants nothing beyond that. It would leave us permanently unable to offer
+differing commercial terms on any contributed `apps/**` code, to anyone,
+ever. A CLA closes exactly that gap by adding one clause: the right to
+sublicense. See [ICLA.md](./ICLA.md) for the full agreement and the reasoning
+behind it.
 
-That appends a line to your commit message:
+- **Contributing as an individual, on your own time?** Sign the
+  [Individual CLA](./ICLA.md).
+- **Contributing as part of your job, using your employer's time or
+  resources?** Your employer needs to sign the [Corporate CLA](./CCLA.md)
+  first — an individual's signature doesn't bind their employer, since work
+  product is generally owned by the employer, not the employee. Reach out to
+  the maintainer to get a CCLA in place before opening a PR.
 
-```
-Signed-off-by: Your Name <your.email@example.com>
-```
-
-Use your real name and an email address you can be reached at.
-
-> **Note on wording:** the DCO text below refers to "the open source license
-> indicated in the file". For this repository, read that as *the license
-> governing that path* per [LICENSING.md](./LICENSING.md) — MIT for the client
-> and crypto packages, Elastic License 2.0 for `apps/**`. The DCO may not be
-> modified, so the wording is left exactly as published.
-
----
-
-```
-Developer Certificate of Origin
-Version 1.1
-
-Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
-
-Everyone is permitted to copy and distribute verbatim copies of this
-license document, but changing it is not allowed.
-
-
-Developer's Certificate of Origin 1.1
-
-By making a contribution to this project, I certify that:
-
-(a) The contribution was created in whole or in part by me and I
-    have the right to submit it under the open source license
-    indicated in the file; or
-
-(b) The contribution is based upon previous work that, to the best
-    of my knowledge, is covered under an appropriate open source
-    license and I have the right under that license to submit that
-    work with modifications, whether created in whole or in part
-    by me, under the same open source license (unless I am
-    permitted to submit under a different license), as indicated
-    in the file; or
-
-(c) The contribution was provided directly to me by some other
-    person who certified (a), (b) or (c) and I have not modified
-    it.
-
-(d) I understand and agree that this project and the contribution
-    are public and that a record of the contribution (including all
-    personal information I submit with it, including my sign-off) is
-    maintained indefinitely and may be redistributed consistent with
-    this project or the open source license(s) involved.
-```
-
----
+**How signing works:** open your pull request as normal. A bot
+([CLA Assistant Lite](https://github.com/contributor-assistant/github-action))
+comments asking you to confirm you've read and agree to the CLA by replying
+with the phrase it specifies. Until you do, a required status check blocks
+the PR from merging; once you've signed, it unblocks automatically and your
+signature is recorded for all your future contributions too — you only sign
+once per GitHub account.
 
 ## Trademarks
 

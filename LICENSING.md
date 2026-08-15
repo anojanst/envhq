@@ -39,4 +39,7 @@ The licenses here grant no trademark rights. See [NOTICE](./NOTICE).
 
 ## Contributing
 
-Contributions are accepted under the [Developer Certificate of Origin](./CONTRIBUTING.md).
+Contributions are accepted under a signed [Contributor License Agreement](./CONTRIBUTING.md)
+— required repo-wide, because the Elastic License 2.0's grant is non-sublicensable and a
+CLA is what restores that right for contributed code. See [ICLA.md](./ICLA.md) and
+[CCLA.md](./CCLA.md).

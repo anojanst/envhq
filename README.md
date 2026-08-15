@@ -146,4 +146,7 @@ all shipped (M1 through M6), plus DEK rotation on revoke as a post-M6 follow-up.
 
 Source-available, not open source — see [LICENSING.md](./LICENSING.md). `apps/**` (the server) is
 Elastic License 2.0; `packages/cli`, `packages/parser`, and `packages/crypto` (the clients and the
-crypto) are MIT. Self-hosting for your own org is explicitly permitted and the intended use.
+crypto) are MIT. Self-hosting for your own org is explicitly permitted and the intended use. See
+[NOTICE](./NOTICE) for the EnvHQ trademark assertion — no license here grants trademark rights.
+Contributors sign a CLA ([ICLA](./ICLA.md) / [CCLA](./CCLA.md)) before a PR can merge — see
+[CONTRIBUTING.md](./CONTRIBUTING.md).
