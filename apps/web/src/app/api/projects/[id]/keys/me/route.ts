@@ -23,12 +23,12 @@ export async function GET(req: Request, { params }: Params) {
   const { id } = await params;
 
   const owned = await getAccessibleProject(userId, id, "viewer", scope);
-  if (!owned) return apiError("Project not found", 404);
+  if (!owned) return apiError("Project not found", 404, "not_found");
 
   const key = await getProjectKeyForUser(id, userId);
   if (!key) {
     const anyKeyExists = await projectHasAnyKey(id);
-    return json({ error: "No key registered for you on this project yet", anyKeyExists }, 404);
+    return json({ error: "No key registered for you on this project yet", code: "not_found", anyKeyExists }, 404);
   }
 
   return json({ wrappedDek: key.wrappedDek });

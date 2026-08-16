@@ -130,15 +130,26 @@ npx envhq <command>`}</CodeBlock>
             <Td><Code>envhq diff [env]</Code></Td>
             <Td>Preview exactly what <Code>push</Code> would add, update, or delete, without applying it. Same <Code>[env]</Code> / <Code>-f, --file</Code> / <Code>--all</Code> as <Code>push</Code>.</Td>
           </tr>
+          <tr>
+            <Td><Code>envhq run [env] -- &lt;command&gt; [args...]</Code></Td>
+            <Td>Decrypt an environment in memory and inject it straight into a child process&apos;s environment, then run <Code>&lt;command&gt;</Code> — no file is ever written to disk. Existing local environment variables are preserved; decrypted secrets are merged on top. The child&apos;s exit code becomes <Code>envhq</Code>&apos;s own exit code. Same <Code>[env]</Code> / <Code>--yes</Code> semantics as <Code>push</Code>. The ideal way to hand secrets to a CI job or a local dev server without a lingering <Code>.env</Code> file — see <Code>envhq run -- npm start</Code>.</Td>
+          </tr>
         </tbody>
       </Table>
       <Callout variant="warning">
-        <Code>push</Code>/<Code>pull</Code>/<Code>rollback</Code> targeting an environment named{" "}
+        <Code>push</Code>/<Code>pull</Code>/<Code>rollback</Code>/<Code>run</Code> targeting an environment named{" "}
         <Code>prod</Code> or <Code>production</Code> ask for confirmation unless you pass{" "}
         <Code>--yes</Code>; a <Code>push</Code> that would delete remote keys asks separately.
         Deleting an entire environment or project (from the web app) is still permanent — there&apos;s
         no undo for that. See{" "}
         <a href="/docs/limitations" className="underline underline-offset-2">Limitations &amp; FAQ</a>.
+      </Callout>
+      <Callout variant="warning">
+        <Code>run</Code> puts secrets into the child process&apos;s environment table, which is visible
+        to that process and everything it spawns. This is expected behavior, not a leak — but it
+        means a misbehaving dependency that dumps <Code>process.env</Code> on crash, or a shell
+        built-in like <Code>env</Code>/<Code>printenv</Code>, or verbose CI logging of the
+        environment, is the residual leak surface to watch for.
       </Callout>
 
       <H2>Version history</H2>

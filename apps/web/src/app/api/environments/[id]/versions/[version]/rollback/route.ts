@@ -50,7 +50,7 @@ export async function POST(req: Request, { params }: Params) {
   if (outcome.conflict) {
     // Whole-environment conflict, not a specific key collision — nothing
     // narrower to report than the current version.
-    return json({ error: "version_conflict", currentVersion: outcome.currentVersion }, 409);
+    return json({ error: "version_conflict", code: "version_conflict", currentVersion: outcome.currentVersion }, 409);
   }
 
   return json({ version: outcome.version });

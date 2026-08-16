@@ -26,10 +26,10 @@ describe("json", () => {
 });
 
 describe("apiError", () => {
-  test("wraps the message in an error body at the given status", async () => {
-    const res = apiError("nope", 418);
+  test("wraps the message and code in an error body at the given status", async () => {
+    const res = apiError("nope", 418, "bad_request");
     expect(res.status).toBe(418);
-    expect(await res.json()).toEqual({ error: "nope" });
+    expect(await res.json()).toEqual({ error: "nope", code: "bad_request" });
   });
 });
 
@@ -37,7 +37,7 @@ describe("unauthorized", () => {
   test("returns 401 with the generic Unauthorized body", async () => {
     const res = unauthorized();
     expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "Unauthorized" });
+    expect(await res.json()).toEqual({ error: "Unauthorized", code: "unauthorized" });
   });
 });
 
@@ -46,7 +46,7 @@ describe("tokenExpired", () => {
     const res = tokenExpired();
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body).toEqual({ error: "token_expired" });
+    expect(body).toEqual({ error: "token_expired", code: "token_expired" });
     expect(body.error).not.toBe("Unauthorized");
   });
 });
@@ -55,13 +55,13 @@ describe("forbidden", () => {
   test("defaults to 403 with a generic Forbidden body", async () => {
     const res = forbidden();
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "Forbidden" });
+    expect(await res.json()).toEqual({ error: "Forbidden", code: "forbidden" });
   });
 
   test("accepts a custom message", async () => {
     const res = forbidden("not your project");
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "not your project" });
+    expect(await res.json()).toEqual({ error: "not your project", code: "forbidden" });
   });
 });
 
@@ -69,13 +69,13 @@ describe("notFound", () => {
   test("defaults to 404 with a generic Not found body", async () => {
     const res = notFound();
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "Not found" });
+    expect(await res.json()).toEqual({ error: "Not found", code: "not_found" });
   });
 
   test("accepts a custom subject", async () => {
     const res = notFound("Environment");
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "Environment" });
+    expect(await res.json()).toEqual({ error: "Environment", code: "not_found" });
   });
 });
 
@@ -83,7 +83,7 @@ describe("badRequest", () => {
   test("returns 400 with the given message", async () => {
     const res = badRequest("missing name");
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "missing name" });
+    expect(await res.json()).toEqual({ error: "missing name", code: "bad_request" });
   });
 });
 
@@ -91,7 +91,7 @@ describe("conflict", () => {
   test("returns 409 with the given message", async () => {
     const res = conflict("already exists");
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "already exists" });
+    expect(await res.json()).toEqual({ error: "already exists", code: "conflict" });
   });
 });
 
@@ -101,6 +101,7 @@ describe("versionConflict", () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({
       error: "This environment changed elsewhere — refresh and try again.",
+      code: "version_conflict",
     });
   });
 });

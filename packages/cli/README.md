@@ -34,6 +34,7 @@ environment (`dev`, or the first one) maps to `.env`, the rest map to
 envhq pull                 # pull the default environment to its mapped file
 envhq push staging         # push a specific environment
 envhq push --all           # push every linked environment to its mapped file
+envhq run -- npm start     # inject secrets into a child process, no disk write
 envhq status                # show login + link state
 ```
 
@@ -53,6 +54,7 @@ envhq status                # show login + link state
 | `env map <env> <file>` | Change which local file an environment maps to. |
 | `pull [env] [--file <p>] [--all] [--force] [--yes]` | Write remote variables to a local file (defaults to the linked default environment). |
 | `push [env] [--file <p>] [--all] [--yes]` | Upload a local file to the remote (upsert/merge). |
+| `run [env] [--yes] -- <command> [args...]` | Decrypt an environment in memory and inject it into a child process's environment — never touches disk. Propagates the child's exit code. |
 | `status` | Show login and link status. |
 
 `--env <list>` on `init`/`projects create` is a comma-separated list (default

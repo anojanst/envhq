@@ -64,7 +64,7 @@ describe("CLI browser-login exchange", () => {
   test("token exchange collapses every failure into invalid_grant", async () => {
     const { res, body } = await call(cliToken, "/api/cli/token", {}, { method: "POST", json: { code: "unknown-code", verifier: "wrong" } });
     expectStatus(res, 400);
-    expect(body).toEqual({ error: "invalid_grant" });
+    expect(body).toEqual({ error: "invalid_grant", code: "bad_request" });
   });
 });
 

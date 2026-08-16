@@ -89,9 +89,9 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
           examples:
             noCredential:
-              value: { error: Unauthorized }
+              value: { error: Unauthorized, code: unauthorized }
             tokenExpired:
-              value: { error: token_expired }
+              value: { error: token_expired, code: token_expired }
     ReadOnlyForbidden:
       description: The bearer token's capability is `read`; this route mutates state.
       content:
@@ -100,13 +100,30 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
           example:
             error: This token is read-only.
+            code: forbidden
   schemas:
+    ErrorCode:
+      type: string
+      description: >-
+        Machine-readable companion to `error` (ADR-010), additive alongside
+        the existing human-readable string. A closed enum — clients should
+        treat an unrecognized value as a plain failure rather than erroring.
+      enum:
+        - unauthorized
+        - token_expired
+        - forbidden
+        - not_found
+        - bad_request
+        - conflict
+        - version_conflict
     ErrorEnvelope:
       type: object
-      required: [error]
+      required: [error, code]
       properties:
         error:
           type: string
+        code:
+          $ref: '#/components/schemas/ErrorCode'
     Ok:
       type: object
       required: [ok]
@@ -225,9 +242,11 @@ components:
         ciphertext for just the keys the caller was trying to change, so the
         CLI can build a yours-vs-server diff without the server ever
         decrypting anything.
-      required: [error, currentVersion, serverPairs]
+      required: [error, code, currentVersion, serverPairs]
       properties:
         error:
+          const: version_conflict
+        code:
           const: version_conflict
         currentVersion:
           type: integer
@@ -240,9 +259,11 @@ components:
       description: >-
         The CAS-loss 409 shape unique to `rollback` — no `serverPairs`,
         since a rollback conflict is whole-environment, not per-key.
-      required: [error, currentVersion]
+      required: [error, code, currentVersion]
       properties:
         error:
+          const: version_conflict
+        code:
           const: version_conflict
         currentVersion:
           type: integer
@@ -424,10 +445,12 @@ components:
         client can distinguish "nobody has a key on this project yet" from
         "you specifically aren't wrapped in yet." Modeled faithfully, not
         collapsed into `ErrorEnvelope`.
-      required: [error, anyKeyExists]
+      required: [error, code, anyKeyExists]
       properties:
         error:
           type: string
+        code:
+          const: not_found
         anyKeyExists:
           type: boolean
     ProjectMemberKey:
@@ -492,9 +515,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 missingFields:
-                  value: { error: state and codeChallenge are required }
+                  value: { error: state and codeChallenge are required, code: bad_request }
                 badPort:
-                  value: { error: port must be a valid loopback port }
+                  value: { error: port must be a valid loopback port, code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
   /api/cli/token:
@@ -545,9 +568,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 missingFields:
-                  value: { error: code and verifier are required }
+                  value: { error: code and verifier are required, code: bad_request }
                 invalidGrant:
-                  value: { error: invalid_grant }
+                  value: { error: invalid_grant, code: bad_request }
   /api/environments/{id}/commit:
     post:
       tags: [Environments]
@@ -606,6 +629,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: baseVersion is required
+                code: bad_request
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -618,6 +642,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Environment not found
+                code: not_found
         "409":
           description: Lost the compare-and-swap against `baseVersion`.
           content:
@@ -658,6 +683,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Environment not found
+                code: not_found
   /api/environments/{id}/import:
     post:
       tags: [Environments]
@@ -706,6 +732,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: pairs is required
+                code: bad_request
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -718,6 +745,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Environment not found
+                code: not_found
         "409":
           description: The environment changed between the caller's read and this write.
           content:
@@ -726,6 +754,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: This environment changed elsewhere — refresh and try again.
+                code: conflict
   /api/environments/{id}:
     get:
       tags: [Environments]
@@ -760,6 +789,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Environment not found
+                code: not_found
     patch:
       tags: [Environments]
       operationId: renameEnvironment
@@ -795,6 +825,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: name is required
+                code: bad_request
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -807,6 +838,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Environment not found
+                code: not_found
         "409":
           description: Another environment in the project already has this name.
           content:
@@ -815,6 +847,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: An environment named "prod" already exists in this project
+                code: conflict
     delete:
       tags: [Environments]
       operationId: deleteEnvironment
@@ -840,6 +873,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Environment not found
+                code: not_found
   /api/environments/{id}/vars:
     post:
       tags: [Environments]
@@ -899,11 +933,11 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 keyRequired:
-                  value: { error: key is required }
+                  value: { error: key is required, code: bad_request }
                 keyFormat:
-                  value: { error: "key must start with a letter or _ and contain only letters, digits, _" }
+                  value: { error: "key must start with a letter or _ and contain only letters, digits, _", code: bad_request }
                 valueRequired:
-                  value: { error: ciphertext and iv are required }
+                  value: { error: ciphertext and iv are required, code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -916,6 +950,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Environment not found
+                code: not_found
         "409":
           description: The environment changed between the caller's read and this write.
           content:
@@ -924,6 +959,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: This environment changed elsewhere — refresh and try again.
+                code: conflict
   /api/environments/{id}/versions/{version}/rollback:
     post:
       tags: [Environments]
@@ -971,9 +1007,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 invalidVersion:
-                  value: { error: Invalid version }
+                  value: { error: Invalid version, code: bad_request }
                 baseVersionRequired:
-                  value: { error: baseVersion is required }
+                  value: { error: baseVersion is required, code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -986,9 +1022,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 environmentNotFound:
-                  value: { error: Environment not found }
+                  value: { error: Environment not found, code: not_found }
                 versionNotFound:
-                  value: { error: "Version 3 not found" }
+                  value: { error: "Version 3 not found", code: not_found }
         "409":
           description: >-
             Either the target version predates a key rotation and can no
@@ -1004,8 +1040,9 @@ paths:
                 retiredKey:
                   value:
                     error: This version predates a key rotation and can no longer be restored — its values are encrypted under a retired key.
+                    code: conflict
                 versionConflict:
-                  value: { error: version_conflict, currentVersion: 7 }
+                  value: { error: version_conflict, currentVersion: 7, code: version_conflict }
   /api/environments/{id}/versions:
     get:
       tags: [Environments]
@@ -1036,6 +1073,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Environment not found
+                code: not_found
   /api/groups/{id}/members/{userId}:
     delete:
       tags: [Groups]
@@ -1071,9 +1109,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 groupNotFound:
-                  value: { error: Group not found }
+                  value: { error: Group not found, code: not_found }
                 notAMember:
-                  value: { error: Member not found in this group }
+                  value: { error: Member not found in this group, code: not_found }
   /api/groups/{id}/members:
     get:
       tags: [Groups]
@@ -1104,6 +1142,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Group not found
+                code: not_found
     post:
       tags: [Groups]
       operationId: addGroupMember
@@ -1141,9 +1180,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 userIdRequired:
-                  value: { error: userId is required }
+                  value: { error: userId is required, code: bad_request }
                 notOrgMember:
-                  value: { error: "That user isn't a member of this org" }
+                  value: { error: "That user isn't a member of this org", code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
         "404":
@@ -1154,6 +1193,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Group not found
+                code: not_found
   /api/groups/{id}:
     delete:
       tags: [Groups]
@@ -1178,6 +1218,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Group not found
+                code: not_found
   /api/groups:
     get:
       tags: [Groups]
@@ -1212,6 +1253,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Forbidden
+                code: forbidden
     post:
       tags: [Groups]
       operationId: createGroup
@@ -1247,6 +1289,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: name is required
+                code: bad_request
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -1257,6 +1300,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Forbidden
+                code: forbidden
         "409":
           description: A group with this name already exists in the org.
           content:
@@ -1265,6 +1309,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: A group named "Engineering" already exists.
+                code: conflict
   /api/me:
     get:
       tags: [Me]
@@ -1314,6 +1359,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Forbidden
+                code: forbidden
   /api/orgs:
     get:
       tags: [Orgs]
@@ -1366,9 +1412,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 projectNotFound:
-                  value: { error: Project not found }
+                  value: { error: Project not found, code: not_found }
                 grantNotFound:
-                  value: { error: Grant not found }
+                  value: { error: Grant not found, code: not_found }
   /api/projects/{id}/access/groups:
     get:
       tags: [Projects]
@@ -1399,6 +1445,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
   /api/projects/{id}/access/members:
     get:
       tags: [Projects]
@@ -1429,6 +1476,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
   /api/projects/{id}/access:
     get:
       tags: [Projects]
@@ -1470,6 +1518,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
     post:
       tags: [Projects]
       operationId: upsertProjectAccess
@@ -1517,15 +1566,15 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 subjectIdRequired:
-                  value: { error: subjectId is required }
+                  value: { error: subjectId is required, code: bad_request }
                 invalidRole:
-                  value: { error: "role must be one of viewer, editor, admin" }
+                  value: { error: "role must be one of viewer, editor, admin", code: bad_request }
                 userNotInOrg:
-                  value: { error: "That user isn't a member of this project's org" }
+                  value: { error: "That user isn't a member of this project's org", code: bad_request }
                 groupNotInOrg:
-                  value: { error: "That group doesn't belong to this project's org" }
+                  value: { error: "That group doesn't belong to this project's org", code: bad_request }
                 invalidEnvScope:
-                  value: { error: "envScope must map real environment names to a role no higher than the grant's own role" }
+                  value: { error: "envScope must map real environment names to a role no higher than the grant's own role", code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -1538,6 +1587,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
   /api/projects/{id}/environments:
     post:
       tags: [Projects]
@@ -1578,9 +1628,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 nameRequired:
-                  value: { error: name is required }
+                  value: { error: name is required, code: bad_request }
                 sourceNotFound:
-                  value: { error: Source environment not found in this project }
+                  value: { error: Source environment not found in this project, code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -1593,6 +1643,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
         "409":
           description: An environment with this name already exists in the project.
           content:
@@ -1601,6 +1652,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: An environment named "staging" already exists in this project
+                code: conflict
   /api/projects/{id}/keys/me:
     get:
       tags: [Projects]
@@ -1631,9 +1683,9 @@ paths:
                   - $ref: '#/components/schemas/ProjectKeyNotFound'
               examples:
                 projectNotFound:
-                  value: { error: Project not found }
+                  value: { error: Project not found, code: not_found }
                 noKeyYet:
-                  value: { error: "No key registered for you on this project yet", anyKeyExists: true }
+                  value: { error: "No key registered for you on this project yet", anyKeyExists: true, code: not_found }
   /api/projects/{id}/keys/members:
     get:
       tags: [Projects]
@@ -1667,6 +1719,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
   /api/projects/{id}/keys/pending:
     get:
       tags: [Projects]
@@ -1697,6 +1750,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
   /api/projects/{id}/keys/rotate/finalize:
     post:
       tags: [Projects]
@@ -1745,9 +1799,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 targetKeyVersion:
-                  value: { error: targetKeyVersion must be a positive integer }
+                  value: { error: targetKeyVersion must be a positive integer, code: bad_request }
                 wrapsShape:
-                  value: { error: "wraps must be an array of {subjectUserId, wrappedDek}" }
+                  value: { error: "wraps must be an array of {subjectUserId, wrappedDek}", code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -1760,6 +1814,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
         "409":
           description: Some variables still need migrating, or the supplied wraps don't match current membership.
           content:
@@ -1768,9 +1823,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 pendingMigration:
-                  value: { error: "3 value(s) still need migrating before finalize" }
+                  value: { error: "3 value(s) still need migrating before finalize", code: conflict }
                 membershipMismatch:
-                  value: { error: "The supplied key wraps don't match the project's current members — refresh and try again" }
+                  value: { error: "The supplied key wraps don't match the project's current members — refresh and try again", code: conflict }
   /api/projects/{id}/keys/rotate:
     post:
       tags: [Projects]
@@ -1826,9 +1881,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 targetKeyVersion:
-                  value: { error: targetKeyVersion must be a positive integer }
+                  value: { error: targetKeyVersion must be a positive integer, code: bad_request }
                 rowsShape:
-                  value: { error: "rows must be an array of {id, ciphertext, iv}" }
+                  value: { error: "rows must be an array of {id, ciphertext, iv}", code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -1841,6 +1896,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
   /api/projects/{id}/keys/rotation-status:
     get:
       tags: [Projects]
@@ -1865,6 +1921,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
   /api/projects/{id}/keys:
     post:
       tags: [Projects]
@@ -1900,6 +1957,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: wrappedDek is required
+                code: bad_request
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -1910,9 +1968,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 readOnly:
-                  value: { error: This token is read-only. }
+                  value: { error: This token is read-only., code: forbidden }
                 targetNoAccess:
-                  value: { error: "That user doesn't have access to this project" }
+                  value: { error: "That user doesn't have access to this project", code: forbidden }
         "404":
           description: Project not found, or caller doesn't meet the required role.
           content:
@@ -1921,6 +1979,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
         "409":
           description: A key is already registered for that user on this project.
           content:
@@ -1929,6 +1988,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: A key is already registered for that user on this project
+                code: conflict
   /api/projects/{id}:
     get:
       tags: [Projects]
@@ -1961,6 +2021,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
     patch:
       tags: [Projects]
       operationId: renameProject
@@ -1996,6 +2057,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: name is required
+                code: bad_request
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -2008,6 +2070,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
         "409":
           description: Another project in the org already has this name.
           content:
@@ -2016,6 +2079,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: A project named "Payments" already exists.
+                code: conflict
     delete:
       tags: [Projects]
       operationId: deleteProject
@@ -2041,6 +2105,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Project not found
+                code: not_found
   /api/projects:
     get:
       tags: [Projects]
@@ -2072,6 +2137,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: "You're not a member of that org."
+                code: forbidden
     post:
       tags: [Projects]
       operationId: createProject
@@ -2133,13 +2199,13 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 nameRequired:
-                  value: { error: name is required }
+                  value: { error: name is required, code: bad_request }
                 grantShape:
-                  value: { error: Each grant needs a subjectId and a valid role }
+                  value: { error: Each grant needs a subjectId and a valid role, code: bad_request }
                 grantUserNotInOrg:
-                  value: { error: "A granted user isn't a member of this org" }
+                  value: { error: "A granted user isn't a member of this org", code: bad_request }
                 grantGroupNotInOrg:
-                  value: { error: "A granted group doesn't belong to this org" }
+                  value: { error: "A granted group doesn't belong to this org", code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -2150,9 +2216,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 tokenScoped:
-                  value: { error: This token can't create projects. }
+                  value: { error: This token can't create projects., code: forbidden }
                 notOrgMember:
-                  value: { error: "You're not a member of that org." }
+                  value: { error: "You're not a member of that org.", code: forbidden }
         "409":
           description: A project with this name already exists in the org.
           content:
@@ -2161,6 +2227,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: A project named "Payments" already exists.
+                code: conflict
   /api/tokens/{id}:
     delete:
       tags: [Tokens]
@@ -2185,6 +2252,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: This token can't manage tokens.
+                code: forbidden
         "404":
           description: Token not found, or not owned by the caller.
           content:
@@ -2193,6 +2261,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Token not found
+                code: not_found
   /api/tokens:
     get:
       tags: [Tokens]
@@ -2254,9 +2323,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 nameRequired:
-                  value: { error: name is required }
+                  value: { error: name is required, code: bad_request }
                 unknownProject:
-                  value: { error: Unknown project }
+                  value: { error: Unknown project, code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -2267,6 +2336,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: This token can't create tokens.
+                code: forbidden
   /api/users/me/keys:
     get:
       tags: [Users]
@@ -2289,6 +2359,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Zero-knowledge identity not set up
+                code: not_found
     post:
       tags: [Users]
       operationId: createMyUserKeys
@@ -2343,6 +2414,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Missing or invalid key material
+                code: bad_request
         "401":
           $ref: '#/components/responses/Unauthorized'
         "409":
@@ -2353,6 +2425,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Zero-knowledge identity already set up
+                code: conflict
   /api/vars/{id}:
     patch:
       tags: [Vars]
@@ -2405,9 +2478,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 invalidKey:
-                  value: { error: Invalid key format }
+                  value: { error: Invalid key format, code: bad_request }
                 nothingToUpdate:
-                  value: { error: Nothing to update }
+                  value: { error: Nothing to update, code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -2420,6 +2493,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Variable not found
+                code: not_found
         "409":
           description: The new key collides with an existing variable, or the environment changed underneath this write.
           content:
@@ -2428,9 +2502,9 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
                 keyCollision:
-                  value: { error: A variable with that key already exists in this environment }
+                  value: { error: A variable with that key already exists in this environment, code: conflict }
                 versionConflict:
-                  value: { error: This environment changed elsewhere — refresh and try again. }
+                  value: { error: This environment changed elsewhere — refresh and try again., code: conflict }
     delete:
       tags: [Vars]
       operationId: deleteVar
@@ -2456,6 +2530,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: Variable not found
+                code: not_found
         "409":
           description: The environment changed underneath this write.
           content:
@@ -2464,3 +2539,4 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
               example:
                 error: This environment changed elsewhere — refresh and try again.
+                code: conflict

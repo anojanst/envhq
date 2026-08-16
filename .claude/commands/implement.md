@@ -31,6 +31,13 @@ Ticket to implement: $ARGUMENTS
 6. **Keep the map current.** Per CLAUDE.md's repo-map rule, update that
    section if this ticket added, moved, or removed a directory, package, or
    route group.
-7. **Don't touch Notion.** Leave the ticket's fields/status alone unless the
-   user explicitly asks — editing the ticket page is modifying shared content
-   and needs confirmation first.
+7. **Verify, then mark done — with confirmation.** Once the implementation is
+   complete and verified (tests/build pass; for `apps/web` UI changes, checked
+   in the browser per the standard workflow), tell the user it's ready and
+   ask them to confirm before touching Notion. On a clear yes, update the
+   ticket's status property to Done/Complete. Check the data source's actual
+   properties first — don't assume a field named "Status" exists just because
+   the ADR database has one; if there's no status-like property, say so and
+   ask the user how they want it tracked instead of inventing one. Only flip
+   the status field itself — leave Why/Scope/Acceptance Criteria/Files/Gotchas
+   untouched. If the user doesn't confirm, leave the ticket as-is.

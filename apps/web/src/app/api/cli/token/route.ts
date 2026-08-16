@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const result = await exchangeCode({ code, verifier });
   // Collapse every failure reason into one opaque error so the response can't be
   // used as an oracle for which check (code vs. PKCE) failed.
-  if ("error" in result) return apiError("invalid_grant", 400);
+  if ("error" in result) return apiError("invalid_grant", 400, "bad_request");
 
   return json({
     token: result.token,

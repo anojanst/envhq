@@ -3,6 +3,7 @@ import { readFile, writeFile, appendFile, access } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { basename } from "node:path";
+import { spawn } from "node:child_process";
 import { parseEnv, serializeEnv, type EnvPair } from "@envhq/parser";
 import {
   readGlobalConfig,
@@ -33,6 +34,15 @@ import { encryptValue, decryptValue } from "@envhq/crypto";
 function daysUntil(iso: string): number {
   return Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 86_400_000));
 }
+
+// `envhq run [env] -- <command> [args...]`: Commander can't cleanly split an
+// optional [env] positional from a variadic command capture across a `--`
+// boundary, so split process.argv ourselves before Commander ever sees it.
+// Only the first `--` is treated as the boundary, so a child command that
+// uses its own `--` (e.g. `git diff -- foo.txt`) keeps it intact.
+const dashIndex = process.argv.indexOf("--");
+const passthroughArgs = dashIndex === -1 ? undefined : process.argv.slice(dashIndex + 1);
+const commanderArgv = dashIndex === -1 ? process.argv : process.argv.slice(0, dashIndex);
 
 const program = new Command();
 
@@ -137,6 +147,22 @@ async function resolveDek(projectId: string): Promise<{ keypair: CachedKeypair; 
   const keypair = await resolveKeypair();
   const dek = await resolveProjectDek(projectId, keypair);
   return { keypair, dek };
+}
+
+/** Spawns a command with inherited stdio, resolving to the exit code to propagate as our own. */
+function runChild(cmd: string, args: string[], env: NodeJS.ProcessEnv): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: "inherit", env });
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      if (signal) {
+        console.error(`✖ Command terminated by signal ${signal}.`);
+        resolve(1);
+      } else {
+        resolve(code ?? 1);
+      }
+    });
+  });
 }
 
 /** Resolve --org <name> to an org id via a case-insensitive name match, or undefined (server defaults to the personal org). */
@@ -583,6 +609,35 @@ program
     }
   });
 
+// ---- run ----
+program
+  .command("run")
+  .description("Decrypt an environment in memory and inject it into a child process (no disk writes).")
+  .usage("[env] -- <command> [args...]")
+  .argument("[env]", "environment to run with (defaults to linked default)")
+  .option("--yes", "skip the production confirmation", false)
+  .action(async (envArg: string | undefined, opts: { yes: boolean }) => {
+    if (!passthroughArgs || passthroughArgs.length === 0) {
+      fail("Usage: envhq run [env] -- <command> [args...]");
+    }
+    const [cmd, ...cmdArgs] = passthroughArgs;
+    try {
+      const link = await requireLink();
+      const env = resolveLinkedEnv(link, envArg);
+      await confirmProdIfNeeded(env.name, opts.yes);
+      const { dek } = await resolveDek(link.projectId);
+      const { pairs } = await apiClient.exportEnv(env.id);
+      const decrypted = await decryptPairs(dek, pairs);
+
+      const childEnv = { ...process.env };
+      for (const { key, value } of decrypted) childEnv[key] = value;
+
+      process.exitCode = await runChild(cmd, cmdArgs, childEnv);
+    } catch (err) {
+      fail(err instanceof ApiError ? err.message : String(err));
+    }
+  });
+
 // ---- push ----
 program
   .command("push")
@@ -853,4 +908,4 @@ program
     }
   });
 
-program.parseAsync().catch((err) => fail(String(err)));
+program.parseAsync(commanderArgv).catch((err) => fail(String(err)));

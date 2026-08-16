@@ -109,7 +109,10 @@ describe("POST /api/environments/{id}/import", () => {
     ]);
     const conflicted = [first, second].find((r) => r.res.status === 409);
     expect(conflicted).toBeDefined();
-    expect(conflicted!.body).toEqual({ error: "This environment changed elsewhere — refresh and try again." });
+    expect(conflicted!.body).toEqual({
+      error: "This environment changed elsewhere — refresh and try again.",
+      code: "version_conflict",
+    });
   });
 });
 

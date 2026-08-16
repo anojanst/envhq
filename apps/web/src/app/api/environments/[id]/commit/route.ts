@@ -53,7 +53,10 @@ export async function POST(req: Request, { params }: Params) {
   if (outcome.conflict) {
     const requestedKeys = new Set([...upsert.map((p) => p.key), ...del]);
     const serverPairs = (await listPairs(id)).filter((p) => requestedKeys.has(p.key));
-    return json({ error: "version_conflict", currentVersion: outcome.currentVersion, serverPairs }, 409);
+    return json(
+      { error: "version_conflict", code: "version_conflict", currentVersion: outcome.currentVersion, serverPairs },
+      409,
+    );
   }
 
   return json({
