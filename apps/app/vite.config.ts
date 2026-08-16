@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
@@ -79,6 +80,19 @@ export default defineConfig(({ mode }) => {
       react(),
       cspMetaPlugin(env),
     ],
+    resolve: {
+      alias: {
+        "@": fileURLToPath(new URL("./src", import.meta.url)),
+      },
+    },
+    optimizeDeps: {
+      // Without this, `sonner`'s Toaster intermittently lands on a
+      // different pre-bundled module instance of react/react-dom than the
+      // rest of the app, breaking its hooks ("Cannot read properties of
+      // null (reading 'useState')"). Forcing it into the initial
+      // dependency-optimization pass keeps it on the same instance.
+      include: ["sonner"],
+    },
     build: {
       // Vite's default modulepreload-polyfill injects an inline <script>
       // into index.html, which would need `unsafe-inline`. Disable it.

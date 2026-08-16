@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { AppShell } from "../components/app-shell";
 
 /**
  * Client-side equivalent of today's Next `middleware.ts` + per-page
@@ -14,5 +15,20 @@ export const Route = createFileRoute("/_protected")({
       throw redirect({ to: "/sign-in" });
     }
   },
-  component: () => <Outlet />,
+  component: () => (
+    <AppShell defaultOpen={getSidebarDefaultOpen()}>
+      <Outlet />
+    </AppShell>
+  ),
 });
+
+/**
+ * Client-side equivalent of Next's server-side `cookies()` read for
+ * `sidebar_state` (see apps/web's `(app)/layout.tsx`) — there's no server
+ * here, so read the cookie directly. No SSR-flash concern: the whole SPA
+ * mounts at once, there's no server-rendered markup to mismatch against.
+ */
+function getSidebarDefaultOpen(): boolean {
+  const match = document.cookie.match(/(?:^|;\s*)sidebar_state=([^;]*)/);
+  return match ? match[1] !== "false" : true;
+}

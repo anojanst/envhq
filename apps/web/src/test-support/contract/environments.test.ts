@@ -2,13 +2,13 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { grantOrgRole, resetContractWorld, createProject, createEnvironment, createEnvVar, createApiToken } from "@/test-support/contract-seed";
 import { call, expectStatus } from "./helpers";
 
-import { POST as commit } from "@/app/api/environments/[id]/commit/route";
-import { GET as exportEnv } from "@/app/api/environments/[id]/export/route";
-import { POST as importEnv } from "@/app/api/environments/[id]/import/route";
-import { GET as getEnv, PATCH as patchEnv, DELETE as deleteEnv } from "@/app/api/environments/[id]/route";
-import { POST as upsertVar } from "@/app/api/environments/[id]/vars/route";
-import { POST as rollback } from "@/app/api/environments/[id]/versions/[version]/rollback/route";
-import { GET as listVersions } from "@/app/api/environments/[id]/versions/route";
+import { POST as commit } from "@/app/api/v1/environments/[id]/commit/route";
+import { GET as exportEnv } from "@/app/api/v1/environments/[id]/export/route";
+import { POST as importEnv } from "@/app/api/v1/environments/[id]/import/route";
+import { GET as getEnv, PATCH as patchEnv, DELETE as deleteEnv } from "@/app/api/v1/environments/[id]/route";
+import { POST as upsertVar } from "@/app/api/v1/environments/[id]/vars/route";
+import { POST as rollback } from "@/app/api/v1/environments/[id]/versions/[version]/rollback/route";
+import { GET as listVersions } from "@/app/api/v1/environments/[id]/versions/route";
 
 beforeAll(resetContractWorld);
 
@@ -23,10 +23,10 @@ async function setup() {
   return { orgId, userId, project, environment, token, readOnlyToken };
 }
 
-describe("POST /api/environments/{id}/commit", () => {
+describe("POST /api/v1/environments/{id}/commit", () => {
   test("200 commits and bumps the version", async () => {
     const { environment, token } = await setup();
-    const path = `/api/environments/${environment.id}/commit`;
+    const path = `/api/v1/environments/${environment.id}/commit`;
     const { res, body } = await call(
       commit,
       path,
@@ -40,7 +40,7 @@ describe("POST /api/environments/{id}/commit", () => {
 
   test("403 for a read-only token", async () => {
     const { environment, readOnlyToken } = await setup();
-    const path = `/api/environments/${environment.id}/commit`;
+    const path = `/api/v1/environments/${environment.id}/commit`;
     const { res } = await call(commit, path, { id: environment.id }, { method: "POST", token: readOnlyToken, json: { baseVersion: 0 } });
     expectStatus(res, 403);
   });
@@ -49,7 +49,7 @@ describe("POST /api/environments/{id}/commit", () => {
     const { token } = await setup();
     const otherOrgProject = await createProject(`org-${crypto.randomUUID()}`);
     const otherEnvironment = await createEnvironment(otherOrgProject.id);
-    const path = `/api/environments/${otherEnvironment.id}/commit`;
+    const path = `/api/v1/environments/${otherEnvironment.id}/commit`;
     const { res } = await call(commit, path, { id: otherEnvironment.id }, { method: "POST", token, json: { baseVersion: 0 } });
     expectStatus(res, 404);
   });
@@ -57,7 +57,7 @@ describe("POST /api/environments/{id}/commit", () => {
   test("409 version_conflict includes currentVersion and serverPairs for the touched keys", async () => {
     const { environment, token } = await setup();
     await createEnvVar(environment.id, { key: "EXISTING" });
-    const path = `/api/environments/${environment.id}/commit`;
+    const path = `/api/v1/environments/${environment.id}/commit`;
     // Stale baseVersion (0) after the fixture var's insert didn't bump the
     // environment's version — force a real conflict by committing once first.
     await call(commit, path, { id: environment.id }, { method: "POST", token, json: { baseVersion: 0, upsert: [{ key: "B", ciphertext: "c", iv: "i" }] } });
@@ -74,21 +74,21 @@ describe("POST /api/environments/{id}/commit", () => {
   });
 });
 
-describe("GET /api/environments/{id}/export", () => {
+describe("GET /api/v1/environments/{id}/export", () => {
   test("200 returns ciphertext pairs", async () => {
     const { environment, token } = await setup();
     await createEnvVar(environment.id, { key: "A" });
-    const path = `/api/environments/${environment.id}/export`;
+    const path = `/api/v1/environments/${environment.id}/export`;
     const { res, body } = await call(exportEnv, path, { id: environment.id }, { method: "GET", token });
     expectStatus(res, 200);
     expect((body as { count: number }).count).toBe(1);
   });
 });
 
-describe("POST /api/environments/{id}/import", () => {
+describe("POST /api/v1/environments/{id}/import", () => {
   test("200 upserts a batch", async () => {
     const { environment, token } = await setup();
-    const path = `/api/environments/${environment.id}/import`;
+    const path = `/api/v1/environments/${environment.id}/import`;
     const { res, body } = await call(importEnv, path, { id: environment.id }, {
       method: "POST",
       token,
@@ -100,7 +100,7 @@ describe("POST /api/environments/{id}/import", () => {
 
   test("409 the generic versionConflict() shape (no currentVersion field)", async () => {
     const { environment, token } = await setup();
-    const path = `/api/environments/${environment.id}/import`;
+    const path = `/api/v1/environments/${environment.id}/import`;
     // import always commits against the *live* version, so racing it against
     // itself (two started from the same read) reproduces the CAS loss.
     const [first, second] = await Promise.all([
@@ -116,10 +116,10 @@ describe("POST /api/environments/{id}/import", () => {
   });
 });
 
-describe("GET/PATCH/DELETE /api/environments/{id}", () => {
+describe("GET/PATCH/DELETE /api/v1/environments/{id}", () => {
   test("GET 200 returns the environment, project, and vars", async () => {
     const { environment, project, token } = await setup();
-    const path = `/api/environments/${environment.id}`;
+    const path = `/api/v1/environments/${environment.id}`;
     const { res, body } = await call(getEnv, path, { id: environment.id }, { method: "GET", token });
     expectStatus(res, 200);
     expect((body as { project: { id: string } }).project.id).toBe(project.id);
@@ -127,7 +127,7 @@ describe("GET/PATCH/DELETE /api/environments/{id}", () => {
 
   test("PATCH 200 renames", async () => {
     const { environment, token } = await setup();
-    const path = `/api/environments/${environment.id}`;
+    const path = `/api/v1/environments/${environment.id}`;
     const { res, body } = await call(patchEnv, path, { id: environment.id }, { method: "PATCH", token, json: { name: "renamed" } });
     expectStatus(res, 200);
     expect((body as { environment: { name: string } }).environment.name).toBe("renamed");
@@ -136,24 +136,24 @@ describe("GET/PATCH/DELETE /api/environments/{id}", () => {
   test("PATCH 409 on a name collision within the project", async () => {
     const { project, environment, token } = await setup();
     const other = await createEnvironment(project.id, "taken");
-    const path = `/api/environments/${environment.id}`;
+    const path = `/api/v1/environments/${environment.id}`;
     const { res } = await call(patchEnv, path, { id: environment.id }, { method: "PATCH", token, json: { name: other.name } });
     expectStatus(res, 409);
   });
 
   test("DELETE 200", async () => {
     const { environment, token } = await setup();
-    const path = `/api/environments/${environment.id}`;
+    const path = `/api/v1/environments/${environment.id}`;
     const { res, body } = await call(deleteEnv, path, { id: environment.id }, { method: "DELETE", token });
     expectStatus(res, 200);
     expect(body).toEqual({ ok: true });
   });
 });
 
-describe("POST /api/environments/{id}/vars", () => {
+describe("POST /api/v1/environments/{id}/vars", () => {
   test("201 on first create, 200 on update — the one status-branching route", async () => {
     const { environment, token } = await setup();
-    const path = `/api/environments/${environment.id}/vars`;
+    const path = `/api/v1/environments/${environment.id}/vars`;
     const created = await call(upsertVar, path, { id: environment.id }, {
       method: "POST",
       token,
@@ -173,7 +173,7 @@ describe("POST /api/environments/{id}/vars", () => {
 
   test("400 for a key that fails the identifier pattern", async () => {
     const { environment, token } = await setup();
-    const path = `/api/environments/${environment.id}/vars`;
+    const path = `/api/v1/environments/${environment.id}/vars`;
     const { res } = await call(upsertVar, path, { id: environment.id }, {
       method: "POST",
       token,
@@ -183,16 +183,16 @@ describe("POST /api/environments/{id}/vars", () => {
   });
 });
 
-describe("POST /api/environments/{id}/versions/{version}/rollback", () => {
+describe("POST /api/v1/environments/{id}/versions/{version}/rollback", () => {
   // A rollback target must have a real snapshot — only versions produced by
   // a completed commit have one (the implicit starting version 0 doesn't).
   test("200 rolls forward to a new version", async () => {
     const { environment, token } = await setup();
-    const commitPath = `/api/environments/${environment.id}/commit`;
+    const commitPath = `/api/v1/environments/${environment.id}/commit`;
     await call(commit, commitPath, { id: environment.id }, { method: "POST", token, json: { baseVersion: 0, upsert: [{ key: "A", ciphertext: "c", iv: "i" }] } });
     await call(commit, commitPath, { id: environment.id }, { method: "POST", token, json: { baseVersion: 1, upsert: [{ key: "B", ciphertext: "c", iv: "i" }] } });
 
-    const path = `/api/environments/${environment.id}/versions/1/rollback`;
+    const path = `/api/v1/environments/${environment.id}/versions/1/rollback`;
     const { res, body } = await call(rollback, path, { id: environment.id, version: "1" }, { method: "POST", token, json: { baseVersion: 2 } });
     expectStatus(res, 200);
     expect((body as { version: number }).version).toBe(3);
@@ -200,10 +200,10 @@ describe("POST /api/environments/{id}/versions/{version}/rollback", () => {
 
   test("409 VersionConflictSimple has no serverPairs field", async () => {
     const { environment, token } = await setup();
-    const commitPath = `/api/environments/${environment.id}/commit`;
+    const commitPath = `/api/v1/environments/${environment.id}/commit`;
     await call(commit, commitPath, { id: environment.id }, { method: "POST", token, json: { baseVersion: 0, upsert: [{ key: "A", ciphertext: "c", iv: "i" }] } });
 
-    const path = `/api/environments/${environment.id}/versions/1/rollback`;
+    const path = `/api/v1/environments/${environment.id}/versions/1/rollback`;
     const { res, body } = await call(rollback, path, { id: environment.id, version: "1" }, { method: "POST", token, json: { baseVersion: 0 } });
     expectStatus(res, 409);
     const conflict = body as { error: string; currentVersion: number; serverPairs?: unknown };
@@ -213,13 +213,13 @@ describe("POST /api/environments/{id}/versions/{version}/rollback", () => {
   });
 });
 
-describe("GET /api/environments/{id}/versions", () => {
+describe("GET /api/v1/environments/{id}/versions", () => {
   test("200 lists version history newest first", async () => {
     const { environment, token } = await setup();
-    const commitPath = `/api/environments/${environment.id}/commit`;
+    const commitPath = `/api/v1/environments/${environment.id}/commit`;
     await call(commit, commitPath, { id: environment.id }, { method: "POST", token, json: { baseVersion: 0, upsert: [{ key: "A", ciphertext: "c", iv: "i" }] } });
 
-    const path = `/api/environments/${environment.id}/versions`;
+    const path = `/api/v1/environments/${environment.id}/versions`;
     const { res, body } = await call(listVersions, path, { id: environment.id }, { method: "GET", token });
     expectStatus(res, 200);
     expect((body as { versions: unknown[] }).versions).toHaveLength(1);

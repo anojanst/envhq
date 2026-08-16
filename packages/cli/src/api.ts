@@ -1,4 +1,4 @@
-import { readGlobalConfig, writeGlobalConfig } from "./config.ts";
+import { readGlobalConfig, writeGlobalConfig, API_PREFIX } from "./config.ts";
 import { resolveToken, storeSession, envToken } from "./token-store.ts";
 import { runLoginFlow } from "./auth/login.ts";
 
@@ -146,44 +146,48 @@ export interface UserKeys {
 }
 
 export const apiClient = {
-  me: (auth?: Options["auth"]) => request<{ userId: string }>("/api/me", { auth }),
+  me: (auth?: Options["auth"]) => request<{ userId: string }>(`${API_PREFIX}/me`, { auth }),
 
-  listOrgs: () => request<{ orgs: { id: string; name: string; role: string }[] }>("/api/orgs"),
+  listOrgs: () => request<{ orgs: { id: string; name: string; role: string }[] }>(`${API_PREFIX}/orgs`),
 
   listProjects: (orgId?: string) =>
-    request<{ projects: Project[] }>(`/api/projects${orgId ? `?orgId=${encodeURIComponent(orgId)}` : ""}`),
+    request<{ projects: Project[] }>(
+      `${API_PREFIX}/projects${orgId ? `?orgId=${encodeURIComponent(orgId)}` : ""}`,
+    ),
 
   getProject: (id: string) =>
-    request<{ project: Project; environments: Environment[] }>(`/api/projects/${id}`),
+    request<{ project: Project; environments: Environment[] }>(`${API_PREFIX}/projects/${id}`),
 
   createProject: (name: string, environments?: string[], orgId?: string) =>
-    request<{ project: Project; environments: Environment[] }>("/api/projects", {
+    request<{ project: Project; environments: Environment[] }>(`${API_PREFIX}/projects`, {
       method: "POST",
       body: { name, ...(environments ? { environments } : {}), ...(orgId ? { orgId } : {}) },
     }),
 
   createEnvironment: (projectId: string, name: string, from?: string) =>
-    request<{ environment: Environment }>(`/api/projects/${projectId}/environments`, {
+    request<{ environment: Environment }>(`${API_PREFIX}/projects/${projectId}/environments`, {
       method: "POST",
       body: { name, ...(from ? { from } : {}) },
     }),
 
   exportEnv: (envId: string) =>
-    request<{ pairs: EncryptedPair[]; count: number; version: number }>(`/api/environments/${envId}/export`),
+    request<{ pairs: EncryptedPair[]; count: number; version: number }>(
+      `${API_PREFIX}/environments/${envId}/export`,
+    ),
 
   commit: (
     envId: string,
     body: { baseVersion: number; upsert?: EncryptedPair[]; delete?: string[]; message?: string },
   ) =>
     request<{ version: number; created: number; updated: number; deleted: number }>(
-      `/api/environments/${envId}/commit`,
+      `${API_PREFIX}/environments/${envId}/commit`,
       { method: "POST", body },
     ),
 
-  getUserKeys: () => request<UserKeys>("/api/users/me/keys"),
+  getUserKeys: () => request<UserKeys>(`${API_PREFIX}/users/me/keys`),
 
   getProjectKey: (projectId: string) =>
-    request<{ wrappedDek: string }>(`/api/projects/${projectId}/keys/me`),
+    request<{ wrappedDek: string }>(`${API_PREFIX}/projects/${projectId}/keys/me`),
 
   listVersions: (envId: string) =>
     request<{
@@ -194,10 +198,10 @@ export const apiClient = {
         createdByName: string;
         createdAt: string;
       }[];
-    }>(`/api/environments/${envId}/versions`),
+    }>(`${API_PREFIX}/environments/${envId}/versions`),
 
   rollback: (envId: string, version: number, body: { baseVersion: number; message?: string }) =>
-    request<{ version: number }>(`/api/environments/${envId}/versions/${version}/rollback`, {
+    request<{ version: number }>(`${API_PREFIX}/environments/${envId}/versions/${version}/rollback`, {
       method: "POST",
       body,
     }),

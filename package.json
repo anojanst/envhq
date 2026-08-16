@@ -14,6 +14,7 @@
     "build:app": "pnpm --filter @envhq/app build",
     "db:generate": "pnpm --filter @envhq/web db:generate",
     "db:migrate": "pnpm --filter @envhq/web db:migrate",
+    "generate:api-client": "pnpm --filter @envhq/api-client generate",
     "cli": "pnpm --filter envhq start",
     "changeset": "changeset",
     "version-packages": "changeset version",

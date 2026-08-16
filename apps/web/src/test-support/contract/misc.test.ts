@@ -12,21 +12,21 @@ import {
 } from "@/test-support/contract-seed";
 import { call, expectStatus } from "./helpers";
 
-import { POST as cliAuthorize } from "@/app/api/cli/authorize/route";
-import { POST as cliToken } from "@/app/api/cli/token/route";
-import { GET as getMe } from "@/app/api/me/route";
-import { GET as listOrgMembers } from "@/app/api/orgs/members/route";
-import { GET as listMyOrgs } from "@/app/api/orgs/route";
-import { GET as getMyUserKeys, POST as createMyUserKeys } from "@/app/api/users/me/keys/route";
-import { PATCH as updateVar, DELETE as deleteVar } from "@/app/api/vars/[id]/route";
+import { POST as cliAuthorize } from "@/app/api/v1/cli/authorize/route";
+import { POST as cliToken } from "@/app/api/v1/cli/token/route";
+import { GET as getMe } from "@/app/api/v1/me/route";
+import { GET as listOrgMembers } from "@/app/api/v1/orgs/members/route";
+import { GET as listMyOrgs } from "@/app/api/v1/orgs/route";
+import { GET as getMyUserKeys, POST as createMyUserKeys } from "@/app/api/v1/users/me/keys/route";
+import { PATCH as updateVar, DELETE as deleteVar } from "@/app/api/v1/vars/[id]/route";
 
 beforeAll(resetContractWorld);
 
-describe("GET /api/me", () => {
+describe("GET /api/v1/me", () => {
   test("200 returns the caller's id", async () => {
     const userId = `user-${crypto.randomUUID()}`;
     const { token } = await createApiToken(userId);
-    const { res, body } = await call(getMe, "/api/me", {}, { method: "GET", token });
+    const { res, body } = await call(getMe, "/api/v1/me", {}, { method: "GET", token });
     expectStatus(res, 200);
     expect(body).toEqual({ userId });
   });
@@ -39,7 +39,7 @@ describe("CLI browser-login exchange", () => {
     const verifier = `verifier-${crypto.randomUUID()}`;
     const codeChallenge = crypto.createHash("sha256").update(verifier).digest("base64url");
 
-    const authorize = await call(cliAuthorize, "/api/cli/authorize", {}, {
+    const authorize = await call(cliAuthorize, "/api/v1/cli/authorize", {}, {
       method: "POST",
       token,
       json: { state: "xyz", codeChallenge, port: 51000 },
@@ -47,7 +47,7 @@ describe("CLI browser-login exchange", () => {
     expectStatus(authorize.res, 200);
     const { code } = authorize.body as { code: string };
 
-    const exchange = await call(cliToken, "/api/cli/token", {}, { method: "POST", json: { code, verifier } });
+    const exchange = await call(cliToken, "/api/v1/cli/token", {}, { method: "POST", json: { code, verifier } });
     expectStatus(exchange.res, 200);
     const exchanged = exchange.body as { token: string; userId: string };
     expect(exchanged.userId).toBe(userId);
@@ -55,26 +55,26 @@ describe("CLI browser-login exchange", () => {
   });
 
   test("token exchange requires no auth at all", async () => {
-    const { res } = await call(cliToken, "/api/cli/token", {}, { method: "POST", json: { code: "bogus", verifier: "bogus" } });
+    const { res } = await call(cliToken, "/api/v1/cli/token", {}, { method: "POST", json: { code: "bogus", verifier: "bogus" } });
     // No bearer token supplied, yet this must NOT 401 — it's the one
     // deliberately public route. A bad code/verifier pair 400s instead.
     expectStatus(res, 400);
   });
 
   test("token exchange collapses every failure into invalid_grant", async () => {
-    const { res, body } = await call(cliToken, "/api/cli/token", {}, { method: "POST", json: { code: "unknown-code", verifier: "wrong" } });
+    const { res, body } = await call(cliToken, "/api/v1/cli/token", {}, { method: "POST", json: { code: "unknown-code", verifier: "wrong" } });
     expectStatus(res, 400);
     expect(body).toEqual({ error: "invalid_grant", code: "bad_request" });
   });
 });
 
-describe("GET /api/orgs, GET /api/orgs/members", () => {
+describe("GET /api/v1/orgs, GET /api/v1/orgs/members", () => {
   test("orgs 200 lists the caller's memberships", async () => {
     const userId = `user-${crypto.randomUUID()}`;
     const orgId = `org-${crypto.randomUUID()}`;
     setMyOrgs(userId, [{ id: orgId, name: "Acme", role: "admin" }]);
     const { token } = await createApiToken(userId);
-    const { res, body } = await call(listMyOrgs, "/api/orgs", {}, { method: "GET", token });
+    const { res, body } = await call(listMyOrgs, "/api/v1/orgs", {}, { method: "GET", token });
     expectStatus(res, 200);
     expect(body).toEqual({ orgs: [{ id: orgId, name: "Acme", role: "admin" }] });
   });
@@ -89,7 +89,7 @@ describe("GET /api/orgs, GET /api/orgs/members", () => {
     const { token: adminToken } = await createApiToken(adminId);
     const { token: memberToken } = await createApiToken(memberId);
 
-    const path = `/api/orgs/members?orgId=${orgId}`;
+    const path = `/api/v1/orgs/members?orgId=${orgId}`;
     const ok = await call(listOrgMembers, path, {}, { method: "GET", token: adminToken });
     expectStatus(ok.res, 200);
     expect((ok.body as { members: { userId: string }[] }).members.map((m) => m.userId)).toContain(memberId);
@@ -99,11 +99,11 @@ describe("GET /api/orgs, GET /api/orgs/members", () => {
   });
 });
 
-describe("GET/POST /api/users/me/keys", () => {
+describe("GET/POST /api/v1/users/me/keys", () => {
   test("404 before onboarding, 201 to create, 200 after, 409 on a second attempt", async () => {
     const userId = `user-${crypto.randomUUID()}`;
     const { token } = await createApiToken(userId);
-    const path = "/api/users/me/keys";
+    const path = "/api/v1/users/me/keys";
 
     const before = await call(getMyUserKeys, path, {}, { method: "GET", token });
     expectStatus(before.res, 404);
@@ -131,7 +131,7 @@ describe("GET/POST /api/users/me/keys", () => {
   });
 });
 
-describe("PATCH/DELETE /api/vars/{id}", () => {
+describe("PATCH/DELETE /api/v1/vars/{id}", () => {
   async function setup() {
     const orgId = `org-${crypto.randomUUID()}`;
     const userId = `user-${crypto.randomUUID()}`;
@@ -146,7 +146,7 @@ describe("PATCH/DELETE /api/vars/{id}", () => {
 
   test("PATCH 200 updates the value, 400 for an invalid key rename", async () => {
     const { variable, token } = await setup();
-    const path = `/api/vars/${variable.id}`;
+    const path = `/api/v1/vars/${variable.id}`;
     const { res, body } = await call(updateVar, path, { id: variable.id }, { method: "PATCH", token, json: { ciphertext: "new", iv: "newiv" } });
     expectStatus(res, 200);
     expect((body as { variable: { id: string } }).variable.id).toBe(variable.id);
@@ -157,14 +157,14 @@ describe("PATCH/DELETE /api/vars/{id}", () => {
 
   test("PATCH 403 for a read-only token", async () => {
     const { variable, readOnlyToken } = await setup();
-    const path = `/api/vars/${variable.id}`;
+    const path = `/api/v1/vars/${variable.id}`;
     const { res } = await call(updateVar, path, { id: variable.id }, { method: "PATCH", token: readOnlyToken, json: { ciphertext: "x", iv: "y" } });
     expectStatus(res, 403);
   });
 
   test("DELETE 200 soft-deletes, then 404 on a second delete", async () => {
     const { variable, token } = await setup();
-    const path = `/api/vars/${variable.id}`;
+    const path = `/api/v1/vars/${variable.id}`;
     const first = await call(deleteVar, path, { id: variable.id }, { method: "DELETE", token });
     expectStatus(first.res, 200);
     const second = await call(deleteVar, path, { id: variable.id }, { method: "DELETE", token });

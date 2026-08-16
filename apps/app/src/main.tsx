@@ -7,6 +7,7 @@ import "./globals.css";
 import { ThemeProvider } from "./components/theme-provider";
 import { ClerkThemeProvider } from "./components/clerk-theme-provider";
 import { ErrorBoundary } from "./components/error-boundary";
+import { Toaster } from "./components/ui/sonner";
 import { router } from "./router";
 
 /** Auth-gates and mounts the router once Clerk has resolved its session. */
@@ -36,6 +37,7 @@ createRoot(rootEl).render(
         <ClerkThemeProvider>
           <InnerApp />
         </ClerkThemeProvider>
+        <Toaster />
       </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,

@@ -131,6 +131,11 @@ export const DEFAULT_URL = process.env.ENVHQ_URL ?? BAKED_URL;
 export const LINK_FILENAME = LINK_FILE;
 export const LINK_DIRNAME = LINK_DIR;
 
+/** Canonical, versioned API path prefix (ADR-010, HQ-54). The server also
+ * keeps answering unversioned paths as an alias, but the CLI always targets
+ * the canonical form. */
+export const API_PREFIX = "/api/v1";
+
 // Baked from package.json at build time (see tsup.config.ts) so `--version`
 // can never drift from what's actually published. `tsx` dev runs fall back to
 // a marker since nothing is baked.

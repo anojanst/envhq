@@ -1,6 +1,7 @@
 import { createPkce } from "./pkce.ts";
 import { startLoopback } from "./loopback.ts";
 import { openBrowser } from "./browser.ts";
+import { API_PREFIX } from "../config.ts";
 
 export interface Session {
   token: string;
@@ -30,7 +31,7 @@ export async function runLoginFlow(url: string): Promise<Session> {
 
     let res: Response;
     try {
-      res = await fetch(`${url}/api/cli/token`, {
+      res = await fetch(`${url}${API_PREFIX}/cli/token`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, verifier: pkce.verifier }),

@@ -91,3 +91,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @envhq/crypto test
       - run: pnpm --filter @envhq/parser test
+
+  api-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @envhq/web lint:openapi
+      - run: pnpm --filter @envhq/api-client generate
+      - name: Fail if generated client is stale
+        run: git diff --exit-code -- packages/api-client/src/generated/schema.ts
+      - run: pnpm --filter @envhq/api-client typecheck

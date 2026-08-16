@@ -9,13 +9,17 @@ info:
     Hand-written, spec-first contract for EnvHQ's Next.js API routes
     (ADR-010). This document describes the 34 route handlers under
     `apps/web/src/app/api` exactly as they behave today — it does not
-    describe aspirational or planned behavior. Paths are unversioned,
-    matching the current code; the `/api/v1` prefix decided in ADR-010 is a
-    separate, not-yet-implemented change.
+    describe aspirational or planned behavior. `/api/v1` is the canonical,
+    documented prefix (ADR-010, HQ-54); every route also remains reachable
+    at its old unversioned path (e.g. `/api/projects` as well as
+    `/api/v1/projects`) as a genuine alias, not a redirect, since six
+    published CLI versions still call the unversioned form. Aliases are
+    intentionally undocumented here — see `docs/RELEASE_POLICY.md` for how
+    long they're retained.
 
     Two authentication schemes are accepted interchangeably by nearly every
     route: a CLI personal access token (bearer) or a Clerk web session
-    (cookie). The one exception, `POST /api/cli/token`, is deliberately
+    (cookie). The one exception, `POST /api/v1/cli/token`, is deliberately
     public.
 tags:
   - name: Cli
@@ -440,7 +444,7 @@ components:
     ProjectKeyNotFound:
       type: object
       description: >-
-        Non-standard 404 body unique to `GET /api/projects/{id}/keys/me` —
+        Non-standard 404 body unique to `GET /api/v1/projects/{id}/keys/me` —
         carries an extra field beyond the usual `{error}` envelope so the
         client can distinguish "nobody has a key on this project yet" from
         "you specifically aren't wrapped in yet." Modeled faithfully, not
@@ -470,7 +474,7 @@ components:
         rotationPending:
           type: boolean
 paths:
-  /api/cli/authorize:
+  /api/v1/cli/authorize:
     post:
       tags: [Cli]
       operationId: authorizeCli
@@ -520,7 +524,7 @@ paths:
                   value: { error: port must be a valid loopback port, code: bad_request }
         "401":
           $ref: '#/components/responses/Unauthorized'
-  /api/cli/token:
+  /api/v1/cli/token:
     post:
       tags: [Cli]
       operationId: exchangeCliToken
@@ -571,7 +575,7 @@ paths:
                   value: { error: code and verifier are required, code: bad_request }
                 invalidGrant:
                   value: { error: invalid_grant, code: bad_request }
-  /api/environments/{id}/commit:
+  /api/v1/environments/{id}/commit:
     post:
       tags: [Environments]
       operationId: commitEnvironment
@@ -649,7 +653,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VersionConflictWithPairs'
-  /api/environments/{id}/export:
+  /api/v1/environments/{id}/export:
     get:
       tags: [Environments]
       operationId: exportEnvironment
@@ -684,7 +688,7 @@ paths:
               example:
                 error: Environment not found
                 code: not_found
-  /api/environments/{id}/import:
+  /api/v1/environments/{id}/import:
     post:
       tags: [Environments]
       operationId: importEnvironmentVars
@@ -755,7 +759,7 @@ paths:
               example:
                 error: This environment changed elsewhere — refresh and try again.
                 code: conflict
-  /api/environments/{id}:
+  /api/v1/environments/{id}:
     get:
       tags: [Environments]
       operationId: getEnvironment
@@ -874,7 +878,7 @@ paths:
               example:
                 error: Environment not found
                 code: not_found
-  /api/environments/{id}/vars:
+  /api/v1/environments/{id}/vars:
     post:
       tags: [Environments]
       operationId: upsertEnvironmentVar
@@ -960,7 +964,7 @@ paths:
               example:
                 error: This environment changed elsewhere — refresh and try again.
                 code: conflict
-  /api/environments/{id}/versions/{version}/rollback:
+  /api/v1/environments/{id}/versions/{version}/rollback:
     post:
       tags: [Environments]
       operationId: rollbackEnvironment
@@ -1043,7 +1047,7 @@ paths:
                     code: conflict
                 versionConflict:
                   value: { error: version_conflict, currentVersion: 7, code: version_conflict }
-  /api/environments/{id}/versions:
+  /api/v1/environments/{id}/versions:
     get:
       tags: [Environments]
       operationId: listEnvironmentVersions
@@ -1074,7 +1078,7 @@ paths:
               example:
                 error: Environment not found
                 code: not_found
-  /api/groups/{id}/members/{userId}:
+  /api/v1/groups/{id}/members/{userId}:
     delete:
       tags: [Groups]
       operationId: removeGroupMember
@@ -1112,7 +1116,7 @@ paths:
                   value: { error: Group not found, code: not_found }
                 notAMember:
                   value: { error: Member not found in this group, code: not_found }
-  /api/groups/{id}/members:
+  /api/v1/groups/{id}/members:
     get:
       tags: [Groups]
       operationId: listGroupMembers
@@ -1194,7 +1198,7 @@ paths:
               example:
                 error: Group not found
                 code: not_found
-  /api/groups/{id}:
+  /api/v1/groups/{id}:
     delete:
       tags: [Groups]
       operationId: deleteGroup
@@ -1219,13 +1223,13 @@ paths:
               example:
                 error: Group not found
                 code: not_found
-  /api/groups:
+  /api/v1/groups:
     get:
       tags: [Groups]
       operationId: listGroups
       summary: List an org's groups
       description: >-
-        Unlike `/api/groups/{id}/*`, this list endpoint uses a plain 403 for
+        Unlike `/api/v1/groups/{id}/*`, this list endpoint uses a plain 403 for
         non-admins rather than 404 — there's no specific group id in the URL
         to hide the existence of.
       parameters:
@@ -1310,7 +1314,7 @@ paths:
               example:
                 error: A group named "Engineering" already exists.
                 code: conflict
-  /api/me:
+  /api/v1/me:
     get:
       tags: [Me]
       operationId: getMe
@@ -1329,7 +1333,7 @@ paths:
                     type: string
         "401":
           $ref: '#/components/responses/Unauthorized'
-  /api/orgs/members:
+  /api/v1/orgs/members:
     get:
       tags: [Orgs]
       operationId: listOrgMembers
@@ -1360,7 +1364,7 @@ paths:
               example:
                 error: Forbidden
                 code: forbidden
-  /api/orgs:
+  /api/v1/orgs:
     get:
       tags: [Orgs]
       operationId: listMyOrgs
@@ -1380,7 +1384,7 @@ paths:
                       $ref: '#/components/schemas/Org'
         "401":
           $ref: '#/components/responses/Unauthorized'
-  /api/projects/{id}/access/{grantId}:
+  /api/v1/projects/{id}/access/{grantId}:
     delete:
       tags: [Projects]
       operationId: deleteProjectAccessGrant
@@ -1415,7 +1419,7 @@ paths:
                   value: { error: Project not found, code: not_found }
                 grantNotFound:
                   value: { error: Grant not found, code: not_found }
-  /api/projects/{id}/access/groups:
+  /api/v1/projects/{id}/access/groups:
     get:
       tags: [Projects]
       operationId: listProjectAccessGroupOptions
@@ -1446,7 +1450,7 @@ paths:
               example:
                 error: Project not found
                 code: not_found
-  /api/projects/{id}/access/members:
+  /api/v1/projects/{id}/access/members:
     get:
       tags: [Projects]
       operationId: listProjectAccessMemberOptions
@@ -1477,7 +1481,7 @@ paths:
               example:
                 error: Project not found
                 code: not_found
-  /api/projects/{id}/access:
+  /api/v1/projects/{id}/access:
     get:
       tags: [Projects]
       operationId: listProjectAccess
@@ -1588,7 +1592,7 @@ paths:
               example:
                 error: Project not found
                 code: not_found
-  /api/projects/{id}/environments:
+  /api/v1/projects/{id}/environments:
     post:
       tags: [Projects]
       operationId: createProjectEnvironment
@@ -1653,7 +1657,7 @@ paths:
               example:
                 error: An environment named "staging" already exists in this project
                 code: conflict
-  /api/projects/{id}/keys/me:
+  /api/v1/projects/{id}/keys/me:
     get:
       tags: [Projects]
       operationId: getMyProjectKey
@@ -1686,7 +1690,7 @@ paths:
                   value: { error: Project not found, code: not_found }
                 noKeyYet:
                   value: { error: "No key registered for you on this project yet", anyKeyExists: true, code: not_found }
-  /api/projects/{id}/keys/members:
+  /api/v1/projects/{id}/keys/members:
     get:
       tags: [Projects]
       operationId: listProjectKeyMembers
@@ -1720,7 +1724,7 @@ paths:
               example:
                 error: Project not found
                 code: not_found
-  /api/projects/{id}/keys/pending:
+  /api/v1/projects/{id}/keys/pending:
     get:
       tags: [Projects]
       operationId: listPendingProjectKeyMembers
@@ -1751,7 +1755,7 @@ paths:
               example:
                 error: Project not found
                 code: not_found
-  /api/projects/{id}/keys/rotate/finalize:
+  /api/v1/projects/{id}/keys/rotate/finalize:
     post:
       tags: [Projects]
       operationId: finalizeProjectKeyRotation
@@ -1826,7 +1830,7 @@ paths:
                   value: { error: "3 value(s) still need migrating before finalize", code: conflict }
                 membershipMismatch:
                   value: { error: "The supplied key wraps don't match the project's current members — refresh and try again", code: conflict }
-  /api/projects/{id}/keys/rotate:
+  /api/v1/projects/{id}/keys/rotate:
     post:
       tags: [Projects]
       operationId: migrateProjectKeyBatch
@@ -1897,7 +1901,7 @@ paths:
               example:
                 error: Project not found
                 code: not_found
-  /api/projects/{id}/keys/rotation-status:
+  /api/v1/projects/{id}/keys/rotation-status:
     get:
       tags: [Projects]
       operationId: getProjectKeyRotationStatus
@@ -1922,7 +1926,7 @@ paths:
               example:
                 error: Project not found
                 code: not_found
-  /api/projects/{id}/keys:
+  /api/v1/projects/{id}/keys:
     post:
       tags: [Projects]
       operationId: registerProjectKey
@@ -1989,7 +1993,7 @@ paths:
               example:
                 error: A key is already registered for that user on this project
                 code: conflict
-  /api/projects/{id}:
+  /api/v1/projects/{id}:
     get:
       tags: [Projects]
       operationId: getProject
@@ -2106,7 +2110,7 @@ paths:
               example:
                 error: Project not found
                 code: not_found
-  /api/projects:
+  /api/v1/projects:
     get:
       tags: [Projects]
       operationId: listProjects
@@ -2228,7 +2232,7 @@ paths:
               example:
                 error: A project named "Payments" already exists.
                 code: conflict
-  /api/tokens/{id}:
+  /api/v1/tokens/{id}:
     delete:
       tags: [Tokens]
       operationId: deleteToken
@@ -2262,7 +2266,7 @@ paths:
               example:
                 error: Token not found
                 code: not_found
-  /api/tokens:
+  /api/v1/tokens:
     get:
       tags: [Tokens]
       operationId: listTokens
@@ -2337,7 +2341,7 @@ paths:
               example:
                 error: This token can't create tokens.
                 code: forbidden
-  /api/users/me/keys:
+  /api/v1/users/me/keys:
     get:
       tags: [Users]
       operationId: getMyUserKeys
@@ -2426,7 +2430,7 @@ paths:
               example:
                 error: Zero-knowledge identity already set up
                 code: conflict
-  /api/vars/{id}:
+  /api/v1/vars/{id}:
     patch:
       tags: [Vars]
       operationId: updateVar
