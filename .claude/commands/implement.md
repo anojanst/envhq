@@ -24,20 +24,29 @@ Ticket to implement: $ARGUMENTS
 4. **Cross-check the repo map.** Compare the ticket's "Files" list against the
    Repo Map in CLAUDE.md; flag anything that doesn't line up (missing
    dir/file, or the map itself looks stale).
-5. **Plan, then implement.** For anything beyond a small single-file change,
-   use EnterPlanMode to propose the approach and get sign-off before editing.
-   Follow existing repo conventions (see CLAUDE.md, especially the UI/UX
-   section for anything touching `apps/web`).
-6. **Keep the map current.** Per CLAUDE.md's repo-map rule, update that
+5. **Plan.** For anything beyond a small single-file change, use
+   EnterPlanMode to propose the approach and get sign-off before touching
+   code.
+6. **Mark In Progress, then implement.** Once any plan is approved, set the
+   ticket's status to In Progress before making changes — check the status
+   property's actual available options first (don't assume a field named
+   "Status" exists, or that "In Progress" is one of its values, just because
+   the ADR database has a similar field; if it's missing, ask the user what
+   to use instead of inventing a value). This one doesn't need a confirmation
+   round-trip — it's a start-of-work marker, not a content edit. Then
+   implement, following existing repo conventions (see CLAUDE.md, especially
+   the UI/UX section for anything touching `apps/web`).
+7. **Keep the map current.** Per CLAUDE.md's repo-map rule, update that
    section if this ticket added, moved, or removed a directory, package, or
    route group.
-7. **Verify, then mark done — with confirmation.** Once the implementation is
-   complete and verified (tests/build pass; for `apps/web` UI changes, checked
-   in the browser per the standard workflow), tell the user it's ready and
-   ask them to confirm before touching Notion. On a clear yes, update the
-   ticket's status property to Done/Complete. Check the data source's actual
-   properties first — don't assume a field named "Status" exists just because
-   the ADR database has one; if there's no status-like property, say so and
-   ask the user how they want it tracked instead of inventing one. Only flip
-   the status field itself — leave Why/Scope/Acceptance Criteria/Files/Gotchas
-   untouched. If the user doesn't confirm, leave the ticket as-is.
+8. **Mark In Review and ask for verification.** Once the implementation is
+   complete and locally verified (tests/build pass; for `apps/web` UI
+   changes, checked in the browser per the standard workflow), set the
+   ticket's status to In Review and tell the user it's ready for them to
+   check over.
+9. **Mark Done — only after the user confirms.** If the user confirms the
+   changes are good, set the status to Done. If they report a problem
+   instead, keep working and leave the status at In Review (or move it back
+   to In Progress if that's the clearer signal) until they confirm again. In
+   every status change, only touch the status field itself — leave
+   Why/Scope/Acceptance Criteria/Files/Gotchas untouched.
