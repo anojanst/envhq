@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { Folder, Settings, Users, type LucideIcon } from "lucide-react";
-import { BrandMark } from "@/components/brand";
+import { Logo, Wordmark } from "@/components/brand";
 import { CryptoSessionProvider } from "@/components/crypto-session-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
@@ -75,9 +75,7 @@ export function AppShell({
             <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur md:hidden">
               <SidebarTrigger />
               <Link href="/dashboard" aria-label="EnvHQ home">
-                <span className="font-semibold tracking-tight">
-                  env<span className="text-brand">HQ</span>
-                </span>
+                <Wordmark />
               </Link>
             </header>
             <div className="w-full flex-1 px-6 py-8">{children}</div>
@@ -95,11 +93,11 @@ function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex items-center justify-between gap-2 px-1 py-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-2">
-          <Link href="/dashboard" aria-label="EnvHQ home" className="flex min-w-0 items-center gap-2">
-            <BrandMark className="size-7 shrink-0" />
-            <span className="truncate font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-              env<span className="text-brand">HQ</span>
-            </span>
+          <Link href="/dashboard" aria-label="EnvHQ home" className="flex min-w-0 items-center">
+            <Logo
+              markClassName="size-7"
+              wordmarkClassName="truncate text-base group-data-[collapsible=icon]:hidden"
+            />
           </Link>
           <SidebarTrigger className="shrink-0" />
         </div>

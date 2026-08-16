@@ -1,9 +1,34 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="32" height="32" rx="8" fill="#0e9f6e" />
-  <g transform="translate(4 4)" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M7 4v13" />
-    <path d="M11 13l-4 4-4-4" />
-    <path d="M17 20V7" />
-    <path d="M13 11l4-4 4 4" />
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32">
+  <!--
+    Favicon. Next's App Router picks this file up automatically, no metadata
+    entry needed. Same padlock-and-prompt geometry as public/logo.svg and
+    src/components/brand.tsx — keep all three in step.
+
+    One deliberate difference: the prompt strokes are 2.2 rather than 1.8. At a
+    16px tab icon the logo's weight renders barely over a pixel and mushes, so
+    the glyph is optically compensated for the size it is actually seen at.
+  -->
+  <path
+    d="M7 10.5V8a5 5 0 0 1 10 0v2.5"
+    fill="none"
+    stroke="#30c78d"
+    stroke-width="2.6"
+    stroke-linecap="round"
+  />
+  <rect x="2" y="10" width="20" height="12" rx="3.5" fill="#30c78d" />
+  <path
+    d="M7 13.8 9.9 16.1 7 18.4"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M11.8 18.4h4.6"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="2.2"
+    stroke-linecap="round"
+  />
 </svg>

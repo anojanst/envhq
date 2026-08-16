@@ -2,9 +2,22 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  '@clerk/shared': true
+  browser-tabs-lock: true
+  bufferutil: true
+  core-js: true
   esbuild: true
   sharp: true
   unrs-resolver: true
+  utf-8-validate: true
+minimumReleaseAgeExclude:
+  - '@clerk/clerk-js@6.29.1'
+  - '@clerk/shared@4.29.1'
+  - '@tanstack/react-router@1.170.29'
+  - '@tanstack/router-cli@1.167.30'
+  - '@tanstack/router-core@1.171.24'
+  - '@tanstack/router-generator@1.167.30'
+  - '@tanstack/router-plugin@1.168.32'
 onlyBuiltDependencies:
   - sharp
   - unrs-resolver

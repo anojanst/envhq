@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="EnvHQ">
+  <!--
+    EnvHQ mark: a padlock whose body carries a terminal prompt. Standalone,
+    self-contained copy for contexts with no access to the app's CSS tokens —
+    favicons, OG images, README badges, app icons. The in-app version lives in
+    src/components/brand.tsx and draws the same geometry from the brand tokens
+    so it follows the palette; keep the two in step if either changes.
+
+    Colours are the light-theme rendering: emerald #30c78d body, white glyph.
+  -->
+  <path
+    d="M7 10.5V8a5 5 0 0 1 10 0v2.5"
+    fill="none"
+    stroke="#30c78d"
+    stroke-width="2.6"
+    stroke-linecap="round"
+  />
+  <rect x="2" y="10" width="20" height="12" rx="3.5" fill="#30c78d" />
+  <path
+    d="M7 13.8 9.9 16.1 7 18.4"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="1.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M11.8 18.4h4.6"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="1.8"
+    stroke-linecap="round"
+  />
+</svg>

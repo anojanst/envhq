@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "pnpm --filter @envhq/web dev",
     "build": "pnpm --filter @envhq/web build",
+    "dev:app": "pnpm --filter @envhq/app dev",
+    "build:app": "pnpm --filter @envhq/app build",
     "db:generate": "pnpm --filter @envhq/web db:generate",
     "db:migrate": "pnpm --filter @envhq/web db:migrate",
     "cli": "pnpm --filter envhq start",

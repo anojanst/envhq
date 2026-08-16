@@ -16,6 +16,7 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
   - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` (key management), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation)
   - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db` and `contract` vitest projects; `contract/` holds the openapi.yaml-vs-live-routes contract suite
   - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`
+- `apps/app` — the new dashboard SPA per ADR-005, package `@envhq/app`: Vite + React 19 + TanStack Router + `@clerk/clerk-react`, static-only build (no server runtime, later `go:embed`-ed into the Go API binary per ADR-004). Ships a strict CSP (`script-src 'self'`, no `unsafe-inline`/`unsafe-eval`) from the first commit — Clerk bundles `@clerk/clerk-js` locally via the `Clerk` prop (`src/components/clerk-theme-provider.tsx`) rather than hot-loading it from Clerk's CDN, specifically to keep that CSP holding. **Consequence: Clerk's hosted UI components (`<SignIn>`, `<SignUp>`, `<UserButton>`, `<OrganizationProfile>`, etc.) can't be used here** — they come from a separate, undocumented `@clerk/ui` package this self-hosting path doesn't wire up, and throw at render time. Every Clerk-related UI surface (auth forms, a future user menu, org/teams management) must be built custom via headless hooks (`useSignIn`, `useSignUp`, `useUser`, `useOrganization`, `useClerk().signOut()`) — see `src/routes/sign-in.tsx` / `sign-up.tsx` for the pattern. Route stubs only for now under `src/routes/` (HQ-60–64 port the real pages) — don't add `apps/web/src/components/ui/**` or `AppShell` here, that's HQ-60's job.
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
 - `packages/crypto` — `@envhq/crypto`, shared encryption primitives (noble libs)
 - `packages/parser` — `@envhq/parser`, env file parsing
@@ -24,6 +25,7 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 
 Commands (run from repo root unless noted):
 - `pnpm dev` / `pnpm build` — run/build the web app
+- `pnpm dev:app` / `pnpm build:app` — run/build the new SPA (`apps/app`)
 - `pnpm --filter @envhq/web test` / `test:watch` — vitest (the `authz-db` and `contract` projects need a real Postgres via `TEST_DATABASE_URL`, e.g. `postgres://envhq_test:envhq_test@localhost:5432/envhq_test`)
 - `pnpm --filter @envhq/web lint` — eslint
 - `pnpm --filter @envhq/web lint:openapi` — lints `openapi.yaml` with Redocly
