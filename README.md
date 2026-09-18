@@ -32,6 +32,7 @@ Full design and reference docs live in [`docs/`](./docs):
 
 ```
 apps/web            Next.js app (UI + REST API)
+packages/crypto     Shared encryption primitives (used by web + CLI)
 packages/parser     Shared .env parser/serializer (used by web + CLI)
 packages/cli        The `envhq` command-line tool
 ```
@@ -40,16 +41,18 @@ packages/cli        The `envhq` command-line tool
 
 - Node.js **≥ 22.13** (Node 22 LTS recommended)
 - pnpm (via `corepack enable`)
-- A [Neon](https://neon.tech) database and a [Clerk](https://clerk.com) application
+- A Postgres database and a [Clerk](https://clerk.com) application. Any Postgres
+  works locally (the app uses the `postgres-js` driver); production runs on
+  [Neon](https://neon.tech).
 
 ## Setup
 
 ```bash
 pnpm install
 
-# Configure env vars
+# Configure env vars — .env.example documents every one, required and optional
 cp apps/web/.env.example apps/web/.env.local
-# then fill in DATABASE_URL and Clerk keys
+# then fill in DATABASE_URL and your Clerk keys
 
 # Create the database tables
 pnpm db:migrate
@@ -67,9 +70,8 @@ pnpm dev            # http://localhost:3000
 4. Deploy. Run `pnpm db:migrate` against the production `DATABASE_URL` once
    (locally with the prod URL, or via a one-off job).
 
-> A pre-M6 deployment's `ENV_ENCRYPTION_KEY` is dead — no code reads it anymore
-> (encryption moved client-side, see [Security model](https://envhq.dev/docs/security)).
-> Safe to leave set (harmless) or remove.
+Vercel deploys `main` on merge — see [docs/RELEASE_POLICY.md](./docs/RELEASE_POLICY.md)
+for how deploys and CLI releases relate.
 
 ## Using the CLI
 
@@ -91,7 +93,7 @@ envhq status                  # show login + link state (and target URL)
 `envhq push`/`pull` accept a positional `[env]` to target a different
 environment, `--file <path>` to use a different file, and `--all` to act on
 every linked environment at once. Override the server with `--url <url>` on
-`login` or the `ENVHQ_URL` env var (for local dev or self-hosting).
+`login` or the `ENVHQ_URL` env var (for local dev).
 
 ### Publishing the CLI
 

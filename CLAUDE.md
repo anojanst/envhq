@@ -19,7 +19,7 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
 - `packages/crypto` — `@envhq/crypto`, shared encryption primitives (noble libs)
 - `packages/parser` — `@envhq/parser`, env file parsing
-- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`
+- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published)
 - root `package.json` — workspace scripts fan out via `pnpm --filter`
 
 Commands (run from repo root unless noted):

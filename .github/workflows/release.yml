@@ -1,11 +1,8 @@
 name: Release
 
-# Tagging convention (see docs/RELEASE_POLICY.md): this workflow only ever
-# produces `envhq@X.Y.Z`-style tags for the publishable CLI package via
-# Changesets' own tagging. Whole-product enterprise release tags
-# (`product-vX.Y.Z`) are a separate, manually-gated process — see
-# enterprise-tag.yml — because they're cut from a different clock (a 14-day
-# SaaS production soak, not "changesets landed on main").
+# Tagging convention (see docs/RELEASE_POLICY.md): this workflow produces
+# `envhq@X.Y.Z` tags for the publishable CLI package, via Changesets' own
+# tagging. It is the only tag namespace in the repo.
 #
 # One-time maintainer setup before this can actually publish:
 #   1. Create an npm access token with publish rights for the `envhq`

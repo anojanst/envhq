@@ -74,42 +74,63 @@ source of truth.** v1 is **personal-only** — every row is scoped to a Clerk us
 ## 4. Repository layout
 
 ```
-envhq/                         (git repo root; pnpm workspace — the on-disk
-│                                folder is still literally named env-sync/)
+envhq/                         (git repo root; pnpm workspace)
 ├── apps/web/                  @envhq/web — Next.js app (UI + API)
+│   ├── openapi.yaml           hand-written API contract, source of truth (ADR-010)
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── (app)/         authenticated shell (header, nav)
+│   │   │   ├── (app)/         authenticated shell (sidebar nav)
 │   │   │   │   ├── dashboard/            projects list + create
 │   │   │   │   ├── projects/[id]/        envs list + create + editor
-│   │   │   │   └── settings/tokens/      CLI token management
+│   │   │   │   ├── teams/                org members and their access
+│   │   │   │   ├── cli/                  CLI browser-login approval
+│   │   │   │   └── settings/             tokens/, groups/
 │   │   │   ├── api/           REST endpoints (see §8)
+│   │   │   ├── docs/          public docs site (getting-started, cli,
+│   │   │   │                    security, web-app, limitations)
 │   │   │   ├── sign-in|sign-up/          Clerk catch-all pages
+│   │   │   ├── terms/         terms of service
 │   │   │   ├── page.tsx       landing (branded)
 │   │   │   ├── layout.tsx     ClerkProvider + ThemeProvider + Toaster
 │   │   │   └── globals.css    design tokens (light+dark, emerald brand)
 │   │   ├── components/
 │   │   │   ├── ui/            shadcn components
+│   │   │   ├── landing/       landing-page sections
+│   │   │   ├── app-shell.tsx, auth-shell.tsx    layout shells
 │   │   │   ├── brand.tsx      Logo / BrandMark
-│   │   │   ├── theme-provider.tsx, theme-toggle.tsx
+│   │   │   ├── crypto-session-provider.tsx      unwrapped-key session (§6)
+│   │   │   └── theme-provider.tsx, theme-toggle.tsx
+│   │   ├── hooks/             use-project-dek, use-key-rotation, use-mobile, …
+│   │   ├── assets/            static imagery
 │   │   ├── db/
 │   │   │   ├── schema.ts      Drizzle schema (§5)
-│   │   │   ├── index.ts       db client (neon-http)
+│   │   │   ├── index.ts       db client (postgres-js)
 │   │   │   └── migrations/    generated SQL
 │   │   ├── lib/
-│   │   │   ├── crypto.ts      AES-256-GCM + token hashing (§6)
+│   │   │   ├── crypto.ts      CLI token generation + SHA-256 hashing (§7)
 │   │   │   ├── auth.ts        getUserId() — session OR bearer (§7)
-│   │   │   ├── access.ts      ownership-scoped lookups
-│   │   │   ├── env-store.ts   encrypt/decrypt boundary + upsert
+│   │   │   ├── cli-auth.ts    CLI browser-login (PKCE loopback) exchange
+│   │   │   ├── access.ts      access-scoped lookups
+│   │   │   ├── grants.ts      role grants to users and groups
+│   │   │   ├── groups.ts      org-scoped named groups
+│   │   │   ├── orgs.ts        Clerk org membership lookups
+│   │   │   ├── project-keys.ts, user-keys.ts    sealed-key management (§6)
+│   │   │   ├── env-store.ts   ciphertext storage + upsert
+│   │   │   ├── version-store.ts            immutable version snapshots
+│   │   │   ├── db-errors.ts   driver-agnostic Postgres error checks
 │   │   │   ├── api.ts         JSON response helpers
 │   │   │   ├── client.ts      browser fetch helper
 │   │   │   └── utils.ts       cn()
+│   │   ├── test-support/      real-Postgres test infra + contract suite
 │   │   └── middleware.ts      Clerk route protection
 │   ├── drizzle.config.ts
-│   └── .env.local            (gitignored) — secrets
+│   ├── .env.example          committed template — every var, required + optional
+│   └── .env.local            (gitignored) — real secrets
+├── packages/crypto/          @envhq/crypto — encryption primitives (noble)
 ├── packages/parser/          @envhq/parser — shared .env parse/serialize
 ├── packages/cli/             envhq — the `envhq` command
-├── docs/                     PLAN.md, ROADMAP.md, SYSTEM_DESIGN.md
+├── docs/                     PLAN.md, ROADMAP.md, SYSTEM_DESIGN.md, RELEASE_POLICY.md
+├── CLAUDE.md                 repo map + conventions for Claude Code sessions
 ├── pnpm-workspace.yaml
 └── .gitignore
 ```
@@ -415,18 +436,20 @@ into the CLI by tsup). Runs on server and client.
   reverse) so the CLI's bearer header survives with no cross-origin redirect on
   `/api/*` (this was verified for the old `envsync.dev` domain; re-verify after
   pointing DNS at `envhq.dev`).
-- **Required env vars** (Vercel + `apps/web/.env.local` locally):
-  `DATABASE_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
-  `ENV_ENCRYPTION_KEY` (32-byte base64), and Clerk routing vars
-  (`NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, `…SIGN_UP_URL=/sign-up`,
-  `…SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard`, `…SIGN_UP_FALLBACK…=/dashboard`).
+- **Env vars:** [`apps/web/.env.example`](../apps/web/.env.example) is the
+  canonical list and documents each one — copy it to `.env.local` locally, and
+  set the same required vars in Vercel. Required: `DATABASE_URL`,
+  `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and the four Clerk
+  routing vars. Optional: `DATABASE_POOL_MAX`, `DATABASE_CA_CERT`.
+  There is no `ENV_ENCRYPTION_KEY` — M6 moved encryption client-side and no
+  code reads it (§6).
 - Migrations run with prod `DATABASE_URL`: `pnpm --filter @envhq/web db:migrate`.
 
 ## 13. Local dev & tooling
 
-- **Node 22 via nvm** — the environment's default shell may resolve Node 18; use
-  `nvm use 22` / set `nvm alias default 22`. (pnpm ≥ its version needs Node
-  ≥ 22.13. Older bundled corepack has a pnpm-key-signature bug — update corepack.)
+- **Node ≥ 22.13** (the root `package.json` `engines` floor); CI runs Node 24.
+  pnpm comes from `corepack enable` — the `packageManager` field pins the
+  version.
 - **Commands (from root):** `pnpm dev` (web on :3000), `pnpm build`,
   `pnpm db:generate` / `pnpm db:migrate`, `pnpm --filter envhq build`.
 - Drizzle config loads `.env.local` via dotenv (drizzle-kit runs outside Next).

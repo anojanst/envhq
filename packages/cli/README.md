@@ -68,7 +68,7 @@ confirmation unless you pass `--yes`.
 ## Configuration
 
 - **`--url` / `ENVHQ_URL`** — override the server (defaults to
-  `https://envhq.dev`). Useful for local development or self-hosting.
+  `https://envhq.dev`). Useful for local development.
 - **`ENVHQ_TOKEN`** — supply a token directly (headless / CI). Never persisted
   to disk.
 - **`.envhq/config.json`** — per-folder CLI state (project + environment →

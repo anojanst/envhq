@@ -8,9 +8,8 @@ if (!connectionString) {
 }
 
 /**
- * Optional PEM contents for a custom root CA. Azure Database for PostgreSQL
- * has historically required its own root CA (ADR-015) — this is a stated
- * deployment requirement, not optional hardening.
+ * Optional PEM contents for a custom root CA, for a database that requires one.
+ * Unset in normal operation — Neon's certificate chain is publicly trusted.
  *
  * When unset, `ssl` is deliberately left undefined rather than forced on:
  * postgres-js already parses `sslmode` off `DATABASE_URL` itself (e.g.

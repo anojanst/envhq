@@ -3,8 +3,8 @@
 This directory manages EnvHQ's release notes and version bumps via
 [Changesets](https://github.com/changesets/changesets). See
 [docs/RELEASE_POLICY.md](../docs/RELEASE_POLICY.md) for the full release
-policy — semver rationale, tagging convention, support window, and the
-enterprise-tag soak gate.
+policy — semver rationale, tagging convention, and how a CLI release is
+actually cut.
 
 ## Adding a changeset
 
