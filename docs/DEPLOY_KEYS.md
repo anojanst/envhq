@@ -269,9 +269,11 @@ with its own security review, not as a convenience patch to a pipeline ticket.
 ## What this changes elsewhere
 
 - **ADR-018** — its "no new backend work" sizing for the GitHub Action is
-  superseded. The `envhq run` primitive and the ephemeral-injection model
-  (no disk writes) are unaffected and remain the right shape; only the claim that
-  a token alone suffices is wrong.
+  superseded, and ADR-018 now carries a dated correction in place pointing here
+  (in its "Decision — GitHub Action first" section, and on the first consequence
+  that restates the same claim). The `envhq run` primitive and the
+  ephemeral-injection model (no disk writes) are unaffected and remain the right
+  shape; only the claim that a token alone suffices is wrong.
 - **ADR-019** — unaffected and reinforced. `envhq sync` runs on a machine holding
   a deploy key exactly as `envhq run` does.
 - **ADR-012** — the unencrypted-variable-names gap is now also a CI exposure, as
