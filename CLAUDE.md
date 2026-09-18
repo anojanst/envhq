@@ -26,7 +26,7 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 - `.claude/commands/` — repo slash commands: `/recommend-next` (pick the next roadmap ticket) and `/implement <ticket>` (fetch it from Notion and build it)
 - `.github/workflows/` — CI (`ci.yml`), CLI publishing via Changesets (`release.yml`), CLA enforcement (`cla.yml`)
 - `.changeset/` — Changesets config and pending release notes for the published packages
-- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published)
+- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published), `DEPLOY_KEYS.md` (how CI decrypts without the server holding a key — the security design the Pipelines work builds on)
 - root `package.json` — workspace scripts fan out via `pnpm --filter`
 
 Commands (run from repo root unless noted):

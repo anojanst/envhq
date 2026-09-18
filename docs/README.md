@@ -9,6 +9,7 @@ rebrand note in [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md)).
 | [PLAN.md](./PLAN.md) | Design spec for **decided-but-not-yet-built** features, with rationale, rules, and open questions. | Designing or implementing a planned feature. |
 | [ROADMAP.md](./ROADMAP.md) | Phased sequencing of the plan into milestones (M1–M6) with dependencies. | Prioritizing what to build next. |
 | [RELEASE_POLICY.md](./RELEASE_POLICY.md) | How the app is deployed and the CLI is published — versioning, tagging, and migration constraints. | Publishing the CLI; deploying; writing a migration. |
+| [DEPLOY_KEYS.md](./DEPLOY_KEYS.md) | The security design for **how CI decrypts** without EnvHQ ever holding a decryption key — deploy keys, scope, rotation, revocation, and the designs rejected. | Building anything in the Pipelines workstream; before proposing any server-side decrypt. |
 
 **New session? Start with [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md).** It's the
 canonical picture of the current system and is kept in sync with the code, so it
