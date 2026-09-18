@@ -61,6 +61,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter envhq typecheck
       - run: pnpm --filter envhq build
+      # Builds again (fast) so the CLI-surface test runs against fresh dist/.
+      - run: pnpm --filter envhq test
 
   packages:
     runs-on: ubuntu-latest

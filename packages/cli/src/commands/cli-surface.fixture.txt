@@ -1,0 +1,257 @@
+### envhq --help
+Usage: envhq [options] [command]
+
+Sync your environment variables from the terminal.
+
+Options:
+  -V, --version                       output the version number
+  -h, --help                          display help for command
+
+Commands:
+  login [options]                     Authenticate via your browser (or --token
+                                      for CI).
+  logout                              Remove stored credentials.
+  unlock                              Unlock your end-to-end encryption key for
+                                      this machine (cached until
+                                      `lock`/`logout`).
+  lock                                Forget the cached encryption key on this
+                                      machine.
+  whoami                              Show the authenticated user.
+  orgs                                List the orgs you belong to.
+  projects [options]                  List your projects.
+  link [options]                      Link this folder to a project, mapping
+                                      every environment to a local file.
+  init [options] [name]               Bootstrap this folder: create a project,
+                                      environment(s), and link it.
+  env                                 Manage environments and their file
+                                      mappings.
+  pull [options] [env]                Write remote variables to a local file.
+  push [options] [env]                Upload a local file to the remote
+                                      (upsert/merge).
+  diff [options] [env]                Preview what `push` would change, without
+                                      applying it.
+  history [options] [env]             Show version history for an environment.
+  rollback [options] <version> [env]  Restore an environment to a previous
+                                      version (creates a new version).
+  status                              Show login and link status for this
+                                      folder.
+  help [command]                      display help for command
+### envhq login --help
+Usage: envhq login [options]
+
+Authenticate via your browser (or --token for CI).
+
+Options:
+  -t, --token <token>  personal access token (headless / CI)
+  -u, --url <url>      API base url (default: "https://envhq.dev")
+  -h, --help           display help for command
+### envhq logout --help
+Usage: envhq logout [options]
+
+Remove stored credentials.
+
+Options:
+  -h, --help  display help for command
+### envhq unlock --help
+Usage: envhq unlock [options]
+
+Unlock your end-to-end encryption key for this machine (cached until
+`lock`/`logout`).
+
+Options:
+  -h, --help  display help for command
+### envhq lock --help
+Usage: envhq lock [options]
+
+Forget the cached encryption key on this machine.
+
+Options:
+  -h, --help  display help for command
+### envhq whoami --help
+Usage: envhq whoami [options]
+
+Show the authenticated user.
+
+Options:
+  -h, --help  display help for command
+### envhq orgs --help
+Usage: envhq orgs [options]
+
+List the orgs you belong to.
+
+Options:
+  -h, --help  display help for command
+### envhq projects --help
+Usage: envhq projects [options] [command]
+
+List your projects.
+
+Options:
+  --org <name>             org to list projects from (defaults to your personal
+                           org)
+  -h, --help               display help for command
+
+Commands:
+  create [options] <name>  Create a new project (and dev environment) and link
+                           this folder to it.
+### envhq link --help
+Usage: envhq link [options]
+
+Link this folder to a project, mapping every environment to a local file.
+
+Options:
+  -p, --project <name>  project name
+  --org <name>          org to pick the project from (defaults to your personal
+                        org)
+  -h, --help            display help for command
+### envhq init --help
+Usage: envhq init [options] [name]
+
+Bootstrap this folder: create a project, environment(s), and link it.
+
+Arguments:
+  name               project name (defaults to the folder name)
+
+Options:
+  -e, --env <names>  comma-separated environment names (default: "dev")
+  --org <name>       org to create the project in (defaults to your personal
+                     org)
+  -h, --help         display help for command
+### envhq env --help
+Usage: envhq env [options] [command]
+
+Manage environments and their file mappings.
+
+Options:
+  -h, --help               display help for command
+
+Commands:
+  map <env> <file>         Change which local file an environment maps to.
+  create [options] <name>  Create an environment (optionally cloning another) in
+                           a project.
+  list [options]           List environments in a project.
+  help [command]           display help for command
+### envhq pull --help
+Usage: envhq pull [options] [env]
+
+Write remote variables to a local file.
+
+Arguments:
+  env                environment to pull (defaults to linked default; with
+                     --all, ignored)
+
+Options:
+  -f, --file <path>  output file (overrides the linked mapping)
+  --all              pull every linked environment to its mapped file (default:
+                     false)
+  --force            overwrite without prompting (default: false)
+  --yes              skip the production confirmation (default: false)
+  -h, --help         display help for command
+### envhq push --help
+Usage: envhq push [options] [env]
+
+Upload a local file to the remote (upsert/merge).
+
+Arguments:
+  env                  environment to push to (defaults to linked default; with
+                       --all, ignored)
+
+Options:
+  -f, --file <path>    input file (overrides the linked mapping)
+  --all                push every linked environment from its mapped file
+                       (default: false)
+  --yes                skip the production confirmation (default: false)
+  -m, --message <msg>  commit message for this push
+  -h, --help           display help for command
+### envhq diff --help
+Usage: envhq diff [options] [env]
+
+Preview what `push` would change, without applying it.
+
+Arguments:
+  env                environment to diff (defaults to linked default; with
+                     --all, ignored)
+
+Options:
+  -f, --file <path>  input file (overrides the linked mapping)
+  --all              diff every linked environment against its mapped file
+                     (default: false)
+  -h, --help         display help for command
+### envhq history --help
+Usage: envhq history [options] [env]
+
+Show version history for an environment.
+
+Arguments:
+  env         environment to show history for (defaults to linked default; with
+              --all, ignored)
+
+Options:
+  --all       show history for every linked environment (default: false)
+  -h, --help  display help for command
+### envhq rollback --help
+Usage: envhq rollback [options] <version> [env]
+
+Restore an environment to a previous version (creates a new version).
+
+Arguments:
+  version              version number to roll back to
+  env                  environment to roll back (defaults to linked default)
+
+Options:
+  --yes                skip confirmation (default: false)
+  -m, --message <msg>  commit message for the rollback
+  -h, --help           display help for command
+### envhq status --help
+Usage: envhq status [options]
+
+Show login and link status for this folder.
+
+Options:
+  -h, --help  display help for command
+### envhq projects create --help
+Usage: envhq projects create [options] <name>
+
+Create a new project (and dev environment) and link this folder to it.
+
+Arguments:
+  name               project name
+
+Options:
+  -e, --env <names>  comma-separated environment names (default: "dev")
+  --org <name>       org to create the project in (defaults to your personal
+                     org)
+  --no-link          don't link this folder to the new project
+  -h, --help         display help for command
+### envhq env map --help
+Usage: envhq env map [options] <env> <file>
+
+Change which local file an environment maps to.
+
+Arguments:
+  env         environment name
+  file        local file to map it to
+
+Options:
+  -h, --help  display help for command
+### envhq env create --help
+Usage: envhq env create [options] <name>
+
+Create an environment (optionally cloning another) in a project.
+
+Arguments:
+  name                  environment name
+
+Options:
+  -p, --project <name>  project name (defaults to the linked project)
+  --from <env>          clone variables from this existing environment
+  --link                link this folder to the new environment (default: false)
+  -h, --help            display help for command
+### envhq env list --help
+Usage: envhq env list [options]
+
+List environments in a project.
+
+Options:
+  -p, --project <name>  project name (defaults to the linked project)
+  -h, --help            display help for command

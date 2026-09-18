@@ -12,6 +12,13 @@ import { x25519 } from "@noble/curves/ed25519.js";
  * the server never needs to. Pure, source-exported, no server dependency —
  * same pattern as `packages/parser`.
  *
+ * INVARIANT: the server never holds a key that can decrypt a customer's values.
+ * Everything here runs client-side; the server only ever sees ciphertext and
+ * keys already sealed to a member's public key. A change that would require the
+ * server to decrypt — or that moves any of this behind an API call — breaks the
+ * product's core claim. Raise it rather than designing around it. See the
+ * Invariants section of CLAUDE.md.
+ *
  * Built on `@noble/*` (pure TS/JS, no WASM) rather than libsodium: the
  * published `libsodium-wrappers-sumo` ESM build (the variant with Argon2id)
  * is broken — its `.mjs` does a relative `import "./libsodium-sumo.mjs"`

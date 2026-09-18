@@ -17,8 +17,15 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
   - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db` and `contract` vitest projects; `contract/` holds the openapi.yaml-vs-live-routes contract suite
   - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
+  - `src/index.ts` — wiring only: it registers each command, in the order `--help` lists them
+  - `src/commands/` — one module per command, each exporting `register(program)`; `projects` and `env` carry their own subcommands
+  - `src/shared/` — helpers the commands share: `ui.ts` (prompts, `fail`), `link.ts`, `secrets.ts` (the client-side encryption boundary), `resolve.ts`, `fs.ts`
+  - `src/commands/cli-surface.fixture.txt` — the pinned `--help` output; regenerate deliberately with `UPDATE_FIXTURES=1 pnpm --filter envhq test`
 - `packages/crypto` — `@envhq/crypto`, shared encryption primitives (noble libs)
 - `packages/parser` — `@envhq/parser`, env file parsing
+- `.claude/commands/` — repo slash commands: `/recommend-next` (pick the next roadmap ticket) and `/implement <ticket>` (fetch it from Notion and build it)
+- `.github/workflows/` — CI (`ci.yml`), CLI publishing via Changesets (`release.yml`), CLA enforcement (`cla.yml`)
+- `.changeset/` — Changesets config and pending release notes for the published packages
 - `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published)
 - root `package.json` — workspace scripts fan out via `pnpm --filter`
 
@@ -30,8 +37,77 @@ Commands (run from repo root unless noted):
 - `pnpm db:generate` / `pnpm db:migrate` — Drizzle migrations
 - `pnpm --filter @envhq/web db:studio` — Drizzle Studio
 - `pnpm cli` — run the CLI locally
+- `pnpm --filter envhq test` — CLI tests (`node --test`); builds first, since the surface test runs the real `dist/` binary. Keychain-backed cases skip where no OS keyring exists
 
-**Keep this map current.** Before marking any task done, check whether it added/removed/moved a top-level directory or package, changed what a `src/lib` file is responsible for, or added a new route group. If so, update this section in the same change — don't defer it to a follow-up task.
+**Keep this file current.** Before marking any task done, check whether it added/removed/moved a top-level directory or package, changed what a `src/lib` file is responsible for, added a new route group, or changed one of the invariants below. If so, update this file in the same change — don't defer it to a follow-up task.
+
+## Invariants
+
+Constraints that aren't visible from the code, and that a plausible-looking change
+can break silently. Read these before editing crypto, `src/lib/access.ts`, or
+anything the CLI talks to.
+
+### Zero-knowledge: the server never holds a decryption key
+
+Env values are encrypted **client-side** (web or CLI) under a per-project DEK that is
+sealed to each member's X25519 public key; the server stores ciphertext and sealed
+keys only, and has no path to plaintext. Treat this as the product's core claim, not
+an implementation detail:
+
+- `packages/crypto` and its callers are not to be rewritten as a side effect of
+  another ticket. If a task seems to require the server decrypting a value, stop and
+  raise it rather than designing around it.
+- `apps/web/src/lib/crypto.ts` is **not** value encryption — it is CLI token
+  generation and SHA-256 hashing. Only the hash is ever persisted.
+- Variable **names** are stored unencrypted and are readable by anyone with database
+  access. That is a known, accepted gap (ADR-012), not an oversight to "fix" casually.
+
+### Access control: `undefined` means 404, whichever reason
+
+Every read/write path goes through `apps/web/src/lib/access.ts`. Its rules:
+
+- A lookup returns `undefined` both when the row doesn't exist **and** when the
+  caller's role doesn't meet `requiredRole`. Callers must treat both as 404 — that's
+  deliberate, so a Viewer probing something they can't edit learns nothing a stranger
+  wouldn't. Don't "improve" this into a 403.
+- A grant's per-environment `env_scope` **caps** the resolved role and never escalates
+  it (`capRoleForEnv`). A group grant capped to Viewer in `prod` can't be overridden by
+  an uncapped direct grant.
+- `isReadOnly` / `isFullAccess` gate *token capability* (read vs write, scoped vs not)
+  and are orthogonal to org role. A project-scoped PAT resolves to `undefined` — 404 —
+  everywhere outside its project.
+- The matrix is pinned by `access-matrix.fixtures.json` and the `authz-db` vitest
+  project against real Postgres. Changing a rule means changing a fixture; if a change
+  doesn't move a fixture, suspect it isn't doing what you think.
+
+### Server-only modules
+
+Reachable only from `src/app/api` (never import these into a client component):
+`api.ts`, `auth.ts`, `cli-auth.ts`, `crypto.ts`, `db-errors.ts`, `project-keys.ts`,
+`user-keys.ts`, `version-store.ts`. The client-side pair is `client.ts` (browser fetch)
+and `utils.ts`. `access.ts`, `env-store.ts`, `grants.ts`, `groups.ts` and `orgs.ts` are
+used from both and must stay safe to import on the server.
+
+### Frozen CLI wire contracts
+
+Published CLI versions can't be updated by us, so an old binary must keep working
+against today's server. These are frozen:
+
+- The browser-login URL shape `/cli/authorize?port=&state=&challenge=` — built by
+  `packages/cli/src/auth/login.ts`, served by
+  `apps/web/src/app/(app)/cli/authorize/`, with the PKCE code exchange in
+  `apps/web/src/lib/cli-auth.ts`.
+- The literal `token_expired` string on a 401 (`apps/web/src/lib/api.ts` →
+  `packages/cli/src/api.ts`). The CLI branches on it to decide whether to re-login
+  transparently; any other 401 body means "your token is invalid", not "refresh me".
+- Existing flag and argument names on every command, and the keychain service names
+  `envhq` / `envsync` (the legacy name is still read so upgrading doesn't log people
+  out).
+- The `.envhq/config.json` link file and its two legacy predecessors
+  (`.envsync/config.json`, `.envsync.json`), which are auto-migrated on read.
+
+Adding a flag or a route is fine. Renaming or removing one is a breaking change for
+everyone who already installed the CLI from npm.
 
 ## UI/UX
 
