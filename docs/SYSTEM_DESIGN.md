@@ -29,7 +29,9 @@ covers the 2026-08-11 move to a per-directory source-available license.
 Store, organize, and sync environment variables. Secrets are grouped by
 **project → environment → key/value**, encrypted at rest, editable in a web UI,
 and pushable/pullable from a terminal via the `envhq` CLI. **The cloud is the
-source of truth.** v1 is **personal-only** — every row is scoped to a Clerk user.
+source of truth.** Projects are owned by a Clerk **organization** (every user gets
+an auto-provisioned personal one), and access within an org is granted per project
+by role — see §7.
 
 ## 2. High-level architecture
 
@@ -315,16 +317,40 @@ hash is ever stored).
   2. Clerk session cookie → `auth()` (web path).
   Returns Clerk `userId` or null. This one function is why web + CLI share the
   same API.
-- **Authorization** is ownership-scoped in `lib/access.ts`
-  (`getOwnedProject/Environment/Var`) — every query filters up to
-  `projects.user_id = <caller>`; missing/foreign rows are treated as 404.
+- **Authorization** is org-role-scoped in `lib/access.ts` (M5 PR1 replaced the
+  original ownership check; `projects.org_id` is the auth scope and
+  `projects.user_id` is audit-only). Every read/write path goes through
+  `getAccessibleProject` / `getAccessibleEnvironment` / `getAccessibleVar`,
+  which return the row plus the caller's resolved role:
+  - **Role resolution** — Clerk org admin/owner gets `admin` automatically;
+    otherwise the highest `access_grants` role reachable by the caller,
+    directly or through a group.
+  - **`undefined` means 404, whichever reason** — the lookup returns
+    `undefined` both when the row doesn't exist and when the caller's role
+    doesn't meet `requiredRole`, and callers must treat both the same. That is
+    deliberate: a Viewer probing something they can't edit learns nothing a
+    stranger wouldn't. Don't "improve" it into a 403.
+  - **`env_scope` caps, never escalates** — a grant's per-environment scope
+    lowers the resolved role for that environment (`capRoleForEnv`) and can
+    never raise it, so a group grant capped to Viewer in `prod` can't be
+    overridden by an uncapped direct grant. `getAccessibleProject` is uncapped
+    because no single environment is in scope; project-level actions (rename,
+    delete, manage access) aren't env-scoped.
+  - **Token capability is orthogonal** — `isReadOnly` / `isFullAccess` gate
+    read-vs-write and scoped-vs-not on a PAT, independently of org role. A
+    project-scoped PAT resolves to `undefined` — 404 — everywhere outside its
+    project.
+  The whole matrix is pinned by `src/lib/access-matrix.fixtures.json` and the
+  `authz-db` vitest project against real Postgres. Changing a rule means
+  changing a fixture.
 - API route handlers set `export const runtime = "nodejs"` (crypto, and
   postgres-js needs a raw TCP socket).
 
 ## 8. API reference
 
 All under `/api`, JSON, authenticated via `getUserId`. `401` if unauth, `404` if
-not owned, `400` bad input, `409` conflict.
+the caller has no sufficient role on it (or it doesn't exist — the two are
+deliberately indistinguishable, see §7), `400` bad input, `409` conflict.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -459,7 +485,9 @@ into the CLI by tsup). Runs on server and client.
 
 ## 14. Conventions & invariants
 
-- **Everything scoped by `user_id`** — no cross-user access (v1 personal-only).
+- **Everything scoped by org + role** — `projects.org_id` is the auth scope, and
+  every lookup goes through `lib/access.ts`; `undefined` is a 404 whether the row
+  is missing or the role is too low (§7).
 - **Encrypt/decrypt only in the API/server layer** (`env-store.ts`,
   `crypto.ts`); the DB never holds plaintext; the CLI/web get plaintext over
   HTTPS.
