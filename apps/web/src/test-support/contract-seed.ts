@@ -39,7 +39,8 @@ export async function resetContractWorld(): Promise<void> {
       project_keys, user_keys, api_tokens, cli_auth_requests,
       environment_versions, env_vars, environments,
       access_grants, group_members, groups,
-      projects, personal_orgs
+      projects, personal_orgs,
+      user_profiles, webhook_events
     RESTART IDENTITY CASCADE
   `);
 }

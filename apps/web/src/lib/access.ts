@@ -31,6 +31,9 @@ import { timeDb } from "@/lib/perf";
 
 export type Role = "viewer" | "editor" | "admin";
 
+/** A caller's Clerk role in an org, as `lib/orgs.ts` resolves it. */
+type OrgRole = "admin" | "member" | null;
+
 /** Per-env role cap on a grant, e.g. `{ prod: "viewer" }` — env names absent from the map are uncapped. */
 export type EnvScope = Partial<Record<string, Role>>;
 
@@ -219,8 +222,13 @@ export async function getAccessibleVar(
  * and `listAccessibleProjectsWithEnvs` so both apply the same visibility
  * rule without duplicating the admin/grant resolution.
  */
-async function resolveAccessibleProjectIds(userId: string, orgId: string): Promise<"all" | string[]> {
-  if ((await getClerkOrgRole(userId, orgId)) === "admin") return "all";
+async function resolveAccessibleProjectIds(
+  userId: string,
+  orgId: string,
+  knownRole?: OrgRole,
+): Promise<"all" | string[]> {
+  const role = knownRole !== undefined ? knownRole : await getClerkOrgRole(userId, orgId);
+  if (role === "admin") return "all";
 
   const direct = db
     .select({ id: accessGrants.projectId })
@@ -259,8 +267,8 @@ export async function listAccessibleProjects(userId: string, orgId: string, scop
  * matches the shape `app/(app)/dashboard/page.tsx` groups client-side into
  * `ProjectListItem[]`, so that grouping code doesn't need to change.
  */
-export async function listAccessibleProjectsWithEnvs(userId: string, orgId: string) {
-  const ids = await resolveAccessibleProjectIds(userId, orgId);
+export async function listAccessibleProjectsWithEnvs(userId: string, orgId: string, knownRole?: OrgRole) {
+  const ids = await resolveAccessibleProjectIds(userId, orgId, knownRole);
   if (ids !== "all" && ids.length === 0) return [];
 
   return db
@@ -313,7 +321,12 @@ export async function listAccessibleProjectsWithEnvsAcrossOrgs(userId: string) {
     const orgs = await listMyOrgs(userId);
     const perOrg = await Promise.all(
       orgs.map(async (org) => {
-        const rows = await listAccessibleProjectsWithEnvs(userId, org.id);
+        // `listMyOrgs` just told us this caller's role in this org, from the
+        // same live Clerk read. Passing it down is what removes the fan-out:
+        // without it each org re-fetched the identical membership list to
+        // answer a question we already had the answer to. This is not a cache
+        // — it is one request's own result, used once.
+        const rows = await listAccessibleProjectsWithEnvs(userId, org.id, org.role);
         return rows.map((r) => ({ ...r, orgId: org.id, orgName: org.name }));
       }),
     );

@@ -384,3 +384,46 @@ export type AccessGrant = typeof accessGrants.$inferSelect;
 export type PersonalOrg = typeof personalOrgs.$inferSelect;
 export type UserKeys = typeof userKeys.$inferSelect;
 export type ProjectKeys = typeof projectKeys.$inferSelect;
+
+/**
+ * A local mirror of the Clerk user fields we render (RM-6). Display names are
+ * *decorative* — they label a version in a history view, a member in a picker.
+ * Before this table, `resolveDisplayNames` made one Clerk round-trip per
+ * distinct user id, so a history with fifty authors put fifty third-party
+ * calls, and that third party's rate limit, on the request path.
+ *
+ * Kept fresh by the `user.created` / `user.updated` Clerk webhooks
+ * (`app/api/webhooks/clerk`), with a batched lazy fill in
+ * `lib/user-profiles.ts` for users who predate the webhook.
+ *
+ * NOT an authorization input. Nothing here decides what anyone may read or
+ * write — org role still resolves live against Clerk on every request (see
+ * `lib/orgs.ts`). A stale row here shows an old display name; it can never
+ * grant access. Keep it that way.
+ */
+export const userProfiles = pgTable("user_profiles", {
+  userId: text("user_id").primaryKey(),
+  name: text("name"),
+  email: text("email"),
+  imageUrl: text("image_url"),
+  /** When Clerk last told us about this user — webhook delivery or lazy fill. */
+  syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Replay guard for inbound webhooks (RM-6). Svix retries deliveries, and a
+ * retry must not be processed twice; the id is Svix's `svix-id` header, which
+ * is stable across retries of the same message. Insert-first with
+ * `onConflictDoNothing` makes "have I seen this?" a single atomic write
+ * rather than a check-then-act race between two concurrent retries.
+ *
+ * Rows are only useful for as long as Svix will retry (hours). Pruning is a
+ * housekeeping concern, not a correctness one — an unpruned table costs disk,
+ * never a wrong answer.
+ */
+export const webhookEvents = pgTable("webhook_events", {
+  /** The `svix-id` header of the delivery. */
+  id: text("id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+});

@@ -36,6 +36,8 @@ tags:
     description: The caller's zero-knowledge identity (User Keypair material).
   - name: Vars
     description: Individual environment variable mutation.
+  - name: Webhooks
+    description: Inbound webhooks from Clerk. Authenticated by Svix signature, not by a session or token.
 servers:
   - url: /
     description: Same-origin (the Next.js app serves its own API routes).
@@ -1334,6 +1336,99 @@ paths:
                       $ref: '#/components/schemas/Org'
         "401":
           $ref: '#/components/responses/Unauthorized'
+  /api/webhooks/clerk:
+    post:
+      tags: [Webhooks]
+      operationId: clerkWebhook
+      summary: Clerk user-sync webhook
+      description: |
+        Inbound only — Clerk calls this, never the CLI or the web client.
+
+        Authenticated by the Svix signature over the raw request body
+        (`svix-id`, `svix-timestamp`, `svix-signature` headers), not by a
+        bearer token or session cookie, so it is the one route under
+        `src/app/api` that does not call `getUserId`. `security: []` below
+        records that deliberately rather than leaving it to be inferred.
+
+        Handles `user.created`, `user.updated` and `user.deleted`, keeping the
+        local `user_profiles` mirror fresh so display names are served without
+        a Clerk call per render (RM-6). Deliveries are deduplicated by
+        `svix-id`, so a Svix retry is acknowledged without being applied twice.
+      security: []
+      parameters:
+        - name: svix-id
+          in: header
+          required: true
+          description: Unique id for this delivery; stable across retries, and the replay-guard key.
+          schema:
+            type: string
+        - name: svix-timestamp
+          in: header
+          required: true
+          description: Unix seconds. Deliveries outside Svix's tolerance window are rejected.
+          schema:
+            type: string
+        - name: svix-signature
+          in: header
+          required: true
+          description: Space-separated `v1,<base64>` signatures over the raw body.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, data]
+              properties:
+                type:
+                  type: string
+                  description: The Clerk event type, e.g. `user.updated`.
+                data:
+                  type: object
+                  description: The Clerk user object. Only the fields EnvHQ mirrors are read.
+                  required: [id]
+                  properties:
+                    id:
+                      type: string
+      responses:
+        "200":
+          description: Accepted. `duplicate` is true when the delivery was already processed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+                  duplicate:
+                    type: boolean
+        "400":
+          description: Missing signature headers, or a malformed payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Missing signature headers
+        "401":
+          description: Signature verification failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Invalid signature
+        "500":
+          description: Signing secret not configured, or the handler failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Webhook not configured
   /api/projects/{id}/access/{grantId}:
     delete:
       tags: [Projects]

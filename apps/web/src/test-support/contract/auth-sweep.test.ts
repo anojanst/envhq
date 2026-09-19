@@ -40,11 +40,21 @@ import { GET as getMyUserKeys, POST as createMyUserKeys } from "@/app/api/users/
 import { PATCH as updateVar, DELETE as deleteVar } from "@/app/api/vars/[id]/route";
 
 /**
- * Every route except `POST /api/cli/token` calls `getUserId(req)` and 401s
- * before touching path params, body, or the database — so a single sweep
- * with fabricated ids and no bearer token exercises all of them cheaply,
- * without needing any seeded state. Per-route success paths and the
- * business-logic error cases live in the resource-grouped test files.
+ * Every route calls `getUserId(req)` and 401s before touching path params,
+ * body, or the database — so a single sweep with fabricated ids and no bearer
+ * token exercises all of them cheaply, without needing any seeded state.
+ * Per-route success paths and the business-logic error cases live in the
+ * resource-grouped test files.
+ *
+ * Two routes are deliberately outside this sweep, because they authenticate
+ * something other than a user and so have nothing to 401 on:
+ *   - `POST /api/cli/token` — the PKCE code exchange; the code is the credential.
+ *   - `POST /api/webhooks/clerk` — inbound from Clerk, authenticated by the
+ *     Svix signature over the raw body (RM-6). Its rejection paths are covered
+ *     directly in `user-profiles.test.ts`: unsigned 400s, tampered 401s, and an
+ *     unconfigured signing secret 500s rather than trusting the payload.
+ * Adding a third exception should feel uncomfortable — check it really cannot
+ * take a user first.
  */
 
 const id = () => crypto.randomUUID();

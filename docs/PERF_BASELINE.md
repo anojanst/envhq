@@ -1,8 +1,8 @@
 # EnvHQ — Performance Baseline
 
-**Measured 2026-09-19** (RM-5). This is the number every Performance ticket is
-measured against. Without it, "faster" is an opinion and a regression is
-invisible.
+**Measured 2026-09-19** (RM-5), **re-measured after RM-6**. This is the number
+every Performance ticket is measured against. Without it, "faster" is an
+opinion and a regression is invisible.
 
 Refresh it with:
 
@@ -38,36 +38,62 @@ which is the cheaper path; measuring the granted path keeps this honest.
 
 | Route | Queries | Clerk calls | Median | p95 |
 |---|---|---|---|---|
-| `dashboard` | **16** | **6** | 2.1 ms | 2.9 ms |
-| `projects/[id]` (redirect hop) | 4 | 1 | 0.6 ms | 0.9 ms |
-| `environments/[envId]` — 40 vars | 5 | 1 | 1.1 ms | 2.4 ms |
-| `environments/[envId]` — 400 vars | 5 | 1 | 1.7 ms | 2.7 ms |
-| `api/environments/[id]/export` — 400 vars | 4 | 1 | 1.4 ms | 2.9 ms |
+| `dashboard` | **16** | **1** (was 6) | 2.0 ms | 3.2 ms |
+| `projects/[id]` (redirect hop) | 4 | 1 | 0.6 ms | 1.3 ms |
+| `environments/[envId]` — 40 vars | 5 | 1 | 1.3 ms | 2.2 ms |
+| `environments/[envId]` — 400 vars | 5 | 1 | 1.8 ms | 2.4 ms |
+| `api/environments/[id]/export` — 400 vars | 4 | 1 | 1.6 ms | 2.3 ms |
 
 ## The finding: the dashboard scales linearly with org count
 
 Measured directly, by running the same page data with 1 org and with 5:
 
-| Orgs | Queries | Clerk calls |
-|---|---|---|
-| 1 | 3 | 2 |
-| 5 | 15 | 6 |
+| Orgs | Queries | Clerk calls (RM-5) | Clerk calls (after RM-6) |
+|---|---|---|---|
+| 1 | 3 | 2 | 1 |
+| 5 | 15 | 6 | 1 |
 
-**Each additional org costs 3 more queries and 1 more Clerk round-trip.**
+**Each additional org still costs 3 more queries. It no longer costs a Clerk
+round-trip** — RM-6 removed that half.
 
 The shape is `listAccessibleProjectsWithEnvsAcrossOrgs` running
-`listAccessibleProjectsWithEnvs` once per org membership, and each of those
-calling `getClerkOrgRole` (one Clerk call) plus two `access_grants` lookups and
-one project list query. The dashboard's 16th query is the `personal_orgs` lookup
-that precedes all of it.
+`listAccessibleProjectsWithEnvs` once per org membership, each of those doing
+two `access_grants` lookups and one project list query. The dashboard's 16th
+query is the `personal_orgs` lookup that precedes all of it.
+
+Each of those per-org calls *also* used to call `getClerkOrgRole`, which
+re-fetched the caller's entire membership list — the same list `listMyOrgs` had
+just fetched to drive the loop. RM-6 passes the role down instead, so the
+membership list is read once per request.
 
 Extrapolating the measured slope, a user in 20 orgs loads the dashboard with
-**61 queries and 21 Clerk round-trips**, every one of the Clerk calls a network
-hop to a third party on the request path, sequenced before anything renders.
+**61 queries** (unchanged) and **1 Clerk round-trip**, down from 21.
 
-This is the number RM-6 ("stop fanning out to Clerk on the request path") and
-RM-7 ("make the dashboard one query instead of per-org fan-out") exist to move.
-Both should cite the table above and re-run the harness to show the new slope.
+The remaining slope is RM-7's ("make the dashboard one query instead of per-org
+fan-out"). It should cite the table above and re-run the harness to show the new
+number.
+
+## What RM-6 changed
+
+| Path | Before | After |
+|---|---|---|
+| Dashboard, 5 orgs | 6 Clerk calls | 1 |
+| Dashboard, 20 orgs (extrapolated) | 21 Clerk calls | 1 |
+| Version history, 50 distinct authors | 50 Clerk calls | 0 |
+
+Two separate mechanisms, and they are not the same kind of thing:
+
+- **The dashboard fan-out is gone because the role is passed down**, not
+  because anything is cached. `listMyOrgs` already returned each org's role
+  from the same live read; the per-org path just re-asked. Nothing became
+  staler.
+- **Display names come from the local `user_profiles` mirror**, refreshed by
+  Clerk webhooks with a batched lazy fill. Fifty unknown authors cost one
+  `getUserList` call (Clerk takes 100 ids per call), and zero on every later
+  render.
+
+The 50-author figure is asserted in `contract/user-profiles.test.ts`, which
+counts calls at the fake Clerk boundary rather than inferring them.
 
 ### Two smaller findings
 

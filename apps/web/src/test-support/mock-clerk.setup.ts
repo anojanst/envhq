@@ -43,6 +43,25 @@ interface FakeMembership {
 const users = new Map<string, FakeUser>();
 const memberships: FakeMembership[] = [];
 
+/**
+ * Counts every call that reaches the fake Clerk boundary. RM-6's first
+ * acceptance criterion is "rendering a version history with 50 distinct
+ * authors makes zero Clerk calls", which is only checkable if the harness can
+ * say how many there were.
+ */
+let clerkCalls = 0;
+function countCall(): void {
+  clerkCalls += 1;
+}
+
+export function clerkCallCount(): number {
+  return clerkCalls;
+}
+
+export function resetClerkCallCount(): void {
+  clerkCalls = 0;
+}
+
 export function setFakeUser(user: FakeUser): void {
   users.set(user.id, user);
 }
@@ -54,18 +73,39 @@ export function setFakeOrgMembership(membership: FakeMembership): void {
 export function resetFakeClerk(): void {
   users.clear();
   memberships.length = 0;
+  clerkCalls = 0;
 }
 
 vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
     users: {
       getUser: async (id: string) => {
+        countCall();
         const user = users.get(id);
         if (!user) throw new Error(`mock-clerk: no fake user registered for ${id} — call setFakeUser first`);
         return user;
       },
+      // The batched lookup `lib/user-profiles.ts` uses for its lazy fill.
+      // Unknown ids are simply absent from `data`, which is how the real
+      // endpoint behaves and what the raw-id fallback relies on.
+      getUserList: async ({ userId }: { userId?: string[] }) => {
+        countCall();
+        const ids = userId ?? [];
+        return {
+          data: ids
+            .map((id) => users.get(id))
+            .filter((u): u is FakeUser => Boolean(u))
+            .map((u) => ({
+              id: u.id,
+              firstName: u.firstName ?? null,
+              username: u.username ?? null,
+              imageUrl: "https://example.test/avatar.png",
+              primaryEmailAddress: u.email ? { emailAddress: u.email } : null,
+            })),
+        };
+      },
       getOrganizationMembershipList: async ({ userId }: { userId: string }) => ({
-        data: memberships
+        data: (countCall(), memberships)
           .filter((m) => m.userId === userId)
           .map((m) => ({
             role: m.role === "admin" ? "org:admin" : "org:member",
@@ -75,7 +115,7 @@ vi.mock("@clerk/nextjs/server", () => ({
     },
     organizations: {
       getOrganizationMembershipList: async ({ organizationId }: { organizationId: string }) => ({
-        data: memberships
+        data: (countCall(), memberships)
           .filter((m) => m.orgId === organizationId)
           .map((m) => {
             const user = users.get(m.userId);

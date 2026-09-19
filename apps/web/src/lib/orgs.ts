@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { eq } from "drizzle-orm";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
@@ -65,25 +66,34 @@ export async function getOrCreatePersonalOrg(userId: string): Promise<string> {
 /** Alias — the org used for account-level actions (create/list projects) when no explicit org is chosen. */
 export const resolveDefaultOrgId = getOrCreatePersonalOrg;
 
-/** Clerk org role for a user, or `null` if they aren't a member of that org at all. */
-export async function getClerkOrgRole(userId: string, orgId: string): Promise<"admin" | "member" | null> {
-  const client = await clerkClient();
-  const { data: memberships } = await timeClerk("users.getOrganizationMembershipList", () =>
-    client.users.getOrganizationMembershipList({ userId }),
-  );
-  const membership = memberships.find((m) => m.organization.id === orgId);
-  if (!membership) return null;
-  return membership.role === ADMIN_ROLE ? "admin" : "member";
+export interface OrgMembership {
+  id: string;
+  name: string;
+  role: "admin" | "member";
 }
 
 /**
- * Every org a user belongs to, with their role in each. Shared by
- * `api/orgs/route.ts` (CLI `envhq orgs` / `--org` resolution, M5 PR5) and
- * `listAccessibleProjectsAcrossOrgs` in `lib/access.ts` (the dashboard's
- * cross-org "all my projects" view) — both need the same membership list,
- * just presented differently.
+ * The caller's org memberships, from Clerk. Every role check in the app comes
+ * through here: `getClerkOrgRole` and `listMyOrgs` are both views over this
+ * one endpoint, called with the same argument.
+ *
+ * Wrapped in React's `cache()` so repeated reads within a single request hit
+ * Clerk once. Several routes ask twice already — `resolveRequestedOrgId`
+ * followed by an explicit `getClerkOrgRole`, for instance (see
+ * `api/groups/route.ts`).
+ *
+ * ON THE RISK RM-6 FLAGS — "do not let a cached membership list become an
+ * authorization input": this *is* an authorization input, so the cache is
+ * deliberately request-scoped and nothing wider. `cache()` cannot outlive a
+ * request; outside a request scope React gives each call a fresh cache, so
+ * the failure mode is "no deduplication", never a membership decision leaking
+ * from one request into another, or a role surviving a revocation. There is
+ * no cross-request TTL here on purpose — the ticket offers one as an option
+ * and this declines it, because a revoked admin staying admin for the length
+ * of a TTL is a real access consequence, and the fan-out is already solved
+ * without paying for it.
  */
-export async function listMyOrgs(userId: string): Promise<{ id: string; name: string; role: "admin" | "member" }[]> {
+const fetchMemberships = cache(async (userId: string): Promise<OrgMembership[]> => {
   const client = await clerkClient();
   const { data: memberships } = await timeClerk("users.getOrganizationMembershipList", () =>
     client.users.getOrganizationMembershipList({ userId }),
@@ -93,6 +103,23 @@ export async function listMyOrgs(userId: string): Promise<{ id: string; name: st
     name: m.organization.name,
     role: m.role === ADMIN_ROLE ? "admin" : "member",
   }));
+});
+
+/** Clerk org role for a user, or `null` if they aren't a member of that org at all. */
+export async function getClerkOrgRole(userId: string, orgId: string): Promise<"admin" | "member" | null> {
+  const memberships = await fetchMemberships(userId);
+  return memberships.find((m) => m.id === orgId)?.role ?? null;
+}
+
+/**
+ * Every org a user belongs to, with their role in each. Shared by
+ * `api/orgs/route.ts` (CLI `envhq orgs` / `--org` resolution, M5 PR5) and
+ * `listAccessibleProjectsAcrossOrgs` in `lib/access.ts` (the dashboard's
+ * cross-org "all my projects" view) — both need the same membership list,
+ * just presented differently.
+ */
+export async function listMyOrgs(userId: string): Promise<OrgMembership[]> {
+  return fetchMemberships(userId);
 }
 
 /**

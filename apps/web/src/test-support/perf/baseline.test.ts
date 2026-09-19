@@ -135,10 +135,17 @@ describe("RM-5 baseline", () => {
     expect(row.clerkCalls).toBeGreaterThan(0);
   });
 
-  test("dashboard cost scales with org count — the premise RM-6 and RM-7 rest on", async () => {
-    // Measured, not assumed. If the cost did NOT grow with org count, the
-    // fan-out those tickets exist to remove wouldn't be real and the baseline
-    // would be pointing them at the wrong thing.
+  test("dashboard query cost scales with org count; Clerk cost no longer does", async () => {
+    // Measured, not assumed.
+    //
+    // RM-5 wrote this test to establish that BOTH costs grew per org — the
+    // premise RM-6 and RM-7 rest on. RM-6 has since removed the Clerk half:
+    // `listMyOrgs` already returns each org's role, so the dashboard passes it
+    // down instead of re-asking Clerk once per org. The assertion below is
+    // inverted accordingly and is now a regression guard — if Clerk calls
+    // start growing with org count again, the fan-out is back.
+    //
+    // The query half still grows. That is RM-7, and still open.
     const measureWithOrgs = async (n: number) => {
       setMyOrgs(sample.userId, sample.orgs.slice(0, n));
       const { span } = await measure(`dashboard (${n} orgs)`, () =>
@@ -154,8 +161,8 @@ describe("RM-5 baseline", () => {
     const queriesPerOrg = (five.dbQueries - one.dbQueries) / (PERF_SAMPLE.orgCount - 1);
     const clerkPerOrg = (five.clerk.length - one.clerk.length) / (PERF_SAMPLE.orgCount - 1);
 
-    expect(queriesPerOrg).toBeGreaterThan(0);
-    expect(clerkPerOrg).toBeGreaterThan(0);
+    expect(queriesPerOrg, "RM-7 is still open — queries should still scale per org").toBeGreaterThan(0);
+    expect(clerkPerOrg, "RM-6 removed the per-org Clerk fan-out; it must not come back").toBe(0);
 
     scaling = {
       oneOrg: { queries: one.dbQueries, clerkCalls: one.clerk.length },

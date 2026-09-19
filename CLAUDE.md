@@ -9,11 +9,11 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 - `apps/web` — the product: Next.js app (UI + API routes + DB), package `@envhq/web`.
   - `openapi.yaml` — hand-written OpenAPI 3.1 spec, the source-of-truth contract for every route under `src/app/api` (ADR-010); lint with `pnpm --filter @envhq/web lint:openapi`
   - `src/app/(app)/` — authenticated app pages: `dashboard`, `projects`, `teams`, `settings`, `cli`
-  - `src/app/api/` — Next.js route handlers: `orgs`, `projects`, `environments`, `vars`, `groups`, `tokens`, `users`, `cli`, `me`
+  - `src/app/api/` — Next.js route handlers: `orgs`, `projects`, `environments`, `vars`, `groups`, `tokens`, `users`, `cli`, `me`, `webhooks/clerk` (inbound Clerk user sync — Svix-signature authenticated, the one route that doesn't call `getUserId`)
   - `src/app/sign-in`, `src/app/sign-up` — Clerk-hosted auth pages
   - `src/app/docs/` — public docs site (`getting-started`, `cli`, `security`, `limitations`, `web-app`) — distinct from the internal `docs/` at repo root
   - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client
-  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` (key management), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/Clerk measurement — counts and durations only, never SQL or parameters)
+  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` (key management), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/Clerk measurement — counts and durations only, never SQL or parameters), `user-profiles.ts` (the local `user_profiles` mirror of Clerk display names — decorative only, never an authorization input)
   - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db` and `contract` vitest projects; `contract/` holds the openapi.yaml-vs-live-routes contract suite; `perf/` holds the RM-5 baseline harness (its own `perf` vitest project, excluded from `pnpm test`)
   - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
@@ -84,6 +84,23 @@ Every read/write path goes through `apps/web/src/lib/access.ts`. Its rules:
 - The matrix is pinned by `access-matrix.fixtures.json` and the `authz-db` vitest
   project against real Postgres. Changing a rule means changing a fixture; if a change
   doesn't move a fixture, suspect it isn't doing what you think.
+
+### Cached identity is decorative; roles are not
+
+`user_profiles` (RM-6) mirrors each Clerk user's name/email/avatar locally so
+display names cost no Clerk call per render. It is refreshed by the
+`user.created` / `user.updated` / `user.deleted` webhooks at
+`api/webhooks/clerk`, with a batched lazy fill in `lib/user-profiles.ts`.
+
+- **Nothing in `user_profiles` may become an access decision.** A stale row
+  must only ever mislabel a name. Org role still resolves live against Clerk on
+  every request (`lib/orgs.ts`) — do not add a role, membership or entitlement
+  column to this table, and do not read it to answer "may they?".
+- Org membership *is* cached, but only within a single request (React `cache()`
+  in `lib/orgs.ts`). There is deliberately no cross-request TTL: a revoked
+  admin staying admin for the length of a TTL is a real access consequence.
+  The per-org fan-out was removed by passing the already-fetched role down, not
+  by caching it longer.
 
 ### Server-only modules
 

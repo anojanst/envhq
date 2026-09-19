@@ -1,9 +1,8 @@
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apiTokens } from "@/db/schema";
 import { hashToken } from "./crypto";
-import { timeClerk } from "./perf";
 
 /** The capability + project scope carried by a CLI token (null project = all). */
 export interface TokenScope {
@@ -75,28 +74,10 @@ export async function getUserId(req: Request): Promise<AuthResult> {
 
 /**
  * Resolve Clerk user ids to a display name for history/blame UI — same
- * fallback chain already established in `lib/orgs.ts`'s
- * `getOrCreatePersonalOrg` (`firstName || username || <id>`). A lookup
- * failure for one id (e.g. a deleted account) falls back to the raw id
- * rather than failing the whole batch.
+ * fallback chain as before (`firstName || username || <id>`), but served from
+ * the local `user_profiles` mirror instead of one Clerk call per id (RM-6).
+ *
+ * Kept here as a thin re-export so the ~four call sites don't all have to
+ * move; the store itself lives in `lib/user-profiles.ts`.
  */
-export async function resolveDisplayNames(userIds: string[]): Promise<Record<string, string>> {
-  const unique = [...new Set(userIds)];
-  if (unique.length === 0) return {};
-
-  const client = await clerkClient();
-  const entries = await Promise.all(
-    unique.map(async (id): Promise<[string, string]> => {
-      try {
-        // Timed per id, not per batch: this is one Clerk round-trip per unique
-        // user, so an environment history with ten authors costs ten calls.
-        // Counting the batch as one would understate the request path (RM-5).
-        const user = await timeClerk("users.getUser", () => client.users.getUser(id));
-        return [id, user.firstName || user.username || id];
-      } catch {
-        return [id, id];
-      }
-    }),
-  );
-  return Object.fromEntries(entries);
-}
+export { getDisplayNames as resolveDisplayNames } from "@/lib/user-profiles";
