@@ -142,9 +142,18 @@ export async function deleteProjectKeysForGroupEverywhere(groupId: string): Prom
 /**
  * DEK rotation (revoke doesn't rotate the key on its own — see
  * `markRotationPending` above — an admin runs this to actually retire the
- * old DEK). Two-phase to stay correct without multi-statement transactions
- * (`neon-http` has no `db.transaction()`, same constraint as
- * `version-store.ts`'s CAS commit):
+ * old DEK).
+ *
+ * Two-phase because **the re-encryption happens on the client**, not
+ * because of any driver limitation. The server never holds the DEK, so the
+ * only actor that can decrypt with the old key, encrypt with the new one,
+ * and seal the new one to each member's public key is the caller — over as
+ * many HTTP round trips as the project has batches of variables. No
+ * database transaction can span that; the phases are separated by the
+ * client's own work, not by a missing `db.transaction()`. (This comment
+ * used to blame `neon-http`, which really did lack transactions. The driver
+ * moved to postgres-js in 6de7076 and `db.transaction()` works now — it
+ * just wouldn't collapse these two phases into one.)
  *
  *   1. `migrateVarsBatch` — client decrypts every live `env_vars` value with
  *      the old DEK and re-encrypts with a freshly generated one, then
@@ -160,6 +169,21 @@ export async function deleteProjectKeysForGroupEverywhere(groupId: string): Prom
  *      forged wrap list can't lock someone in or out. New wraps are
  *      upserted *before* stale ones are deleted, so there's no window where
  *      a remaining member has no usable wrap.
+ *
+ * That expected-wrap-set computation is load-bearing beyond rotation
+ * itself: docs/DEPLOY_KEYS.md (ADR-020) requires active deploy keys to be
+ * part of it, since a `project_keys` row the computation doesn't know about
+ * fails every rotation as a `membership_mismatch` and would be deleted at
+ * finalize. Widen `expected` when deploy keys land (RM-11); don't relax the
+ * exact-match check.
+ *
+ * Finalize's own three writes (upsert, delete-stale, bump `keyVersion`) are
+ * still issued as separate statements. Now that the driver supports
+ * transactions they could be one, which would remove the partial-finalize
+ * window — but the upsert-before-delete ordering already keeps that window
+ * safe (it leaves stale wraps, never missing ones, and re-running finalize
+ * converges), so that is a deliberate change to make on its own, not a
+ * side effect of correcting this comment.
  */
 
 /** `projects.keyVersion` + whether a rotation is recommended (a revoke happened since the last one). */

@@ -12,13 +12,18 @@ import path from "node:path";
 // high maintenance cost, and it tests the stub's behavior instead of the
 // database's, which defeats the point of an authorization test.
 //
-// Production (`apps/web/src/db/index.ts`) talks to Neon over its HTTP driver
-// (`drizzle-orm/neon-http`), which isn't something a plain local/CI Postgres
-// speaks. Test suites that need a database should instead open their own
-// `drizzle-orm/node-postgres` client against a real Postgres — a local
-// instance for development, a `postgres:` service container in CI — using
-// the same `./src/db/schema.ts`. The driver differs from production, but the
-// schema, SQL, and constraints are real, which is what an authorization
+// Production (`apps/web/src/db/index.ts`) talks to Postgres over postgres-js
+// (`drizzle-orm/postgres-js`). It used to be Neon's HTTP driver, which a
+// plain local/CI Postgres couldn't speak at all; that is no longer why the
+// tests open their own client. The reason now is connection targeting:
+// `src/db/index.ts` reads `DATABASE_URL` at import time and builds the
+// production pool from it, so a test that imported it would point at
+// whatever that variable holds. Test suites that need a database instead
+// open a `drizzle-orm/node-postgres` client on `TEST_DATABASE_URL` against a
+// real Postgres — a local instance for development, a `postgres:` service
+// container in CI — using the same `./src/db/schema.ts`. The driver still
+// differs from production (a deliberate choice now, not a forced one), but
+// the schema, SQL, and constraints are real, which is what an authorization
 // suite needs to be trustworthy.
 //
 // Wiring (HQ-19, `apps/web/src/test-support/`): a `TEST_DATABASE_URL`-backed
@@ -96,10 +101,10 @@ export default defineConfig({
           // apps/web/src/db/index.ts throws at import time if DATABASE_URL
           // is unset, and access.ts (imported by access.helpers.test.ts for
           // its pure helpers) pulls that module in transitively. This never
-          // resolves to a real connection here — `neon()` only builds a
-          // query function, it doesn't connect eagerly — and nothing in the
-          // "unit" project ever issues a query. Same placeholder pattern the
-          // CI build step already uses.
+          // resolves to a real connection here — postgres-js builds its
+          // pool lazily and opens no socket until the first query — and
+          // nothing in the "unit" project ever issues a query. Same
+          // placeholder pattern the CI build step already uses.
           env: { DATABASE_URL: "postgres://placeholder:placeholder@localhost:5432/placeholder" },
         },
       },

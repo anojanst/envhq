@@ -4,8 +4,11 @@ import * as schema from "@/db/schema";
 import { countQuery } from "@/lib/perf";
 
 // Real Postgres client for the `authz-db` vitest project — see
-// apps/web/vitest.config.mts for why this can't be the production
-// (neon-http) `db` export. `mock-db.setup.ts` swaps this in wherever
+// apps/web/vitest.config.mts for why this is a separate client rather than
+// the production `db` export: that one binds to `DATABASE_URL` at import
+// time, while tests must bind to `TEST_DATABASE_URL`. It is no longer a
+// protocol limitation — production is postgres-js now, not neon-http.
+// `mock-db.setup.ts` swaps this in wherever
 // `apps/web/src/lib/access.ts` imports "@/db".
 const connectionString = process.env.TEST_DATABASE_URL;
 if (!connectionString) {

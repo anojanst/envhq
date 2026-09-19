@@ -46,12 +46,14 @@ export const projects = pgTable(
  * Maps a Clerk userId to their auto-provisioned personal Clerk Organization
  * (M5). `userId` is the primary key so `INSERT ... ON CONFLICT (user_id) DO
  * NOTHING RETURNING org_id` is the atomic get-or-create primitive — this
- * table exists specifically because the app's Postgres driver
- * (`neon-http`, stateless HTTP, no session) can't support
- * `db.transaction()` or session-scoped advisory locks, so the usual
- * check-then-create race guard isn't available; a unique-constrained insert
- * is. Also avoids a Clerk membership-list API round trip on every request
- * that needs org context.
+ * table originally existed because the app's Postgres driver at the time
+ * (`neon-http`, stateless HTTP, no session) supported neither
+ * `db.transaction()` nor session-scoped advisory locks, so the usual
+ * check-then-create race guard wasn't available; a unique-constrained
+ * insert was. The driver moved to postgres-js in 6de7076 and both are
+ * available again, but the unique-insert primitive is race-free without
+ * holding a lock, so it stays. Also avoids a Clerk membership-list API
+ * round trip on every request that needs org context.
  */
 export const personalOrgs = pgTable("personal_orgs", {
   userId: text("user_id").primaryKey(),

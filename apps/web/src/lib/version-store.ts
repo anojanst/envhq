@@ -9,11 +9,15 @@ export type CommitOutcome<T> =
 
 /**
  * Atomic CAS commit (M4): bumps `environments.version` via a single
- * `UPDATE ... WHERE version = $baseVersion RETURNING version` — the
- * neon-http driver has no `db.transaction()` support (no persistent session
- * across statements), so that single atomic statement is the linearization
- * point. Only the winner runs `applyChanges`, then a full snapshot of the
- * resulting active `env_vars` is written as the new version. Shared by the
+ * `UPDATE ... WHERE version = $baseVersion RETURNING version` — that one
+ * atomic statement is the linearization point. It was originally shaped
+ * this way because the neon-http driver had no `db.transaction()`; since
+ * 6de7076 the driver is postgres-js and transactions are available, so the
+ * single-statement CAS is now a choice rather than a constraint. It is
+ * still the right one: the compare-and-swap is atomic on its own, and a
+ * transaction would hold a connection open across `applyChanges` for no
+ * added safety. Only the winner runs `applyChanges`, then a full snapshot
+ * of the resulting active `env_vars` is written as the new version. Shared by the
  * plain upsert/delete commit route and rollback (same CAS+snapshot shape,
  * different mutation in between).
  */
