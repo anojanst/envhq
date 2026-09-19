@@ -1,4 +1,5 @@
 import { clerkClient } from "@clerk/nextjs/server";
+import { timeClerk } from "@/lib/perf";
 import { getUserId } from "@/lib/auth";
 import { resolveRequestedOrgId, getClerkOrgRole } from "@/lib/orgs";
 import { json, unauthorized, tokenExpired, forbidden } from "@/lib/api";
@@ -20,9 +21,9 @@ export async function GET(req: Request) {
   if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return forbidden();
 
   const client = await clerkClient();
-  const { data: memberships } = await client.organizations.getOrganizationMembershipList({
-    organizationId: orgId,
-  });
+  const { data: memberships } = await timeClerk("organizations.getOrganizationMembershipList", () =>
+    client.organizations.getOrganizationMembershipList({ organizationId: orgId }),
+  );
 
   const members = memberships
     .filter((m) => m.publicUserData)

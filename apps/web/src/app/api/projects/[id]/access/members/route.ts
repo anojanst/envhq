@@ -1,4 +1,5 @@
 import { clerkClient } from "@clerk/nextjs/server";
+import { timeClerk } from "@/lib/perf";
 import { getUserId } from "@/lib/auth";
 import { getAccessibleProject } from "@/lib/access";
 import { json, unauthorized, tokenExpired, notFound } from "@/lib/api";
@@ -20,9 +21,9 @@ export async function GET(req: Request, { params }: Params) {
   if (!owned) return notFound("Project not found");
 
   const client = await clerkClient();
-  const { data: memberships } = await client.organizations.getOrganizationMembershipList({
-    organizationId: owned.project.orgId,
-  });
+  const { data: memberships } = await timeClerk("organizations.getOrganizationMembershipList", () =>
+    client.organizations.getOrganizationMembershipList({ organizationId: owned.project.orgId }),
+  );
 
   const members = memberships
     .filter((m) => m.publicUserData)

@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "@/db/schema";
+import { countQuery } from "@/lib/perf";
 
 // Real Postgres client for the `authz-db` vitest project — see
 // apps/web/vitest.config.mts for why this can't be the production
@@ -17,5 +18,10 @@ if (!connectionString) {
 
 const pool = new Pool({ connectionString });
 
-export const testDb = drizzle(pool, { schema });
+// Same query counter as production (`src/db/index.ts`) so the RM-5 perf harness
+// measures real per-request query counts through this client too. Ignores the
+// query text and parameters — see the invariant in `src/lib/perf.ts`.
+const queryCounter = { logQuery: () => countQuery() };
+
+export const testDb = drizzle(pool, { schema, logger: queryCounter });
 export { schema };

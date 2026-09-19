@@ -1,6 +1,7 @@
 import { getUserId } from "@/lib/auth";
 import { getAccessibleEnvironment } from "@/lib/access";
 import { listPairs } from "@/lib/env-store";
+import { withPerf } from "@/lib/perf";
 import { json, unauthorized, tokenExpired, notFound } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -13,7 +14,11 @@ type Params = { params: Promise<{ id: string }> };
  * decrypting) — the caller decrypts each pair with the project DEK and
  * calls `@envhq/parser`'s `serializeEnv` client-side.
  */
-export async function GET(req: Request, { params }: Params) {
+export async function GET(req: Request, ctx: Params) {
+  return withPerf("api/environments/[id]/export", () => handleGet(req, ctx));
+}
+
+async function handleGet(req: Request, { params }: Params) {
   const { userId, expired, scope } = await getUserId(req);
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();

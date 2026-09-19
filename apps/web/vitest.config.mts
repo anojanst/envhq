@@ -45,6 +45,7 @@ export default defineConfig({
             "src/lib/access-matrix.test.ts",
             "src/lib/access.list.test.ts",
             "src/test-support/contract/**/*.test.ts",
+            "src/test-support/perf/**/*.test.ts",
           ],
           // apps/web/src/db/index.ts throws at import time if DATABASE_URL
           // is unset, and access.ts (imported by access.helpers.test.ts for
@@ -87,6 +88,29 @@ export default defineConfig({
           ],
           globalSetup: ["./src/test-support/migrate.global-setup.ts"],
           // Same shared-container reasoning as "authz-db".
+          fileParallelism: false,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          // RM-5's performance baseline. Same real-Postgres + mocked-Clerk
+          // setup as "contract", but it measures rather than asserts, and it
+          // seeds a deliberately large sample (~2,000 rows).
+          //
+          // NOT part of `pnpm test` — the `test` script names the other three
+          // projects explicitly so CI time is unaffected. Run it with
+          // `pnpm --filter @envhq/web test:perf` when refreshing
+          // docs/PERF_BASELINE.md.
+          name: "perf",
+          environment: "node",
+          include: ["src/test-support/perf/**/*.test.ts"],
+          setupFiles: [
+            "./src/test-support/mock-db.setup.ts",
+            "./src/test-support/mock-orgs.ts",
+            "./src/test-support/mock-clerk.setup.ts",
+          ],
+          globalSetup: ["./src/test-support/migrate.global-setup.ts"],
           fileParallelism: false,
         },
       },

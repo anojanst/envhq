@@ -6,11 +6,16 @@ import { Layers } from "lucide-react";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
 import { getAccessibleProject } from "@/lib/access";
+import { withPerf } from "@/lib/perf";
 import { ProjectAvatar } from "@/components/project-visuals";
 import { CreateEnvironmentDialog } from "./create-environment-dialog";
 import { ProjectActions } from "./project-actions";
 
-export default async function ProjectPage({
+export default async function ProjectPage(props: { params: Promise<{ id: string }> }) {
+  return withPerf("projects/[id]", () => renderProject(props));
+}
+
+async function renderProject({
   params,
 }: {
   params: Promise<{ id: string }>;

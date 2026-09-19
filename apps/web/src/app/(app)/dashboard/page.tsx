@@ -2,11 +2,16 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { FolderTree } from "lucide-react";
 import { listAccessibleProjectsWithEnvsAcrossOrgs } from "@/lib/access";
+import { withPerf } from "@/lib/perf";
 import { getOrCreatePersonalOrg, listMyOrgs } from "@/lib/orgs";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ProjectsBrowser, type ProjectListItem } from "./projects-browser";
 
 export default async function DashboardPage() {
+  return withPerf("dashboard", renderDashboard);
+}
+
+async function renderDashboard() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 

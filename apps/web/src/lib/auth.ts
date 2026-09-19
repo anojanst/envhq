@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apiTokens } from "@/db/schema";
 import { hashToken } from "./crypto";
+import { timeClerk } from "./perf";
 
 /** The capability + project scope carried by a CLI token (null project = all). */
 export interface TokenScope {
@@ -87,7 +88,10 @@ export async function resolveDisplayNames(userIds: string[]): Promise<Record<str
   const entries = await Promise.all(
     unique.map(async (id): Promise<[string, string]> => {
       try {
-        const user = await client.users.getUser(id);
+        // Timed per id, not per batch: this is one Clerk round-trip per unique
+        // user, so an environment history with ten authors costs ten calls.
+        // Counting the batch as one would understate the request path (RM-5).
+        const user = await timeClerk("users.getUser", () => client.users.getUser(id));
         return [id, user.firstName || user.username || id];
       } catch {
         return [id, id];

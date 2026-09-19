@@ -2,6 +2,7 @@ import { getUserId } from "@/lib/auth";
 import { getAccessibleEnvironment, isReadOnly } from "@/lib/access";
 import { upsertMany, deleteMany, listPairs, type EncryptedPair } from "@/lib/env-store";
 import { commitVersion } from "@/lib/version-store";
+import { timeDb, withPerf } from "@/lib/perf";
 import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -16,7 +17,11 @@ type Params = { params: Promise<{ id: string }> };
  * (CLI) decrypts those with the project DEK to build its yours-vs-server
  * diff, since the server can't do that itself anymore.
  */
-export async function POST(req: Request, { params }: Params) {
+export async function POST(req: Request, ctx: Params) {
+  return withPerf("api/environments/[id]/commit", () => handlePost(req, ctx));
+}
+
+async function handlePost(req: Request, { params }: Params) {
   const { userId, expired, scope } = await getUserId(req);
   if (expired) return tokenExpired();
   if (!userId) return unauthorized();
@@ -44,11 +49,13 @@ export async function POST(req: Request, { params }: Params) {
     : [];
   const message = typeof body?.message === "string" ? body.message : null;
 
-  const outcome = await commitVersion(id, baseVersion, userId, message, async () => {
-    const upsertResult = upsert.length > 0 ? await upsertMany(id, upsert) : { created: 0, updated: 0 };
-    const deleteResult = del.length > 0 ? await deleteMany(id, del) : { deleted: 0 };
-    return { ...upsertResult, ...deleteResult };
-  });
+  const outcome = await timeDb("commitVersion", () =>
+    commitVersion(id, baseVersion, userId, message, async () => {
+      const upsertResult = upsert.length > 0 ? await upsertMany(id, upsert) : { created: 0, updated: 0 };
+      const deleteResult = del.length > 0 ? await deleteMany(id, del) : { deleted: 0 };
+      return { ...upsertResult, ...deleteResult };
+    }),
+  );
 
   if (outcome.conflict) {
     const requestedKeys = new Set([...upsert.map((p) => p.key), ...del]);

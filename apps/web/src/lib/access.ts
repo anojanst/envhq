@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { projects, environments, envVars, accessGrants, groupMembers, type Project } from "@/db/schema";
 import type { TokenScope } from "@/lib/auth";
 import { getClerkOrgRole, listMyOrgs, listOrgAdminUserIds } from "@/lib/orgs";
+import { timeDb } from "@/lib/perf";
 
 /**
  * Org-role-scoped lookups (M5). Every read/write path goes through one of
@@ -308,12 +309,14 @@ export async function listAccessibleUserIds(orgId: string, projectId: string): P
  * + name so same-named projects across orgs stay distinguishable.
  */
 export async function listAccessibleProjectsWithEnvsAcrossOrgs(userId: string) {
-  const orgs = await listMyOrgs(userId);
-  const perOrg = await Promise.all(
-    orgs.map(async (org) => {
-      const rows = await listAccessibleProjectsWithEnvs(userId, org.id);
-      return rows.map((r) => ({ ...r, orgId: org.id, orgName: org.name }));
-    }),
-  );
-  return perOrg.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return timeDb("listAccessibleProjectsWithEnvsAcrossOrgs", async () => {
+    const orgs = await listMyOrgs(userId);
+    const perOrg = await Promise.all(
+      orgs.map(async (org) => {
+        const rows = await listAccessibleProjectsWithEnvs(userId, org.id);
+        return rows.map((r) => ({ ...r, orgId: org.id, orgName: org.name }));
+      }),
+    );
+    return perOrg.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  });
 }

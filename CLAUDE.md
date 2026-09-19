@@ -13,8 +13,8 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
   - `src/app/sign-in`, `src/app/sign-up` — Clerk-hosted auth pages
   - `src/app/docs/` — public docs site (`getting-started`, `cli`, `security`, `limitations`, `web-app`) — distinct from the internal `docs/` at repo root
   - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client
-  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` (key management), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation)
-  - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db` and `contract` vitest projects; `contract/` holds the openapi.yaml-vs-live-routes contract suite
+  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` (key management), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/Clerk measurement — counts and durations only, never SQL or parameters)
+  - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db` and `contract` vitest projects; `contract/` holds the openapi.yaml-vs-live-routes contract suite; `perf/` holds the RM-5 baseline harness (its own `perf` vitest project, excluded from `pnpm test`)
   - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
   - `src/index.ts` — wiring only: it registers each command, in the order `--help` lists them
@@ -26,11 +26,12 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 - `.claude/commands/` — repo slash commands: `/recommend-next` (pick the next roadmap ticket) and `/implement <ticket>` (fetch it from Notion and build it)
 - `.github/workflows/` — CI (`ci.yml`), CLI publishing via Changesets (`release.yml`), CLA enforcement (`cla.yml`)
 - `.changeset/` — Changesets config and pending release notes for the published packages
-- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published), `DEPLOY_KEYS.md` (how CI decrypts without the server holding a key — the security design the Pipelines work builds on)
+- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published), `DEPLOY_KEYS.md` (how CI decrypts without the server holding a key — the security design the Pipelines work builds on), `PERF_BASELINE.md` (the measured numbers every Performance ticket is compared against)
 - root `package.json` — workspace scripts fan out via `pnpm --filter`
 
 Commands (run from repo root unless noted):
 - `pnpm dev` / `pnpm build` — run/build the web app
+- `pnpm --filter @envhq/web test:perf` — the performance baseline harness; refreshes the numbers in `docs/PERF_BASELINE.md` (needs `TEST_DATABASE_URL`)
 - `pnpm --filter @envhq/web test` / `test:watch` — vitest (the `authz-db` and `contract` projects need a real Postgres via `TEST_DATABASE_URL`, e.g. `postgres://envhq_test:envhq_test@localhost:5432/envhq_test`)
 - `pnpm --filter @envhq/web lint` — eslint
 - `pnpm --filter @envhq/web lint:openapi` — lints `openapi.yaml` with Redocly

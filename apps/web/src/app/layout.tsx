@@ -3,6 +3,8 @@ import { Archivo, Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ClerkThemeProvider } from "@/components/clerk-theme-provider";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -69,6 +71,11 @@ export default function RootLayout({
             {children}
             <Toaster />
           </ClerkThemeProvider>
+          {/* RM-5 baseline: real-user LCP/INP/TTFB and page views. Both are
+              no-ops off Vercel, and neither collects anything about the
+              contents of an environment — they see route paths, not data. */}
+          <SpeedInsights />
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>

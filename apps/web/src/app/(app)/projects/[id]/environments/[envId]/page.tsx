@@ -5,6 +5,7 @@ import { and, asc, eq, count, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { environments, envVars } from "@/db/schema";
 import { getAccessibleEnvironment } from "@/lib/access";
+import { withPerf } from "@/lib/perf";
 import { listVarRows } from "@/lib/env-store";
 import { ProjectAvatar, isProdEnv } from "@/components/project-visuals";
 import { EnvironmentTabs } from "@/components/environment-tabs";
@@ -13,7 +14,13 @@ import { ProjectActions } from "../../project-actions";
 import { EnvEditor } from "./env-editor";
 import { EnvironmentHistory } from "./environment-history";
 
-export default async function EnvironmentPage({
+export default async function EnvironmentPage(props: {
+  params: Promise<{ id: string; envId: string }>;
+}) {
+  return withPerf("projects/[id]/environments/[envId]", () => renderEnvironment(props));
+}
+
+async function renderEnvironment({
   params,
 }: {
   params: Promise<{ id: string; envId: string }>;

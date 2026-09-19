@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
+import { countQuery } from "@/lib/perf";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -36,5 +37,17 @@ const globalForDb = globalThis as unknown as { dbClient?: ReturnType<typeof post
 const client = globalForDb.dbClient ?? createClient();
 if (process.env.NODE_ENV !== "production") globalForDb.dbClient = client;
 
-export const db = drizzle(client, { schema });
+/**
+ * Query counting for the RM-5 performance baseline. Drizzle calls `logQuery`
+ * once per executed query on every code path (prepared, streamed and raw), so
+ * this is an exact per-request count wherever a `withPerf` span is open, and a
+ * no-op everywhere else.
+ *
+ * The query text and parameters handed to this hook are deliberately ignored
+ * and never forwarded — parameters carry ciphertext and variable names. See the
+ * invariant at the top of `src/lib/perf.ts`.
+ */
+const queryCounter = { logQuery: () => countQuery() };
+
+export const db = drizzle(client, { schema, logger: queryCounter });
 export { schema };

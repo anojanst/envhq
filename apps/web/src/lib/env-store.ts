@@ -1,6 +1,7 @@
 import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { envVars } from "@/db/schema";
+import { timeDb } from "@/lib/perf";
 
 /**
  * The env-var storage boundary (M6 PR4). Everything here is ciphertext —
@@ -24,20 +25,22 @@ export interface EncryptedVarRow extends EncryptedPair {
 
 /** All of an environment's active rows (with ids), ciphertext only, ordered by key. */
 export async function listVarRows(environmentId: string): Promise<EncryptedVarRow[]> {
-  const rows = await db
-    .select()
-    .from(envVars)
-    .where(and(eq(envVars.environmentId, environmentId), isNull(envVars.deletedAt)));
+  return timeDb("listVarRows", async () => {
+    const rows = await db
+      .select()
+      .from(envVars)
+      .where(and(eq(envVars.environmentId, environmentId), isNull(envVars.deletedAt)));
 
-  return rows
-    .map((row) => ({
-      id: row.id,
-      key: row.key,
-      ciphertext: row.valueCiphertext,
-      iv: row.iv,
-      updatedAt: row.updatedAt,
-    }))
-    .sort((a, b) => a.key.localeCompare(b.key));
+    return rows
+      .map((row) => ({
+        id: row.id,
+        key: row.key,
+        ciphertext: row.valueCiphertext,
+        iv: row.iv,
+        updatedAt: row.updatedAt,
+      }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+  });
 }
 
 /** An environment's variables as ciphertext pairs (for CLI export/pull — decrypted client-side). */

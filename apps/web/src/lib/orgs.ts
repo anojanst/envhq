@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { personalOrgs } from "@/db/schema";
+import { timeClerk } from "@/lib/perf";
 
 /** Marks a Clerk Organization as auto-provisioned (not user-created). */
 const PERSONAL_ORG_METADATA = { personal: true } as const;
@@ -30,18 +31,20 @@ export async function getOrCreatePersonalOrg(userId: string): Promise<string> {
   if (existing[0]) return existing[0].orgId;
 
   const client = await clerkClient();
-  const user = await client.users.getUser(userId);
+  const user = await timeClerk("users.getUser", () => client.users.getUser(userId));
   // Falls back through to the email as a last resort specifically so this
   // name is unique per user — a bare "Personal" literal collides across
   // every account that has neither a first name nor a username set (common
   // for freshly-signed-up test accounts), making every such user's org
   // indistinguishable from anyone else's in an org picker.
   const name = user.firstName || user.username || user.primaryEmailAddress?.emailAddress || "Personal";
-  const org = await client.organizations.createOrganization({
-    name,
-    createdBy: userId,
-    privateMetadata: PERSONAL_ORG_METADATA,
-  });
+  const org = await timeClerk("organizations.createOrganization", () =>
+    client.organizations.createOrganization({
+      name,
+      createdBy: userId,
+      privateMetadata: PERSONAL_ORG_METADATA,
+    }),
+  );
 
   const inserted = await db
     .insert(personalOrgs)
@@ -65,7 +68,9 @@ export const resolveDefaultOrgId = getOrCreatePersonalOrg;
 /** Clerk org role for a user, or `null` if they aren't a member of that org at all. */
 export async function getClerkOrgRole(userId: string, orgId: string): Promise<"admin" | "member" | null> {
   const client = await clerkClient();
-  const { data: memberships } = await client.users.getOrganizationMembershipList({ userId });
+  const { data: memberships } = await timeClerk("users.getOrganizationMembershipList", () =>
+    client.users.getOrganizationMembershipList({ userId }),
+  );
   const membership = memberships.find((m) => m.organization.id === orgId);
   if (!membership) return null;
   return membership.role === ADMIN_ROLE ? "admin" : "member";
@@ -80,7 +85,9 @@ export async function getClerkOrgRole(userId: string, orgId: string): Promise<"a
  */
 export async function listMyOrgs(userId: string): Promise<{ id: string; name: string; role: "admin" | "member" }[]> {
   const client = await clerkClient();
-  const { data: memberships } = await client.users.getOrganizationMembershipList({ userId });
+  const { data: memberships } = await timeClerk("users.getOrganizationMembershipList", () =>
+    client.users.getOrganizationMembershipList({ userId }),
+  );
   return memberships.map((m) => ({
     id: m.organization.id,
     name: m.organization.name,
@@ -96,9 +103,9 @@ export async function listMyOrgs(userId: string): Promise<{ id: string; name: st
  */
 export async function listOrgAdminUserIds(orgId: string): Promise<string[]> {
   const client = await clerkClient();
-  const { data: memberships } = await client.organizations.getOrganizationMembershipList({
-    organizationId: orgId,
-  });
+  const { data: memberships } = await timeClerk("organizations.getOrganizationMembershipList", () =>
+    client.organizations.getOrganizationMembershipList({ organizationId: orgId }),
+  );
   return memberships.filter((m) => m.role === ADMIN_ROLE && m.publicUserData).map((m) => m.publicUserData!.userId);
 }
 
