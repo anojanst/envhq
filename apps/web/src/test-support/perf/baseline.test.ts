@@ -131,21 +131,30 @@ describe("RM-5 baseline", () => {
       await listAccessibleProjectsWithEnvsAcrossOrgs(sample.userId);
     });
 
-    expect(row.queries).toBeGreaterThan(PERF_SAMPLE.orgCount);
-    expect(row.clerkCalls).toBeGreaterThan(0);
+    // RM-5 measured 16 queries here and asserted the count exceeded the org
+    // count, because the page ran three queries per org. RM-7 folded that into
+    // a single query, so the cost is now flat: one `personal_orgs` lookup plus
+    // one projects-with-environments query. Asserted as a ceiling, not an
+    // equality, so adding a cheap query is not a test failure — but going back
+    // to per-org fan-out is.
+    expect(row.queries, "the dashboard must not scale its query count with org count").toBeLessThanOrEqual(3);
+    expect(row.clerkCalls, "one membership read, not one per org").toBe(1);
   });
 
-  test("dashboard query cost scales with org count; Clerk cost no longer does", async () => {
+  test("dashboard cost is flat in org count — neither queries nor Clerk calls grow", async () => {
     // Measured, not assumed.
     //
-    // RM-5 wrote this test to establish that BOTH costs grew per org — the
-    // premise RM-6 and RM-7 rest on. RM-6 has since removed the Clerk half:
-    // `listMyOrgs` already returns each org's role, so the dashboard passes it
-    // down instead of re-asking Clerk once per org. The assertion below is
-    // inverted accordingly and is now a regression guard — if Clerk calls
-    // start growing with org count again, the fan-out is back.
+    // RM-5 wrote this test to establish that BOTH costs grew per org: three
+    // queries and one Clerk call for every org the caller belonged to. That
+    // was the premise RM-6 and RM-7 existed to break, and both have.
     //
-    // The query half still grows. That is RM-7, and still open.
+    //   RM-6 — `listMyOrgs` already returns each org's role, so the dashboard
+    //          passes it down instead of re-asking Clerk once per org.
+    //   RM-7 — the per-org project queries became one query over every org id.
+    //
+    // The assertions are inverted accordingly. This is now purely a regression
+    // guard: if either number starts growing with org count again, a fan-out
+    // has come back.
     const measureWithOrgs = async (n: number) => {
       setMyOrgs(sample.userId, sample.orgs.slice(0, n));
       const { span } = await measure(`dashboard (${n} orgs)`, () =>
@@ -161,7 +170,7 @@ describe("RM-5 baseline", () => {
     const queriesPerOrg = (five.dbQueries - one.dbQueries) / (PERF_SAMPLE.orgCount - 1);
     const clerkPerOrg = (five.clerk.length - one.clerk.length) / (PERF_SAMPLE.orgCount - 1);
 
-    expect(queriesPerOrg, "RM-7 is still open — queries should still scale per org").toBeGreaterThan(0);
+    expect(queriesPerOrg, "RM-7 removed the per-org query fan-out; it must not come back").toBe(0);
     expect(clerkPerOrg, "RM-6 removed the per-org Clerk fan-out; it must not come back").toBe(0);
 
     scaling = {

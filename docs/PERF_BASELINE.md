@@ -1,6 +1,6 @@
 # EnvHQ — Performance Baseline
 
-**Measured 2026-09-19** (RM-5), **re-measured after RM-6**. This is the number
+**Measured 2026-09-19** (RM-5), **re-measured after RM-6 and RM-7**. This is the number
 every Performance ticket is measured against. Without it, "faster" is an
 opinion and a regression is invisible.
 
@@ -38,7 +38,7 @@ which is the cheaper path; measuring the granted path keeps this honest.
 
 | Route | Queries | Clerk calls | Median | p95 |
 |---|---|---|---|---|
-| `dashboard` | **16** | **1** (was 6) | 2.0 ms | 3.2 ms |
+| `dashboard` | **2** (was 16) | **1** (was 6) | 1.4 ms | 1.8 ms |
 | `projects/[id]` (redirect hop) | 4 | 1 | 0.6 ms | 1.3 ms |
 | `environments/[envId]` — 40 vars | 5 | 1 | 1.3 ms | 2.2 ms |
 | `environments/[envId]` — 400 vars | 5 | 1 | 1.8 ms | 2.4 ms |
@@ -48,56 +48,84 @@ which is the cheaper path; measuring the granted path keeps this honest.
 
 Measured directly, by running the same page data with 1 org and with 5:
 
-| Orgs | Queries | Clerk calls (RM-5) | Clerk calls (after RM-6) |
-|---|---|---|---|
-| 1 | 3 | 2 | 1 |
-| 5 | 15 | 6 | 1 |
+| Orgs | Queries (RM-5) | Queries (now) | Clerk calls (RM-5) | Clerk calls (now) |
+|---|---|---|---|---|
+| 1 | 3 | 1 | 2 | 1 |
+| 5 | 15 | 1 | 6 | 1 |
 
-**Each additional org still costs 3 more queries. It no longer costs a Clerk
-round-trip** — RM-6 removed that half.
+**Neither cost grows with org count any more.** RM-6 removed the Clerk half,
+RM-7 the query half. The slope is measured, not assumed, and the harness now
+asserts both are zero — if either starts growing again, a fan-out is back.
 
-The shape is `listAccessibleProjectsWithEnvsAcrossOrgs` running
+The old shape was `listAccessibleProjectsWithEnvsAcrossOrgs` running
 `listAccessibleProjectsWithEnvs` once per org membership, each of those doing
-two `access_grants` lookups and one project list query. The dashboard's 16th
-query is the `personal_orgs` lookup that precedes all of it.
+two `access_grants` lookups and one project list query, and each *also*
+re-fetching the caller's whole membership list from Clerk to decide their role
+in that org.
 
-Each of those per-org calls *also* used to call `getClerkOrgRole`, which
-re-fetched the caller's entire membership list — the same list `listMyOrgs` had
-just fetched to drive the loop. RM-6 passes the role down instead, so the
-membership list is read once per request.
+Both are gone. The role now comes from the membership list the page already
+fetched (RM-6), and the per-org queries became one query whose visibility
+predicate covers every org at once (RM-7). What remains is one `personal_orgs`
+lookup plus one projects-with-environments query.
 
-Extrapolating the measured slope, a user in 20 orgs loads the dashboard with
-**61 queries** (unchanged) and **1 Clerk round-trip**, down from 21.
+A user in 20 orgs now loads the dashboard with **2 queries and 1 Clerk
+round-trip**, against the 61 queries and 21 Clerk calls the RM-5 baseline
+projected.
 
-The remaining slope is RM-7's ("make the dashboard one query instead of per-org
-fan-out"). It should cite the table above and re-run the harness to show the new
-number.
+## What RM-6 and RM-7 changed
 
-## What RM-6 changed
-
-| Path | Before | After |
+| Path | RM-5 baseline | Now |
 |---|---|---|
-| Dashboard, 5 orgs | 6 Clerk calls | 1 |
-| Dashboard, 20 orgs (extrapolated) | 21 Clerk calls | 1 |
-| Version history, 50 distinct authors | 50 Clerk calls | 0 |
+| Dashboard, 5 orgs | 16 queries, 6 Clerk calls | **2 queries, 1 Clerk call** |
+| Dashboard, 20 orgs (extrapolated) | 61 queries, 21 Clerk calls | **2 queries, 1 Clerk call** |
+| Version history, 50 distinct authors | 50 Clerk calls | **0** |
 
-Two separate mechanisms, and they are not the same kind of thing:
+Three mechanisms, and they are not the same kind of thing:
 
-- **The dashboard fan-out is gone because the role is passed down**, not
-  because anything is cached. `listMyOrgs` already returned each org's role
-  from the same live read; the per-org path just re-asked. Nothing became
-  staler.
-- **Display names come from the local `user_profiles` mirror**, refreshed by
-  Clerk webhooks with a batched lazy fill. Fifty unknown authors cost one
-  `getUserList` call (Clerk takes 100 ids per call), and zero on every later
-  render.
+- **The per-org loop is gone** (RM-7). The caller's orgs are split by role —
+  admin orgs contribute every project, the rest contribute only projects the
+  caller holds a grant on — and both halves carry their own `projects.orgId`
+  restriction. Postgres flattens the grant check into a hash semi-join rather
+  than re-running it per project. With no loop left, the per-org Clerk role
+  lookup has nowhere to happen either.
+- **Org membership is read once per request** (RM-6). `getClerkOrgRole` and
+  `listMyOrgs` are both views over one `fetchMemberships`, wrapped in React's
+  request-scoped `cache()`. Deliberately not a cross-request TTL: membership is
+  an authorization input, and a revoked admin staying admin for the length of a
+  TTL is a real access consequence.
+- **Display names come from the local `user_profiles` mirror** (RM-6),
+  refreshed by Clerk webhooks with a batched lazy fill. Fifty unknown authors
+  cost one `getUserList` call (Clerk takes 100 ids per call), and zero on every
+  later render.
+
+RM-6 originally removed the fan-out by passing each org's already-known role
+down into the per-org query. RM-7 deleted that path entirely, so the parameter
+went with it — worth knowing if you go looking for it in the history.
 
 The 50-author figure is asserted in `contract/user-profiles.test.ts`, which
 counts calls at the fake Clerk boundary rather than inferring them.
 
+### The index RM-7 needed
+
+The new shape asks `access_grants` a question the old indexes could not answer:
+"which grants does this caller hold?". The unique index leads with `project_id`,
+so a subject-only probe cannot use it.
+
+Measured on 6,000 projects and ~6,000 grants:
+
+| | Plan for the grant lookup | Buffers | Node cost |
+|---|---|---|---|
+| Before | Seq Scan — 6,064 rows read to find 21 | 94 | 200 |
+| After | Bitmap Index Scan on `access_grants_subject_idx` | 7 | 60 |
+
+The buffer count is not the point. **A sequential scan here grows with the
+grant count of the whole installation**, so without the index one customer's
+dashboard would get slower every time an unrelated customer created a project.
+The index scan grows only with that caller's own grants.
+
 ### Two smaller findings
 
-- **`projects/[id]` costs 4 queries and a Clerk call to render nothing.** It
+- **`projects/[id]` still costs 4 queries and a Clerk call to render nothing.** It
   resolves access, looks up the first environment, and redirects to it. Anyone
   opening a project pays this before the page they actually wanted starts.
 - **The environment editor does not N+1 on variables.** 40 variables and 400

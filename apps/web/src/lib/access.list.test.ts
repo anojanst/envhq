@@ -93,6 +93,159 @@ describe("listAccessibleProjectsWithEnvsAcrossOrgs", () => {
   });
 });
 
+/**
+ * RM-7 folded the dashboard's per-org loop into a single query. Its gotcha:
+ * "this is the highest-risk query in the product — a dropped scoping predicate
+ * here leaks another org's projects." These cases exist to fail loudly if that
+ * ever happens, so they deliberately mix every membership shape at once and
+ * assert on the exact project set, not just that the expected ones are present.
+ */
+describe("cross-org visibility is scoped to the caller's own memberships", () => {
+  const caller = "user-mixed";
+
+  /** Four orgs, one of each shape the single query has to tell apart. */
+  async function seedMixedWorld() {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const org = {
+      admin: `mix-admin-${suffix}`,
+      granted: `mix-granted-${suffix}`,
+      ungranted: `mix-ungranted-${suffix}`,
+      foreign: `mix-foreign-${suffix}`,
+    };
+
+    const project = async (orgId: string, name: string) => {
+      const [row] = await testDb
+        .insert(schema.projects)
+        .values({ orgId, name: `${name}-${suffix}`, userId: "seed" })
+        .returning({ id: schema.projects.id });
+      return row!.id;
+    };
+
+    const ids = {
+      // Org admin: both projects visible with no grant row at all.
+      adminA: await project(org.admin, "admin-a"),
+      adminB: await project(org.admin, "admin-b"),
+      // Plain member: only the granted project is visible.
+      grantedYes: await project(org.granted, "granted-yes"),
+      grantedNo: await project(org.granted, "granted-no"),
+      // Member of the org, but holding no grant anywhere in it.
+      ungranted: await project(org.ungranted, "ungranted"),
+      // An org the caller is not a member of — and to make it a real trap, a
+      // grant row naming this very caller. Membership is what must exclude it.
+      foreign: await project(org.foreign, "foreign"),
+    };
+
+    await testDb.insert(schema.accessGrants).values([
+      { orgId: org.granted, projectId: ids.grantedYes, subjectType: "user", subjectId: caller, role: "viewer" },
+      { orgId: org.foreign, projectId: ids.foreign, subjectType: "user", subjectId: caller, role: "admin" },
+    ]);
+
+    setOrgRole(caller, org.admin, "admin");
+    setOrgRole(caller, org.granted, "member");
+    setOrgRole(caller, org.ungranted, "member");
+    setMyOrgs(caller, [
+      { id: org.admin, name: "Admin Org", role: "admin" },
+      { id: org.granted, name: "Granted Org", role: "member" },
+      { id: org.ungranted, name: "Ungranted Org", role: "member" },
+    ]);
+
+    return { org, ids };
+  }
+
+  test("admin orgs, granted projects, and nothing else", async () => {
+    const { ids } = await seedMixedWorld();
+    const rows = await listAccessibleProjectsWithEnvsAcrossOrgs(caller);
+    const seen = new Set(rows.map((r) => r.id));
+
+    // Admin in that org: every project, no grant needed.
+    expect(seen.has(ids.adminA)).toBe(true);
+    expect(seen.has(ids.adminB)).toBe(true);
+    // Member with a grant: exactly the granted one.
+    expect(seen.has(ids.grantedYes)).toBe(true);
+    expect(seen.has(ids.grantedNo)).toBe(false);
+    // Member with no grant anywhere in the org.
+    expect(seen.has(ids.ungranted)).toBe(false);
+    // The leak case: a grant naming this caller, in an org they don't belong to.
+    expect(seen.has(ids.foreign), "a project from a non-member org must never appear").toBe(false);
+  });
+
+  test("a caller who is admin everywhere needs no grant rows at all", async () => {
+    // The mirror of the mixed case: `grantOrgIds` is empty, so the query is
+    // built from the admin branch alone. Worth its own case because an
+    // all-admin caller is the common shape for a solo account — every org
+    // they are in is one they created.
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const orgA = `all-admin-a-${suffix}`;
+    const orgB = `all-admin-b-${suffix}`;
+    const owner = `user-allamin-${suffix}`;
+
+    const made: string[] = [];
+    for (const [orgId, name] of [[orgA, "a"], [orgB, "b"]] as const) {
+      const [row] = await testDb
+        .insert(schema.projects)
+        .values({ orgId, name: `${name}-${suffix}`, userId: "seed" })
+        .returning({ id: schema.projects.id });
+      made.push(row!.id);
+    }
+
+    setOrgRole(owner, orgA, "admin");
+    setOrgRole(owner, orgB, "admin");
+    setMyOrgs(owner, [
+      { id: orgA, name: "A", role: "admin" },
+      { id: orgB, name: "B", role: "admin" },
+    ]);
+
+    const rows = await listAccessibleProjectsWithEnvsAcrossOrgs(owner);
+    const seen = new Set(rows.map((r) => r.id));
+    for (const id of made) expect(seen.has(id)).toBe(true);
+    // And still nothing from the fixture corpus' orgs, which this user is not in.
+    expect(seen.has(world.projectId.get("proj-a")!)).toBe(false);
+  });
+
+  test("a caller who belongs to no orgs sees nothing at all", async () => {
+    // The `or()`-of-nothing case: if the visibility predicate were ever built
+    // empty, the query would have no WHERE clause and return every project in
+    // the database.
+    setMyOrgs("user-orgless", []);
+    const rows = await listAccessibleProjectsWithEnvsAcrossOrgs("user-orgless");
+    expect(rows).toEqual([]);
+  });
+
+  test("a group grant is honoured, and only for actual group members", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const orgId = `mix-group-${suffix}`;
+    const [proj] = await testDb
+      .insert(schema.projects)
+      .values({ orgId, name: `group-proj-${suffix}`, userId: "seed" })
+      .returning({ id: schema.projects.id });
+    const [group] = await testDb
+      .insert(schema.groups)
+      .values({ orgId, name: `group-${suffix}` })
+      .returning({ id: schema.groups.id });
+    await testDb.insert(schema.accessGrants).values({
+      orgId,
+      projectId: proj!.id,
+      subjectType: "group",
+      subjectId: group!.id,
+      role: "viewer",
+    });
+
+    const member = `user-ingroup-${suffix}`;
+    const outsider = `user-outgroup-${suffix}`;
+    await testDb.insert(schema.groupMembers).values({ groupId: group!.id, userId: member });
+    for (const u of [member, outsider]) {
+      setOrgRole(u, orgId, "member");
+      setMyOrgs(u, [{ id: orgId, name: "Group Org", role: "member" }]);
+    }
+
+    const memberRows = await listAccessibleProjectsWithEnvsAcrossOrgs(member);
+    expect(memberRows.map((r) => r.id)).toContain(proj!.id);
+
+    const outsiderRows = await listAccessibleProjectsWithEnvsAcrossOrgs(outsider);
+    expect(outsiderRows.map((r) => r.id)).not.toContain(proj!.id);
+  });
+});
+
 describe("listAccessibleUserIds", () => {
   test("includes org admins, direct grant holders, and group-derived members — even though org admins have no access_grants row", async () => {
     setOrgAdminList("org-1", ["user-dave"]);

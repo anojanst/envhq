@@ -1,0 +1,1 @@
+CREATE INDEX "access_grants_subject_idx" ON "access_grants" USING btree ("subject_type","subject_id");

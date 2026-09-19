@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { projects, environments, envVars, accessGrants, groupMembers, type Project } from "@/db/schema";
 import type { TokenScope } from "@/lib/auth";
@@ -216,49 +216,72 @@ export async function getAccessibleVar(
 }
 
 /**
- * Resolves which project ids in `orgId` the caller can see: `"all"` if
- * they're a Clerk org admin/owner, else the explicit list of projects with a
- * direct or group `access_grants` row. Shared by `listAccessibleProjects`
- * and `listAccessibleProjectsWithEnvs` so both apply the same visibility
- * rule without duplicating the admin/grant resolution.
+ * The single definition of "this caller has a grant on this project" (RM-7).
+ *
+ * A correlated EXISTS rather than a separate id lookup: it keeps project
+ * visibility inside the one query that selects the projects, which is what
+ * lets the dashboard stop issuing three queries per org. Direct user grants
+ * and group-derived grants are the same two rules as before — the left join
+ * to `group_members` resolves the caller's group membership, and
+ * `isNotNull(groupMembers.userId)` is what makes a group grant count only
+ * when they are actually in that group.
+ *
+ * `access_grants.subject_id` is text and `group_members.group_id` is uuid,
+ * hence the cast — same as the query this replaces.
+ *
+ * The `orgId` equality is not redundant. A grant row carries its own
+ * `org_id`, and the code this replaces required BOTH the grant and the
+ * project to match the org being listed. Dropping it here would widen the
+ * rule, so it stays, and stays visible.
  */
-async function resolveAccessibleProjectIds(
-  userId: string,
-  orgId: string,
-  knownRole?: OrgRole,
-): Promise<"all" | string[]> {
-  const role = knownRole !== undefined ? knownRole : await getClerkOrgRole(userId, orgId);
-  if (role === "admin") return "all";
+function grantedToCaller(userId: string) {
+  return exists(
+    db
+      .select({ ok: sql`1` })
+      .from(accessGrants)
+      .leftJoin(
+        groupMembers,
+        and(
+          eq(groupMembers.userId, userId),
+          sql`${accessGrants.subjectId} = ${groupMembers.groupId}::text`,
+        ),
+      )
+      .where(
+        and(
+          eq(accessGrants.projectId, projects.id),
+          eq(accessGrants.orgId, projects.orgId),
+          or(
+            and(eq(accessGrants.subjectType, "user"), eq(accessGrants.subjectId, userId)),
+            and(eq(accessGrants.subjectType, "group"), isNotNull(groupMembers.userId)),
+          ),
+        ),
+      ),
+  );
+}
 
-  const direct = db
-    .select({ id: accessGrants.projectId })
-    .from(accessGrants)
-    .where(and(eq(accessGrants.orgId, orgId), eq(accessGrants.subjectType, "user"), eq(accessGrants.subjectId, userId)));
-  const viaGroup = db
-    .select({ id: accessGrants.projectId })
-    .from(accessGrants)
-    .innerJoin(
-      groupMembers,
-      and(eq(groupMembers.userId, userId), sql`${accessGrants.subjectId} = ${groupMembers.groupId}::text`),
-    )
-    .where(and(eq(accessGrants.orgId, orgId), eq(accessGrants.subjectType, "group")));
-
-  const [directRows, groupRows] = await Promise.all([direct, viaGroup]);
-  return [...new Set([...directRows, ...groupRows].map((r) => r.id))];
+/**
+ * Which projects *within a single org* the caller can see: everything if they
+ * are a Clerk org admin/owner, else only projects they hold a grant on.
+ *
+ * Always combined with an explicit `projects.orgId` predicate by its callers —
+ * this function deliberately does not scope the org itself, so that the org
+ * filter is written at each call site where it can be seen, rather than
+ * hidden one level down. RM-7's gotcha is that a dropped scoping predicate
+ * here leaks another org's projects.
+ */
+function visibleInOrg(userId: string, orgId: string, role: OrgRole) {
+  const inThisOrg = eq(projects.orgId, orgId);
+  return role === "admin" ? inThisOrg : and(inThisOrg, grantedToCaller(userId));
 }
 
 /** Every project in `orgId` the caller can see: all of them if org admin, else only ones with an `access_grants` row. */
 export async function listAccessibleProjects(userId: string, orgId: string, scope?: TokenScope): Promise<Project[]> {
-  const ids = await resolveAccessibleProjectIds(userId, orgId);
-  if (ids !== "all" && ids.length === 0) return [];
-
+  const role = await getClerkOrgRole(userId, orgId);
   return db
     .select()
     .from(projects)
-    .where(
-      and(eq(projects.orgId, orgId), ids === "all" ? undefined : inArray(projects.id, ids), projectFilter(scope)),
-    )
-    .orderBy(desc(projects.createdAt));
+    .where(and(visibleInOrg(userId, orgId, role), projectFilter(scope)))
+    .orderBy(desc(projects.createdAt), asc(projects.id));
 }
 
 /**
@@ -267,10 +290,8 @@ export async function listAccessibleProjects(userId: string, orgId: string, scop
  * matches the shape `app/(app)/dashboard/page.tsx` groups client-side into
  * `ProjectListItem[]`, so that grouping code doesn't need to change.
  */
-export async function listAccessibleProjectsWithEnvs(userId: string, orgId: string, knownRole?: OrgRole) {
-  const ids = await resolveAccessibleProjectIds(userId, orgId, knownRole);
-  if (ids !== "all" && ids.length === 0) return [];
-
+export async function listAccessibleProjectsWithEnvs(userId: string, orgId: string) {
+  const role = await getClerkOrgRole(userId, orgId);
   return db
     .select({
       id: projects.id,
@@ -280,8 +301,8 @@ export async function listAccessibleProjectsWithEnvs(userId: string, orgId: stri
     })
     .from(projects)
     .leftJoin(environments, eq(environments.projectId, projects.id))
-    .where(and(eq(projects.orgId, orgId), ids === "all" ? undefined : inArray(projects.id, ids)))
-    .orderBy(desc(projects.createdAt), asc(environments.createdAt));
+    .where(visibleInOrg(userId, orgId, role))
+    .orderBy(desc(projects.createdAt), asc(projects.id), asc(environments.createdAt));
 }
 
 /**
@@ -310,26 +331,69 @@ export async function listAccessibleUserIds(orgId: string, projectId: string): P
 }
 
 /**
- * Every project the caller can access across every org they belong to —
- * the dashboard's cross-org "all my projects" view. Orchestrates
- * `listAccessibleProjectsWithEnvs` once per org membership (no new query
- * shape, just run per org and merged) and tags each row with its org's id
- * + name so same-named projects across orgs stay distinguishable.
+ * Every project the caller can access across every org they belong to — the
+ * dashboard's cross-org "all my projects" view.
+ *
+ * ONE query, regardless of how many orgs the caller belongs to (RM-7). It
+ * used to run `listAccessibleProjectsWithEnvs` once per membership, and each
+ * of those was itself three queries, so a six-org user paid eighteen; the
+ * measured slope was three queries per org (docs/PERF_BASELINE.md).
+ *
+ * The caller's orgs are split by role first, because the two halves are
+ * different rules: in an org where they are a Clerk admin they see every
+ * project, and elsewhere they see only what they hold a grant on. Both halves
+ * carry their own `projects.orgId` restriction, so a project can only ever be
+ * returned via an org this caller is actually in.
+ *
+ * Org *names* still come from Clerk (`listMyOrgs`) rather than the database —
+ * we don't mirror them — which is why the rows are decorated afterwards.
  */
 export async function listAccessibleProjectsWithEnvsAcrossOrgs(userId: string) {
   return timeDb("listAccessibleProjectsWithEnvsAcrossOrgs", async () => {
     const orgs = await listMyOrgs(userId);
-    const perOrg = await Promise.all(
-      orgs.map(async (org) => {
-        // `listMyOrgs` just told us this caller's role in this org, from the
-        // same live Clerk read. Passing it down is what removes the fan-out:
-        // without it each org re-fetched the identical membership list to
-        // answer a question we already had the answer to. This is not a cache
-        // — it is one request's own result, used once.
-        const rows = await listAccessibleProjectsWithEnvs(userId, org.id, org.role);
-        return rows.map((r) => ({ ...r, orgId: org.id, orgName: org.name }));
-      }),
-    );
-    return perOrg.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    if (orgs.length === 0) return [];
+
+    const adminOrgIds = orgs.filter((o) => o.role === "admin").map((o) => o.id);
+    const grantOrgIds = orgs.filter((o) => o.role !== "admin").map((o) => o.id);
+
+    const visible = [
+      adminOrgIds.length > 0 ? inArray(projects.orgId, adminOrgIds) : undefined,
+      grantOrgIds.length > 0
+        ? and(inArray(projects.orgId, grantOrgIds), grantedToCaller(userId))
+        : undefined,
+    ].filter((c) => c !== undefined);
+
+    // Belt and braces. `or()` of nothing is `undefined`, and a `.where(undefined)`
+    // is a query with no WHERE clause at all — which on this table would return
+    // every project in the system. `orgs.length > 0` already guarantees at least
+    // one branch, so this is unreachable; it is here because the failure mode is
+    // a cross-tenant leak and "unreachable" is not the same as "impossible".
+    //
+    // Excluded from coverage rather than left to drag the floor down: there is
+    // no input that reaches it, so a test for it would have to be a lie.
+    /* v8 ignore next */
+    if (visible.length === 0) return [];
+
+    const rows = await db
+      .select({
+        id: projects.id,
+        name: projects.name,
+        createdAt: projects.createdAt,
+        orgId: projects.orgId,
+        envName: environments.name,
+      })
+      .from(projects)
+      .leftJoin(environments, eq(environments.projectId, projects.id))
+      .where(or(...visible))
+      // `projects.id` breaks ties on `createdAt`: rows inserted in one
+      // statement share a `now()`, so without it the dashboard's order is
+      // arbitrary between them and tests flake.
+      .orderBy(desc(projects.createdAt), asc(projects.id), asc(environments.createdAt));
+
+    // Every returned row's org is one of `orgs` by construction — that is the
+    // only thing `visible` lets through — so the lookup cannot miss. Asserted
+    // rather than given a fallback that could never fire.
+    const orgNameById = new Map(orgs.map((o) => [o.id, o.name]));
+    return rows.map((r) => ({ ...r, orgName: orgNameById.get(r.orgId)! }));
   });
 }

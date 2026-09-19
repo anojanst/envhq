@@ -344,6 +344,24 @@ export const accessGrants = pgTable(
   (t) => [
     unique("access_grants_project_subject_uq").on(t.projectId, t.subjectType, t.subjectId),
     index("access_grants_org_id_idx").on(t.orgId),
+    /*
+     * Subject-driven lookup, for RM-7's single dashboard query. That query
+     * asks "which grants does THIS caller hold?", and the unique index above
+     * can't answer it — `project_id` leads, so a subject-only probe can't use
+     * it.
+     *
+     * Measured on 6,000 projects / ~6,000 grants: without this index the
+     * planner sequentially scans `access_grants`, reading 6,064 rows to find
+     * 21 (94 buffers, node cost 200). With it, a bitmap index scan reads 7
+     * buffers (node cost 60).
+     *
+     * The buffer count is not really the point. A sequential scan here grows
+     * with the grant count of the WHOLE INSTALLATION, so without this index
+     * one customer's dashboard gets slower every time an unrelated customer
+     * creates a project. The index scan grows only with that caller's own
+     * grants.
+     */
+    index("access_grants_subject_idx").on(t.subjectType, t.subjectId),
   ],
 );
 
