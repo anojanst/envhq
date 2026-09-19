@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import fixture from "./access-matrix.fixtures.json";
 import { testDb } from "@/test-support/db";
-import { seedFixtureWorld, type FixtureWorld } from "@/test-support/seed-fixture";
+import { seedFixtureWorld, type FixtureEntities, type FixtureWorld } from "@/test-support/seed-fixture";
 import { setOrgRole } from "@/test-support/mock-orgs";
 import { getAccessibleProject, getAccessibleEnvironment, getAccessibleVar, type Role } from "./access";
 import type { TokenScope } from "./auth";
@@ -60,7 +60,7 @@ async function callSurface(c: FixtureCase, world: FixtureWorld): Promise<{ role:
 let world: FixtureWorld;
 
 beforeAll(async () => {
-  world = await seedFixtureWorld(testDb, fixture.entities);
+  world = await seedFixtureWorld(testDb, fixture.entities as FixtureEntities);
 });
 
 // The "malformed_env_scope" row deliberately exercises parseEnvScope's

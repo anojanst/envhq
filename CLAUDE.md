@@ -24,14 +24,18 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 - `packages/crypto` — `@envhq/crypto`, shared encryption primitives (noble libs)
 - `packages/parser` — `@envhq/parser`, env file parsing
 - `.claude/commands/` — repo slash commands: `/recommend-next` (pick the next roadmap ticket) and `/implement <ticket>` (fetch it from Notion and build it)
-- `.github/workflows/` — CI (`ci.yml`), CLI publishing via Changesets (`release.yml`), CLA enforcement (`cla.yml`)
+- `.github/workflows/` — CI (`ci.yml`), the weekly dependency audit (`audit.yml`), CLI publishing via Changesets (`release.yml`), CLA enforcement (`cla.yml`)
 - `.changeset/` — Changesets config and pending release notes for the published packages
-- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published), `DEPLOY_KEYS.md` (how CI decrypts without the server holding a key — the security design the Pipelines work builds on), `PERF_BASELINE.md` (the measured numbers every Performance ticket is compared against)
+- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published), `DEPLOY_KEYS.md` (how CI decrypts without the server holding a key — the security design the Pipelines work builds on), `PERF_BASELINE.md` (the measured numbers every Performance ticket is compared against), `CI.md` (what CI enforces and why — typecheck, coverage floor, dependency audit)
 - root `package.json` — workspace scripts fan out via `pnpm --filter`
 
 Commands (run from repo root unless noted):
 - `pnpm dev` / `pnpm build` — run/build the web app
 - `pnpm --filter @envhq/web test:perf` — the performance baseline harness; refreshes the numbers in `docs/PERF_BASELINE.md` (needs `TEST_DATABASE_URL`)
+- `pnpm typecheck` — `tsc --noEmit` across every package (web's needs a prior `pnpm build`:
+  `next-env.d.ts` imports `.next/types/routes.d.ts`, which only a build generates)
+- `pnpm --filter @envhq/web test:coverage` — the same tests plus the `src/lib` coverage floor
+  that CI enforces (see `docs/CI.md`)
 - `pnpm --filter @envhq/web test` / `test:watch` — vitest (the `authz-db` and `contract` projects need a real Postgres via `TEST_DATABASE_URL`, e.g. `postgres://envhq_test:envhq_test@localhost:5432/envhq_test`)
 - `pnpm --filter @envhq/web lint` — eslint
 - `pnpm --filter @envhq/web lint:openapi` — lints `openapi.yaml` with Redocly

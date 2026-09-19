@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from "vitest";
 import fixture from "./access-matrix.fixtures.json";
 import { testDb, schema } from "@/test-support/db";
-import { seedFixtureWorld, type FixtureWorld } from "@/test-support/seed-fixture";
+import { seedFixtureWorld, type FixtureEntities, type FixtureWorld } from "@/test-support/seed-fixture";
 import { setOrgRole, setOrgAdminList, setMyOrgs } from "@/test-support/mock-orgs";
 import {
   listAccessibleProjects,
@@ -21,7 +21,7 @@ import {
 let world: FixtureWorld;
 
 beforeAll(async () => {
-  world = await seedFixtureWorld(testDb, fixture.entities);
+  world = await seedFixtureWorld(testDb, fixture.entities as FixtureEntities);
 });
 
 describe("listAccessibleProjects", () => {

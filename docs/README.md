@@ -11,6 +11,7 @@ rebrand note in [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md)).
 | [RELEASE_POLICY.md](./RELEASE_POLICY.md) | How the app is deployed and the CLI is published — versioning, tagging, and migration constraints. | Publishing the CLI; deploying; writing a migration. |
 | [DEPLOY_KEYS.md](./DEPLOY_KEYS.md) | The security design for **how CI decrypts** without EnvHQ ever holding a decryption key — deploy keys, scope, rotation, revocation, and the designs rejected. | Building anything in the Pipelines workstream; before proposing any server-side decrypt. |
 | [PERF_BASELINE.md](./PERF_BASELINE.md) | The measured performance baseline — query counts, Clerk call counts and timings per route, with what each number is and isn't. | Starting any Performance ticket; before claiming something got faster. |
+| [CI.md](./CI.md) | What CI enforces and why — the typecheck, coverage-floor and dependency-audit gates, and how to change one honestly. | Changing a CI gate; a coverage or audit failure you did not expect. |
 
 **New session? Start with [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md).** It's the
 canonical picture of the current system and is kept in sync with the code, so it

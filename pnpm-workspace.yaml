@@ -1,6 +1,12 @@
 packages:
   - "apps/*"
   - "packages/*"
+# browserslist <=4.28.6 carries two high advisories and reaches us only as a
+# transitive of next > styled-jsx > @babel/*. Nothing here depends on it
+# directly, so a patch-level floor is the whole fix; drop this once the
+# upstream chain ships a patched range on its own.
+overrides:
+  browserslist: ">=4.28.7"
 allowBuilds:
   '@clerk/shared': true
   esbuild: true

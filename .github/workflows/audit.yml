@@ -1,0 +1,38 @@
+name: Audit
+
+# Dependency auditing runs on a schedule, not on every push (RM-4). A new
+# advisory against an unchanged lockfile is news whether or not anyone pushed
+# that week, and running it per-push would add latency to every PR to re-check
+# a dependency tree that usually hasn't moved.
+on:
+  schedule:
+    # Mondays, 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      # `pnpm audit` reads the lockfile, so there is nothing to install first.
+      #
+      # The gate is scoped to production dependencies: those are the ones that
+      # reach a running deployment. Dev-only advisories (eslint, the shadcn
+      # CLI, swagger-parser and their transitives) are real but are not
+      # reachable by a request, and gating on them means a permanently red
+      # scheduled job that everyone learns to ignore — which is worse than no
+      # job at all. They are reported immediately below instead.
+      - name: Production dependencies (blocking)
+        run: pnpm audit --prod --audit-level=high
+
+      - name: Full tree, dev tooling included (informational)
+        if: always()
+        continue-on-error: true
+        run: pnpm audit

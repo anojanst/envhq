@@ -33,6 +33,52 @@ export default defineConfig({
     },
   },
   test: {
+    // RM-4's coverage floor. Scoped to `src/lib` deliberately: that is where
+    // the authorization matrix and the key-management code live, and it is
+    // the code a silently-deleted test file would stop protecting. Pages and
+    // route handlers are covered by the `contract` project end-to-end, but
+    // measuring them here would turn the number into a proxy for "how much
+    // UI exists" rather than "is the domain logic still tested".
+    //
+    // The thresholds are a FLOOR, not a target. RM-4's gotcha is explicit:
+    // "Coverage as a number is a bad target. The floor exists to catch
+    // deletions, not to be raised for its own sake." Raise these only when a
+    // deliberate new test suite makes the old floor meaningless — never to
+    // chase a rounder number.
+    coverage: {
+      provider: "v8",
+      include: ["src/lib/**"],
+      exclude: ["src/lib/**/*.test.ts", "src/lib/**/*.fixtures.json"],
+      reporter: ["text-summary", "json-summary"],
+      thresholds: {
+        // Floors measured on 2026-09-19, set ~1 point under what this suite
+        // actually produces so ordinary v8 counting noise doesn't fail a
+        // build. Actuals then: lines 73.35, functions 72.84, statements
+        // 69.75, branches 60.95. Refresh with the command in docs/CI.md --
+        // and only when a new suite makes the old floor meaningless, never to
+        // chase a rounder number.
+        lines: 72,
+        functions: 71,
+        statements: 68,
+        branches: 59,
+        // access.ts is the authorization matrix -- the module this floor
+        // exists for. It is fully line-covered by the `authz-db` project and
+        // has no business regressing, so it carries its own floor instead of
+        // hiding inside the average. Actuals: lines 100, functions 100,
+        // statements 95.45, branches 92.3.
+        //
+        // Verified against this vitest version: a glob threshold does NOT
+        // remove the file from the global numbers above, so access.ts is
+        // counted twice -- once on its own, once in the average. That is
+        // intentional; it means a deletion fails both checks.
+        "src/lib/access.ts": {
+          lines: 100,
+          functions: 100,
+          statements: 95,
+          branches: 92,
+        },
+      },
+    },
     projects: [
       {
         extends: true,
