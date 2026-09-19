@@ -47,7 +47,7 @@ source of truth.** v1 is **personal-only** — every row is scoped to a Clerk us
         │   • getUserId(): session OR bearer      │
         │   • AES-256-GCM encrypt/decrypt         │
         └──────────────────┬────────────────────┘
-                           │ Drizzle (neon-http)
+                           │ Drizzle (postgres-js)
                            ▼
                   ┌──────────────────┐
                   │  Neon Postgres    │  (ciphertext only)
@@ -63,9 +63,9 @@ source of truth.** v1 is **personal-only** — every row is scoped to a Clerk us
 |---|---|
 | Runtime | Node.js ≥ 22.13 (dev on 22.22.3 via nvm) |
 | Package manager | pnpm 11 (workspaces) |
-| Web framework | Next.js **16.2.10** (App Router, Turbopack), React **19.2.4** |
+| Web framework | Next.js **16.3.5** (App Router, Turbopack), React **19.2.4** |
 | Auth | Clerk (`@clerk/nextjs` **7.5.14**) |
-| DB | Neon Postgres via `@neondatabase/serverless` **1.1.0** |
+| DB | Neon Postgres via `postgres` (postgres-js) **3.4.9** |
 | ORM | Drizzle **0.45.2** + drizzle-kit 0.31 |
 | UI | Tailwind CSS v4, shadcn (**base-nova** style, built on `@base-ui/react`), lucide-react, next-themes 0.4.6 |
 | CLI | TypeScript, commander **14**, bundled with tsup, run via tsx in dev |
@@ -318,7 +318,8 @@ hash is ever stored).
 - **Authorization** is ownership-scoped in `lib/access.ts`
   (`getOwnedProject/Environment/Var`) — every query filters up to
   `projects.user_id = <caller>`; missing/foreign rows are treated as 404.
-- API route handlers set `export const runtime = "nodejs"` (crypto + neon-http).
+- API route handlers set `export const runtime = "nodejs"` (crypto, and
+  postgres-js needs a raw TCP socket).
 
 ## 8. API reference
 
