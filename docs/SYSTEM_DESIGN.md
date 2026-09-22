@@ -467,7 +467,10 @@ into the CLI by tsup). Runs on server and client.
   canonical list and documents each one — copy it to `.env.local` locally, and
   set the same required vars in Vercel. Required: `DATABASE_URL`,
   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and the four Clerk
-  routing vars. Optional: `DATABASE_POOL_MAX`, `DATABASE_CA_CERT`.
+  routing vars, and `CLERK_WEBHOOK_SIGNING_SECRET`. Optional:
+  `DATABASE_POOL_MAX`, `DATABASE_PREPARE`, `DATABASE_CA_CERT` — all three are
+  connection-pool settings, explained with their measurements in
+  [`OPERATIONS.md`](./OPERATIONS.md).
   There is no `ENV_ENCRYPTION_KEY` — M6 moved encryption client-side and no
   code reads it (§6).
 - Migrations run with prod `DATABASE_URL`: `pnpm --filter @envhq/web db:migrate`.

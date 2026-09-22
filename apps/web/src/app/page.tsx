@@ -5,8 +5,6 @@ import Link from "next/link";
 // image cache and any browser or CDN copy. A fixed /public path does not, and
 // silently keeps serving the previous render.
 import heroArtwork from "@/assets/hero-encrypted-secrets.jpg";
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -177,10 +175,16 @@ const FAQ = [
   },
 ];
 
-export default async function LandingPage() {
-  const { userId } = await auth();
-  if (userId) redirect("/dashboard");
-
+/**
+ * Statically prerendered (RM-8). This page used to call `auth()` to bounce a
+ * signed-in visitor to the dashboard, and a single `auth()` is enough to make
+ * the whole route server-rendered on demand — the one public page that could
+ * not be served from the CDN. The redirect still happens; it moved to
+ * `middleware.ts`, which runs before the cache and is the layer meant for a
+ * decision that depends on who is asking. Nothing here may read the session,
+ * or the route silently goes dynamic again.
+ */
+export default function LandingPage() {
   return (
     <main className="public-dark flex flex-1 flex-col bg-background text-foreground">
       <PublicHeader />

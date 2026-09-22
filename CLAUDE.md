@@ -12,7 +12,7 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
   - `src/app/api/` — Next.js route handlers: `orgs`, `projects`, `environments`, `vars`, `groups`, `tokens`, `users`, `cli`, `me`, `webhooks/clerk` (inbound Clerk user sync — Svix-signature authenticated, the one route that doesn't call `getUserId`)
   - `src/app/sign-in`, `src/app/sign-up` — Clerk-hosted auth pages
   - `src/app/docs/` — public docs site (`getting-started`, `cli`, `security`, `limitations`, `web-app`) — distinct from the internal `docs/` at repo root
-  - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client
+  - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client, `pool.ts` (connection-pool sizing and prepared-statement settings — pure, so it is testable; see `docs/OPERATIONS.md`)
   - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` (key management), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/Clerk measurement — counts and durations only, never SQL or parameters), `user-profiles.ts` (the local `user_profiles` mirror of Clerk display names — decorative only, never an authorization input)
   - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db` and `contract` vitest projects; `contract/` holds the openapi.yaml-vs-live-routes contract suite; `perf/` holds the RM-5 baseline harness (its own `perf` vitest project, excluded from `pnpm test`)
   - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`
@@ -26,7 +26,7 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 - `.claude/commands/` — repo slash commands: `/recommend-next` (pick the next roadmap ticket) and `/implement <ticket>` (fetch it from Notion and build it)
 - `.github/workflows/` — CI (`ci.yml`), the weekly dependency audit (`audit.yml`), CLI publishing via Changesets (`release.yml`), CLA enforcement (`cla.yml`)
 - `.changeset/` — Changesets config and pending release notes for the published packages
-- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published), `DEPLOY_KEYS.md` (how CI decrypts without the server holding a key — the security design the Pipelines work builds on), `PERF_BASELINE.md` (the measured numbers every Performance ticket is compared against), `CI.md` (what CI enforces and why — typecheck, coverage floor, dependency audit)
+- `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published), `DEPLOY_KEYS.md` (how CI decrypts without the server holding a key — the security design the Pipelines work builds on), `PERF_BASELINE.md` (the measured numbers every Performance ticket is compared against), `CI.md` (what CI enforces and why — typecheck, coverage floor, dependency audit), `OPERATIONS.md` (the `instances × pool max` connection ceiling, and what may be cached)
 - root `package.json` — workspace scripts fan out via `pnpm --filter`
 
 Commands (run from repo root unless noted):
@@ -101,6 +101,26 @@ display names cost no Clerk call per render. It is refreshed by the
   admin staying admin for the length of a TTL is a real access consequence.
   The per-org fan-out was removed by passing the already-fetched role down, not
   by caching it longer.
+
+### Public pages are static; authenticated responses are never cached
+
+Two RM-8 rules that a reasonable-looking change breaks without any error:
+
+- **A single session read makes a whole route dynamic.** `/`, `/terms` and
+  `/docs/**` are statically prerendered and served from the CDN. One `auth()`
+  call on any of them — which is how the landing page used to bounce signed-in
+  visitors — turns that page into a function invocation for every logged-out
+  visitor. The landing redirect lives in `middleware.ts` for exactly this
+  reason. `pnpm --filter @envhq/web build` shows `○` or `ƒ` per route; the
+  public ones must all be `○`.
+- **Every `api/` response carries `Cache-Control: private, no-store`**, from
+  `json()` in `lib/api.ts`. These routes answer as the caller, so a shared
+  cache holding one would serve one customer's data to another.
+  `test-support/contract/helpers.ts` asserts it on every response, so a route
+  that builds its own fails on its first contract test.
+
+Pool sizing belongs with these: the database sees `instances × max`, not
+`max`. See `docs/OPERATIONS.md` before changing `src/db/pool.ts`.
 
 ### Server-only modules
 

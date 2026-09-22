@@ -42,8 +42,11 @@ interface ClerkUserEvent {
   };
 }
 
+// Local rather than `lib/api.ts`'s: this route answers Svix, not a browser
+// or the CLI, and returns a bare `Response` because nothing here needs
+// Next's request plumbing. Same no-store header for the same reason.
 function json(body: unknown, status: number): Response {
-  return Response.json(body, { status });
+  return Response.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function POST(req: Request): Promise<Response> {

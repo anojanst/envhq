@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
 import { countQuery } from "@/lib/perf";
+import { poolOptions } from "./pool";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -9,24 +10,18 @@ if (!connectionString) {
 }
 
 /**
- * Optional PEM contents for a custom root CA, for a database that requires one.
- * Unset in normal operation — Neon's certificate chain is publicly trusted.
- *
- * When unset, `ssl` is deliberately left undefined rather than forced on:
- * postgres-js already parses `sslmode` off `DATABASE_URL` itself (e.g.
- * `?sslmode=require`), so forcing it here would override a connection
- * string that intentionally specifies its own mode (including
- * `sslmode=disable` for local/plain Postgres) instead of deferring to it.
+ * RM-8: the pool this process opens is not the only one. On Vercel every
+ * concurrent invocation is its own instance with its own pool, so the
+ * database sees `instances x max` connections, not `max`. The sizing, the
+ * idle reclaim and the prepared-statement decision all live in `./pool.ts`,
+ * which is pure and directly tested; this module only binds it to the
+ * environment. The ceiling arithmetic an operator needs is in
+ * `docs/OPERATIONS.md`.
  */
-const caCert = process.env.DATABASE_CA_CERT;
-
 function createClient() {
   // Non-null: the throw above guarantees this by the time createClient runs;
   // TS doesn't carry that narrowing across the function boundary on its own.
-  return postgres(connectionString!, {
-    max: Number(process.env.DATABASE_POOL_MAX ?? 10),
-    ...(caCert ? { ssl: { ca: caCert, rejectUnauthorized: true } } : {}),
-  });
+  return postgres(connectionString!, poolOptions());
 }
 
 // Next's dev server re-evaluates this module on every hot reload without

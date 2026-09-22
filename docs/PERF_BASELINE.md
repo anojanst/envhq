@@ -32,6 +32,13 @@ Measured with the caller as an org **member** with explicit grants, not an org
 admin. Admins short-circuit to "all projects" and skip the `access_grants` join,
 which is the cheaper path; measuring the granted path keeps this honest.
 
+> **Connection pooling is measured separately.** The numbers here are per
+> request — queries, Clerk calls, milliseconds. How many database connections
+> those requests are collectively allowed to open, and what happens when
+> demand exceeds the pool, is RM-8's territory: see
+> [OPERATIONS.md](./OPERATIONS.md). Its load test
+> (`test-support/perf/connections.test.ts`) runs in this same `perf` project.
+
 ## Server-side baseline
 
 25 iterations per route, median and p95 of total wall time.
