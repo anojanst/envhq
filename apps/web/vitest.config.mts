@@ -97,6 +97,7 @@ export default defineConfig({
             "src/lib/access.list.test.ts",
             "src/test-support/contract/**/*.test.ts",
             "src/test-support/perf/**/*.test.ts",
+            "src/**/*.render.test.tsx",
           ],
           // apps/web/src/db/index.ts throws at import time if DATABASE_URL
           // is unset, and access.ts (imported by access.helpers.test.ts for
@@ -106,6 +107,23 @@ export default defineConfig({
           // nothing in the "unit" project ever issues a query. Same
           // placeholder pattern the CI build step already uses.
           env: { DATABASE_URL: "postgres://placeholder:placeholder@localhost:5432/placeholder" },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          // RM-9's render profile and the regression guard that came out of
+          // it. A DOM is required to answer "how many rows re-render per
+          // keystroke", which is the question the ticket asks and the one
+          // the other projects (all `node`) structurally cannot.
+          //
+          // happy-dom rather than jsdom: this mounts one component tree and
+          // types into it, and happy-dom is markedly quicker to construct,
+          // which matters when the fixture is 500 rows.
+          name: "ui",
+          environment: "happy-dom",
+          include: ["src/**/*.render.test.tsx"],
+          setupFiles: ["./src/test-support/ui.setup.ts"],
         },
       },
       {

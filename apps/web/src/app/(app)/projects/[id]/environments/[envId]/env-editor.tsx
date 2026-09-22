@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -68,6 +68,31 @@ async function encryptField(dek: Uint8Array, value: string) {
 
 function decryptRow(dek: Uint8Array, row: Row): Promise<string> {
   return decryptValue(dek, { ciphertext: row.ciphertext, nonce: row.iv });
+}
+
+/**
+ * Plaintext for the named rows. Pure — it touches no state, so both the
+ * on-demand path and the post-reload refill can share it without either
+ * having to reach into the other's closure.
+ *
+ * A row that won't decrypt yields a placeholder rather than throwing: one
+ * bad row (ciphertext written under a DEK generation this client no longer
+ * holds) shouldn't blank the rest of the table.
+ */
+async function decryptRows(dek: Uint8Array, rows: Row[], ids: string[]): Promise<Record<string, string>> {
+  const wanted = new Set(ids);
+  const entries = await Promise.all(
+    rows
+      .filter((r) => wanted.has(r.id))
+      .map(async (r) => {
+        try {
+          return [r.id, await decryptRow(dek, r)] as const;
+        } catch {
+          return [r.id, "(couldn't decrypt)"] as const;
+        }
+      }),
+  );
+  return Object.fromEntries(entries);
 }
 
 export function EnvEditor({
@@ -244,31 +269,78 @@ function EnvEditorReady({
     setVars(initialVars);
   }
 
-  // Decrypted once the DEK is ready — masking below is a UI convenience
-  // only (same as before: the server used to send plaintext for every row
-  // regardless of reveal state), not a real security boundary, since the
-  // DEK is already in memory either way.
+  /**
+   * Plaintext for the rows that have actually been asked for (RM-9).
+   *
+   * This used to decrypt every row on mount, in one `Promise.all`. The cost
+   * was never the crypto — 500 values decrypt in 3.4ms — it was what
+   * happened afterwards: the result landed on every row at once and
+   * re-rendered the whole table, 105ms of work updating text that is masked
+   * and so not on screen. Values are hidden until revealed, so nearly all of
+   * that was decrypting and rendering secrets nobody had asked to see.
+   *
+   * Rows that are never revealed now hold a `value` of `""` from first
+   * render to last, which is what lets `memo` on `VarRow` skip them. Reveal,
+   * copy and edit each pull the one value they need; all three were already
+   * async, and a single decrypt is ~7 microseconds.
+   *
+   * This changes when the crypto runs, not what it does — the sequences
+   * ADR-002 reasons about are untouched and no key moves anywhere. A side
+   * effect worth having: far less plaintext sits in memory at once.
+   */
   const [decrypted, setDecrypted] = useState<Record<string, string>>({});
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all(
-      vars.map(async (v) => {
-        try {
-          return [v.id, await decryptRow(dek, v)] as const;
-        } catch {
-          return [v.id, "(couldn't decrypt)"] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (!cancelled) setDecrypted(Object.fromEntries(entries));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [vars, dek]);
+
+  // A reload replaces every row's ciphertext, so cached plaintext is no
+  // longer known to match it. Dropped during render rather than in an effect
+  // — React's documented pattern for state that reacts to a change, and the
+  // same one the `initialVars` resync above uses.
+  const [prevVars, setPrevVars] = useState(vars);
+  if (vars !== prevVars) {
+    setPrevVars(vars);
+    setDecrypted({});
+  }
+
+  /**
+   * Decrypts the named rows and merges them in, returning the plaintext for
+   * the caller to use immediately — a caller can't read it back out of state
+   * it just set.
+   *
+   * Deliberately re-decrypts rather than checking what is already cached:
+   * a cache check would have to read current state, which a stable callback
+   * can't do without a ref, and the work it would save is microseconds.
+   */
+  const decryptIds = useCallback(
+    async (ids: string[]): Promise<Record<string, string>> => {
+      const found = await decryptRows(dek, vars, ids);
+      setDecrypted((prev) => ({ ...prev, ...found }));
+      return found;
+    },
+    [vars, dek],
+  );
 
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [revealAll, setRevealAll] = useState(false);
+
+  // Whatever is on screen has to come back after a reload. `vars` changing
+  // drops the cache above — correct, since the ciphertext may have moved
+  // under it — but a row the user had revealed would then render as
+  // "(empty)" rather than its value. Refill exactly those, and only when
+  // something is actually missing, so this settles in one pass instead of
+  // re-triggering itself.
+  const shownIds = revealAll ? vars.map((v) => v.id) : [...revealed];
+  const missingIds = shownIds.filter((id) => decrypted[id] === undefined).join(",");
+  useEffect(() => {
+    if (!missingIds) return;
+    let cancelled = false;
+    void (async () => {
+      const found = await decryptRows(dek, vars, missingIds.split(","));
+      if (!cancelled) setDecrypted((prev) => ({ ...prev, ...found }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [missingIds, vars, dek]);
+
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
@@ -277,10 +349,20 @@ function EnvEditorReady({
     ? vars.filter((v) => v.key.toLowerCase().includes(query.toLowerCase()))
     : vars;
 
-  async function reload() {
+  // Every callback handed to a row is wrapped so its identity survives a
+  // parent re-render (RM-9). `memo` on `VarRow` is worthless without this: a
+  // fresh arrow function per render is a changed prop, and a changed prop is
+  // a re-render, so 500 rows would keep re-rendering on every keystroke in
+  // the search box exactly as they did before.
+  //
+  // The id and the value travel as arguments rather than being closed over,
+  // which is what lets these have empty dependency lists — a handler that
+  // closed over `decrypted` would get a new identity the moment decryption
+  // landed, and take the whole table with it.
+  const reload = useCallback(async () => {
     const data = await api<{ vars: Row[] }>(`/api/environments/${environmentId}`);
     setVars(data.vars);
-  }
+  }, [environmentId]);
 
   async function deleteEnvironment() {
     await api(`/api/environments/${environmentId}`, { method: "DELETE" });
@@ -292,19 +374,40 @@ function EnvEditorReady({
     return revealAll || revealed.has(id);
   }
 
-  function toggleReveal(id: string) {
-    setRevealed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  const toggleReveal = useCallback(
+    async (id: string) => {
+      // Decrypt before flipping the flag, so a row never renders revealed
+      // with nothing in it.
+      await decryptIds([id]);
+      setRevealed((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [decryptIds],
+  );
 
-  async function copy(text: string, id: string) {
-    await navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1200);
+  const copy = useCallback(
+    async (id: string) => {
+      const values = await decryptIds([id]);
+      await navigator.clipboard.writeText(values[id] ?? "");
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1200);
+    },
+    [decryptIds],
+  );
+
+  /** Entering edit mode needs the plaintext; the row asks for it here. */
+  const requestValue = useCallback(
+    async (id: string) => (await decryptIds([id]))[id] ?? "",
+    [decryptIds],
+  );
+
+  async function revealAllToggle() {
+    if (!revealAll) await decryptIds(vars.map((v) => v.id));
+    setRevealAll((v) => !v);
   }
 
   async function copyAll() {
@@ -348,7 +451,7 @@ function EnvEditorReady({
             className="w-full pl-8"
           />
         </div>
-        <Button variant="outline" size="sm" onClick={() => setRevealAll((v) => !v)}>
+        <Button variant="outline" size="sm" onClick={revealAllToggle}>
           {revealAll ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           {revealAll ? "Hide all" : "Reveal all"}
         </Button>
@@ -410,8 +513,9 @@ function EnvEditorReady({
                   dek={dek}
                   revealed={isRevealed(row.id)}
                   copied={copiedId === row.id}
-                  onToggleReveal={() => toggleReveal(row.id)}
-                  onCopy={() => copy(decrypted[row.id] ?? "", row.id)}
+                  onToggleReveal={toggleReveal}
+                  onCopy={copy}
+                  onRequestValue={requestValue}
                   onChanged={reload}
                 />
               ))
@@ -426,7 +530,21 @@ function EnvEditorReady({
   );
 }
 
-function VarRow({
+/**
+ * Memoised (RM-9). At 500 variables the table was the whole cost of this
+ * screen: mounting it took 436ms and a single keystroke in the search box
+ * 53ms, because every keystroke re-rendered the parent and every row with
+ * it. Decryption, the suspected culprit, was 3.4ms of that 436 — see
+ * `env-editor.render.test.tsx`, which pins the result as a slope rather
+ * than a millisecond budget.
+ *
+ * The props are all primitives, plus `row` (stable while `vars` is) and the
+ * parent's `useCallback`-wrapped handlers, so the default shallow comparison
+ * is the right one. Anything added here that is constructed during the
+ * parent's render — an object literal, an inline arrow, a fresh array —
+ * silently undoes this, with no error and no failing test except that one.
+ */
+const VarRow = memo(function VarRow({
   row,
   value,
   dek,
@@ -434,6 +552,7 @@ function VarRow({
   copied,
   onToggleReveal,
   onCopy,
+  onRequestValue,
   onChanged,
 }: {
   row: Row;
@@ -441,23 +560,24 @@ function VarRow({
   dek: Uint8Array;
   revealed: boolean;
   copied: boolean;
-  onToggleReveal: () => void;
-  onCopy: () => void;
+  onToggleReveal: (id: string) => void;
+  onCopy: (id: string) => void;
+  onRequestValue: (id: string) => Promise<string>;
   onChanged: () => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [key, setKey] = useState(row.key);
-  const [editValue, setEditValue] = useState(value);
+  const [editValue, setEditValue] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // `value` starts as "" (decryption is still in flight when this row first
-  // mounts) and arrives shortly after — pick it up once it does. Adjusted
-  // during render rather than in an effect, same reasoning as the parent's
-  // `initialVars` resync above.
-  const [prevValue, setPrevValue] = useState(value);
-  if (value !== prevValue) {
-    setPrevValue(value);
-    setEditValue(value);
+  // The plaintext is pulled when editing starts rather than held as a prop:
+  // an unrevealed row is never decrypted, so there is nothing to seed from.
+  // Awaiting first also means the textarea can't briefly show empty and save
+  // that over a real value.
+  async function startEditing() {
+    setEditValue(await onRequestValue(row.id));
+    setKey(row.key);
+    setEditing(true);
   }
 
   async function save() {
@@ -512,7 +632,6 @@ function VarRow({
               variant="ghost"
               onClick={() => {
                 setKey(row.key);
-                setEditValue(value);
                 setEditing(false);
               }}
             >
@@ -539,23 +658,50 @@ function VarRow({
       </TableCell>
       <TableCell className="text-right align-top">
         <div className="flex justify-end gap-0.5">
-          <Button variant="ghost" size="icon" className="size-7" onClick={onToggleReveal}>
+          {/* Icon-only, so each needs a name of its own: "Reveal" alone is
+              four identical buttons to a screen reader once the table has
+              more than one row. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label={`${revealed ? "Hide" : "Reveal"} ${row.key}`}
+            onClick={() => onToggleReveal(row.id)}
+          >
             {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </Button>
-          <Button variant="ghost" size="icon" className="size-7" onClick={onCopy}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label={`Copy ${row.key}`}
+            onClick={() => onCopy(row.id)}
+          >
             {copied ? <Check className="size-4 text-green-600" /> : <Copy className="size-4" />}
           </Button>
-          <Button variant="ghost" size="icon" className="size-7" onClick={() => setEditing(true)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label={`Edit ${row.key}`}
+            onClick={startEditing}
+          >
             <Pencil className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="size-7" onClick={remove}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label={`Delete ${row.key}`}
+            onClick={remove}
+          >
             <Trash2 className="size-4" />
           </Button>
         </div>
       </TableCell>
     </TableRow>
   );
-}
+});
 
 function AddRow({
   environmentId,

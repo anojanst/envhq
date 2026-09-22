@@ -167,3 +167,65 @@ distribution, and the real Clerk share of it. That is the number that turns the
 The log line carries counts and durations only — never SQL, parameters,
 variable names or values. See the invariant at the top of
 [`lib/perf.ts`](../apps/web/src/lib/perf.ts).
+
+## The environment editor (RM-9)
+
+Measured with `pnpm --filter @envhq/web test` (the `ui` project), which mounts
+the real editor over a real DEK and real ciphertext and records React's own
+commit timings. **These are happy-dom numbers, not browser numbers** — a real
+DOM is considerably faster. The ratios are the durable result; the absolute
+milliseconds are environment-bound and are here to be compared against each
+other, not quoted.
+
+| | Before | After |
+|---|---|---|
+| One keystroke in the search box, 500 vars | 53.3 ms | **1.4 ms** |
+| Same keystroke, 10 vars | 5.2 ms | 1.8 ms |
+| Keystroke cost, 500 vs 10 | **10.3×** | **0.8× — flat** |
+| Mount (page load → usable editor), 500 vars | 451 ms | **368 ms** |
+| Commits during mount | 2 (347 ms + 105 ms) | **1** |
+| Values decrypted on load | 500 | **0** |
+
+### What the profile actually found
+
+Decryption was the suspect and was not the culprit. 500 values decrypt in
+**3.4 ms** total — 6.7 µs each, measured against the real `@envhq/crypto`.
+That is under 1% of mount, so the ticket's "decrypt off the main thread"
+option would have moved the DEK across a worker boundary — a real security
+question, per the ticket's own gotcha — to save a single frame, once.
+
+The cost was re-rendering. Every keystroke in the search box re-rendered the
+parent, and every row with it, because each row was handed freshly-created
+callbacks. Two changes:
+
+- **`VarRow` is memoised behind `useCallback`-stable handlers.** The id and
+  value travel as arguments rather than being closed over, which is what lets
+  those handlers have empty dependency lists.
+- **Decryption is lazy.** Values are masked until revealed, so decrypting all
+  500 up front produced a second full-table commit — 105 ms spent updating
+  text that was not on screen. Reveal, copy and edit each pull the one value
+  they need. This changes *when* the crypto runs, not what it does (ADR-002).
+
+### Why the list is not virtualised
+
+The ticket offers virtualisation "if the profile says rendering — not crypto —
+is the cost". It is, so the option was taken seriously and measured. Mount is
+linear in row count, with no cliff:
+
+| Rows | 100 | 250 | 500 | 1000 | 2000 |
+|---|---|---|---|---|---|
+| Mount | 109 ms | 168 ms | 275 ms | 574 ms | 1189 ms |
+| Per row | 1.09 ms | 0.67 ms | 0.55 ms | 0.57 ms | 0.60 ms |
+
+At the size the ticket names — hundreds — the fix above is enough, and the
+remaining cost is the unavoidable one of putting those rows on screen.
+Virtualising a table of variable-height rows would cost a dependency, spacer
+row markup, in-page browser find (Cmd+F stops finding keys that aren't
+rendered), and more accessibility surface — against roughly a tenth of a
+second at the target size.
+
+**The trigger to revisit**: environments routinely past ~1,000 variables, or
+the keystroke ratio above drifting off flat. The curve is linear, so a
+thousand variables is about double the current cost and two thousand about
+quadruple; there is no point before that where this decision changes
+suddenly.

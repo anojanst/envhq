@@ -14,9 +14,21 @@ which runs weekly from [`audit.yml`](../.github/workflows/audit.yml).
 | `lint` | web | ESLint, including the Next rules. |
 | `build` | web | A broken production build. Also generates `.next/types`, which the typecheck needs. |
 | `typecheck` | web, cli, packages | Type errors anywhere in the tsconfig, including files nothing imports. |
-| `test:coverage` | web | 165 tests across the `unit`, `authz-db` and `contract` projects, plus the coverage floor. |
+| `test:coverage` | web | 202 tests across the `unit`, `ui`, `authz-db` and `contract` projects, plus the coverage floor. |
 | `test` | cli, packages | The `node --test` suites for the CLI, crypto and parser. |
 | `audit` | weekly | New advisories against production dependencies. |
+
+### The `ui` project
+
+Added by RM-9. It mounts real components under happy-dom (files named
+`*.render.test.tsx`) and is where render cost is pinned — specifically, that a
+keystroke in the environment editor does not get more expensive as rows are
+added. It asserts a **ratio**, never a millisecond budget, so it means the
+same thing on a CI runner as on a laptop. It needs no database.
+
+If it fails, something re-introduced a prop that changes identity on every
+parent render — an inline arrow, an object literal, a fresh array — and
+`memo` on the row stopped working. See `docs/PERF_BASELINE.md`.
 
 ## Typecheck
 
