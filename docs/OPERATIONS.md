@@ -59,24 +59,72 @@ Two changes, together:
    `-pooler` in it.
 2. Raise `DATABASE_POOL_MAX` to `10`.
 
-The second is not optional bookkeeping, it is the throughput you moved for. At
-50 concurrent requests with 5 ms of hold time per query:
+### Why 3 direct, and why 10 pooled
 
-| `max` | wall clock |
-|---|---|
-| 1 | 4748 ms |
-| 3 | 1854 ms |
-| 10 | 852 ms |
-| 20 | 464 ms |
+Measured through a real PgBouncer in transaction mode, 10 simulated
+instances each with its own pool, 100 concurrent requests, 5 ms of hold time
+per query. "Backends" is real Postgres connections, counted at Postgres.
 
-A bigger pool is genuinely faster per instance. The only reason the default is
-3 is that connections to an unpooled Postgres are a fixed, shared, small
-supply. Once the pooler is absorbing them, take the throughput.
+**Direct, `max_connections` 100:**
 
-This is deliberately a decision you make, not one inferred from the URL's
+| `max` | client conns | backends | wall | failed requests |
+|---|---|---|---|---|
+| 3 | 30 | 30 | 347 ms | 0 |
+| 5 | 50 | 50 | 285 ms | 0 |
+| 10 | 100 | 99 | 253 ms | **11** |
+| 20 | 200 | 99 | 248 ms | **438 of 500** |
+
+This is the whole reason the default is 3. It is not a performance
+preference — at `max: 10` across ten instances the database runs out of
+connections and starts refusing work, and at 20 most requests fail. The
+`instances x max` arithmetic isn't theoretical; that is it happening.
+
+**Through the pooler (server pool 64):**
+
+| `max` | client conns | backends | wall | failed |
+|---|---|---|---|---|
+| 3 | 30 | 30 | 410 ms | 0 |
+| 5 | 50 | 50 | 312 ms | 0 |
+| 10 | 100 | **64** | 228 ms | 0 |
+| 20 | 200 | **64** | 187 ms | 0 |
+
+Two things change. Backends stop tracking the client pool — 200 client
+connections still produce 64 backends, because capping them is what a pooler
+is for — and **nothing fails at any setting**. That is what makes raising
+this safe rather than merely faster.
+
+### What actually determines the right number
+
+Pool size per instance is a function of **concurrent requests per instance**,
+not of total traffic. A request issues at most 3 concurrent queries, so an
+instance serving R concurrent requests wants roughly `3R` connections before
+the pool stops being the limit.
+
+Vercel answers load with more instances rather than more load per instance,
+which is why this flattens out. Same pooler, same total traffic, 30
+instances instead of 10:
+
+| `max` | wall, 10 instances | wall, 30 instances |
+|---|---|---|
+| 3 | 410 ms | 190 ms |
+| 10 | 228 ms | 167 ms |
+| 20 | 187 ms | 170 ms |
+
+At 30 instances the whole range from 3 to 20 is within noise. The setting
+only matters when few instances are each carrying a lot — and past the
+pooler's own server pool it stops mattering at all, because that is then the
+constraint.
+
+So **10 is the knee, not a maximum**: it captures most of the available gain
+where the gain exists, and going further buys single-digit percentages
+against a limit the pooler owns anyway. Raise it beyond 10 only with a
+measurement of your own, and lower it only back towards 3 if you leave the
+pooler.
+
+This stays a decision you make rather than one inferred from the URL's
 shape. Inferring it would mean a direct database that merely looked pooled
-getting a pool three times too large — the failure that takes the whole app
-down rather than the one that makes it slow.
+getting a pool three times too large — and the direct table above shows
+exactly what that costs.
 
 ### Prepared statements
 

@@ -47,12 +47,22 @@ import type { Options, PostgresType } from "postgres";
  * a connection costs is the time it is *held*, and that is latency.
  *
  * So a bigger pool is genuinely faster per instance, and the reason to refuse
- * it is arithmetic rather than performance: those connections are real
- * Postgres backends out of a fixed, shared, small supply. Behind a
- * transaction-mode pooler they stop being real backends and that constraint
- * lifts — which is the point of moving to one, and the moment to raise
- * `DATABASE_POOL_MAX`. Deliberately an operator's decision taken alongside
- * the connection-string change, not something inferred from the URL's shape.
+ * it is not performance. Measured later through a real PgBouncer, with ten
+ * instances each holding their own pool against a 100-connection Postgres:
+ * at `max: 10` the database runs out of connections and refuses 11 requests,
+ * and at 20 it refuses 438 of 500. The `instances x max` arithmetic above is
+ * not a worry, it is that.
+ *
+ * Behind a transaction-mode pooler those connections stop being real
+ * backends — 200 client connections produced 64 — and nothing fails at any
+ * setting. That is what makes raising this safe, and the moment to do it is
+ * the connection-string change. Deliberately an operator's decision rather
+ * than something inferred from the URL's shape: a direct database that
+ * merely looked pooled would get a pool three times too large, which the
+ * numbers above show is an outage rather than a slowdown.
+ *
+ * `docs/OPERATIONS.md` carries both measured tables, and why 10 is the knee
+ * rather than a maximum.
  */
 export const DEFAULT_POOL_MAX = 3;
 
