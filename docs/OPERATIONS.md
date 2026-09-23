@@ -93,6 +93,31 @@ connections still produce 64 backends, because capping them is what a pooler
 is for — and **nothing fails at any setting**. That is what makes raising
 this safe rather than merely faster.
 
+### It is a ceiling, not an allocation
+
+Worth stating because it decides whether this is a cost question. `max` caps
+the pool; connections are opened on demand and released by `idle_timeout`.
+Measured against the production configuration at `max: 10`:
+
+| | backends open |
+|---|---|
+| Pool constructed | 0 |
+| After one query | 1 |
+| After 2 concurrent queries | 2 |
+| After 10 concurrent queries | 10 |
+| After the idle timeout | 0 |
+
+So raising this costs nothing until there is concurrency to use it. Neon
+bills compute time and storage, not connections — and what actually keeps a
+compute from autosuspending is connections *lingering*, which is
+`idle_timeout`, set here to 20s against postgres-js's default of `null`
+(never close). That is the setting that protects the bill; `max` is not.
+
+One caveat this repo cannot answer: on the pooled endpoint the client talks
+to Neon's PgBouncer rather than the compute, so how promptly the compute
+suspends depends on how Neon ages out its own server-side connections. Watch
+compute active-time in the Neon console, not connection counts.
+
 ### What actually determines the right number
 
 Pool size per instance is a function of **concurrent requests per instance**,
