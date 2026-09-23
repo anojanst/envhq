@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { projectKeys, accessGrants, groupMembers, projects, envVars, environments, type ProjectKeys } from "@/db/schema";
 import { listAccessibleUserIds } from "@/lib/access";
 import { getUserKeysBatch } from "@/lib/user-keys";
+import { listActiveDeployKeySubjectIds } from "@/lib/deploy-keys";
 
 /** Flags one or more projects as due for a DEK rotation (a revoke just happened). */
 async function markRotationPending(projectIds: string[]): Promise<void> {
@@ -174,8 +175,10 @@ export async function deleteProjectKeysForGroupEverywhere(groupId: string): Prom
  * itself: docs/DEPLOY_KEYS.md (ADR-020) requires active deploy keys to be
  * part of it, since a `project_keys` row the computation doesn't know about
  * fails every rotation as a `membership_mismatch` and would be deleted at
- * finalize. Widen `expected` when deploy keys land (RM-11); don't relax the
- * exact-match check.
+ * finalize. RM-11 widened `expected` accordingly — it is now onboarded
+ * members *plus* every active deploy key's subject id. The exact-match check
+ * was not relaxed to accommodate them, and must not be: it is what stops a
+ * client submitting a wrap for a subject the server never authorized.
  *
  * Finalize's own three writes (upsert, delete-stale, bump `keyVersion`) are
  * still issued as separate statements. Now that the driver supports
@@ -274,7 +277,12 @@ export async function finalizeRotation(
   // block it.
   const accessibleUserIds = await listAccessibleUserIds(project.orgId, projectId);
   const onboarded = await getUserKeysBatch(accessibleUserIds);
-  const expected = new Set(accessibleUserIds.filter((id) => onboarded[id]));
+  // Active deploy keys are expected wrap-holders too (ADR-020). Revoked ones
+  // deliberately are not: their wrap is already gone, and leaving them out
+  // here is what makes the delete-stale step below finish the job rather
+  // than a rotation quietly re-sealing the new DEK to a revoked pipeline.
+  const deploySubjectIds = await listActiveDeployKeySubjectIds(projectId);
+  const expected = new Set([...accessibleUserIds.filter((id) => onboarded[id]), ...deploySubjectIds]);
   const got = new Set(wraps.map((w) => w.subjectUserId));
   if (expected.size !== got.size || [...expected].some((id) => !got.has(id))) {
     return { ok: false, reason: "membership_mismatch", expected: [...expected], got: [...got] };

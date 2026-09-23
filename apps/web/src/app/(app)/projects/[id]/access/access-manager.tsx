@@ -123,8 +123,9 @@ export function AccessManager({
   async function rotateKey() {
     if (!dek || !rotationStatus) return;
     try {
-      const { members: keyMembers, totalAccessible } = await api<{
+      const { members: keyMembers, deployKeys, totalAccessible } = await api<{
         members: { userId: string; publicKey: string }[];
+        deployKeys: { subjectId: string; publicKey: string }[];
         totalAccessible: number;
       }>(`/api/projects/${projectId}/keys/members`);
       if (keyMembers.length < totalAccessible) {
@@ -139,6 +140,7 @@ export function AccessManager({
         targetKeyVersion: rotationStatus.currentKeyVersion + 1,
         environmentIds: environments.map((e) => e.id),
         members: keyMembers,
+        deployKeys,
       });
       toast.success("Encryption key rotated");
       await reloadRotationStatus();

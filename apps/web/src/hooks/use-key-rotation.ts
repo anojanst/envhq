@@ -30,6 +30,15 @@ export interface RunRotationArgs {
   environmentIds: string[];
   /** Every currently authorized member with a public key — must exactly match the project's real membership, or finalize rejects it. */
   members: { userId: string; publicKey: string }[];
+  /**
+   * Every **active** deploy key, with the subject id its wrap is stored
+   * under (RM-11). These are part of the expected wrap set server-side, so
+   * omitting them fails finalize as a `membership_mismatch` — and the
+   * failure is the good outcome: getting past it would delete the wraps and
+   * break every pipeline on the project. Revoked keys are absent by
+   * construction, which is how rotation stops re-sealing to them.
+   */
+  deployKeys: { subjectId: string; publicKey: string }[];
 }
 
 const UPLOAD_CHUNK_SIZE = 200;
@@ -39,7 +48,7 @@ export function useKeyRotation() {
   const [error, setError] = useState<string | null>(null);
 
   const run = useCallback(async (args: RunRotationArgs) => {
-    const { projectId, currentDek, targetKeyVersion, environmentIds, members } = args;
+    const { projectId, currentDek, targetKeyVersion, environmentIds, members, deployKeys } = args;
     setError(null);
     try {
       setPhase("fetching");
@@ -72,12 +81,19 @@ export function useKeyRotation() {
 
       setPhase("finalizing");
       const newDekB64 = encodeBase64(newDek);
-      const wraps = await Promise.all(
-        members.map(async (m) => ({
+      // One sealing path for both kinds of subject — `sealToPublicKey` is
+      // the same operation whether the recipient is a person or a pipeline,
+      // and ADR-020 is explicit that a second one must not appear.
+      const wraps = await Promise.all([
+        ...members.map(async (m) => ({
           subjectUserId: m.userId,
           wrappedDek: await sealToPublicKey(newDekB64, m.publicKey),
         })),
-      );
+        ...deployKeys.map(async (d) => ({
+          subjectUserId: d.subjectId,
+          wrappedDek: await sealToPublicKey(newDekB64, d.publicKey),
+        })),
+      ]);
       await api(`/api/projects/${projectId}/keys/rotate/finalize`, {
         method: "POST",
         body: { targetKeyVersion, wraps },

@@ -279,6 +279,48 @@ with its own security review, not as a convenience patch to a pipeline ticket.
 - **ADR-012** — the unencrypted-variable-names gap is now also a CI exposure, as
   the attacker table records. It does not block this design; it is one more
   argument for eventually closing that gap.
-- **RM-11** inherits the open implementation choices this document deliberately
-  leaves open: the subject-identity storage shape, the per-environment token
-  scope column, and surfacing the DEK version on `exportEnv`.
+- **RM-11** inherited the implementation choices this document deliberately
+  left open. It is now built, and chose as follows.
+
+## What RM-11 built
+
+Implemented 2026-09-23. This section records the three decisions this
+document left to the ticket, so the next reader does not have to infer them
+from the code.
+
+**Subject identity: a reserved namespace, not a second wrap table.** A deploy
+key's identity and metadata live in a new `deploy_keys` table, but its sealed
+DEK is an ordinary `project_keys` row under the subject id
+`deploy:<deploy_keys.id>`. One wrap table means rotation, reconciliation and
+"who can decrypt this project" each have exactly one place to look, which is
+the same instinct as this document's own gotcha about a second sealing path.
+The prefix cannot be spoofed because Clerk ids are `user_…` and no path takes
+a subject id from a client: `finalizeRotation` computes the expected set
+server-side and rejects anything that does not match it exactly.
+
+**The environment cap lives on the deploy key, not on the token.** ADR-020
+framed this as a per-environment column on `api_tokens`; RM-11 put it on
+`deploy_keys.environment_id` instead. The pipeline presents the key on the
+request, so the cap is enforced where the credential is, and `api_tokens`
+keeps its existing `{ projectId, capability }` scope unchanged. Same
+authorization property, one fewer concept. The UI states plainly, at the
+point of choosing it, that this is not a cryptographic boundary.
+
+**`exportEnv` surfaces the DEK version.** With `X-EnvHQ-Deploy-Key` set, the
+response carries `wrappedDek` and `keyVersion` alongside the pairs, so a job
+that unsealed the old DEK and fetched after a cutover can say "the project
+key rotated during this job" instead of reporting a decryption failure.
+
+Two further notes on what exists:
+
+- **The deploy key secret is `envhq_dk_v1.<publicKey>.<privateKey>`**, both
+  halves, because `unsealWithPrivateKey` binds the recipient's public key
+  into the HKDF and cannot open anything without it. Shipping only the
+  private half would make the credential depend on the server telling the
+  truth about which key it is.
+- **Audit is the key's own columns** — `created_by_user_id`, `created_at`,
+  `last_used_at`, `revoked_at`, `revoked_by_user_id` — which is what this
+  document asks for ("who created it, when, when it was last used, and what
+  it is for"). It is not an event log: it records the last use, not every
+  use. A per-request audit trail is a larger thing and belongs with RM-18's
+  operational visibility, not here.

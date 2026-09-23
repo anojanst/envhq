@@ -203,11 +203,35 @@ per user, `user_id` PK; `INSERT ... ON CONFLICT DO NOTHING` is the atomic get-or
 |---|---|---|
 | id | uuid PK | |
 | project_id | uuid FK → projects | cascade |
-| subject_user_id | text | who this wrap is for |
+| subject_user_id | text | who this wrap is for — a Clerk userId, **or** `deploy:<deploy_keys.id>` for a pipeline credential (RM-11) |
 | wrapped_dek | text | the DEK, sealed (`crypto_box_seal`-equivalent) to `subject_user_id`'s public key |
 | wrapped_by_user_id | text | who performed the wrap (audit) |
 | key_version | integer | which DEK generation this wrap corresponds to; default `1`, bumped by a rotation finalize |
 | | | **unique(project_id, subject_user_id)**, index on `project_id` |
+
+**`deploy_keys`** — a machine credential for a CI pipeline (RM-11, designed in
+[DEPLOY_KEYS.md](./DEPLOY_KEYS.md) / ADR-020). Only the public half exists
+server-side; the private half is shown once at creation and is unrecoverable.
+Its sealed DEK is an ordinary `project_keys` row under the subject id
+`deploy:<id>`, so there is exactly one wrap table and one sealing path.
+| col | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| project_id | uuid FK → projects | cascade |
+| environment_id | uuid FK → environments, null | null = whole project. An **authorization cap, not an isolation boundary** — DEKs are per project, so the key itself opens every environment |
+| public_key | text | base64 X25519 public half |
+| label | text | what it is for; a credential nobody can attribute is one nobody revokes |
+| created_by_user_id | text | |
+| token_id | uuid FK → api_tokens, null | the token issued with it; revoked in the same action |
+| last_used_at | timestamptz, null | |
+| revoked_at / revoked_by_user_id | timestamptz / text, null | |
+| | | **unique(project_id, public_key)**, index on `project_id` |
+
+A pipeline needs **both** secrets: `ENVHQ_TOKEN` to fetch ciphertext and
+`ENVHQ_DEPLOY_KEY` to decrypt it. `GET /api/environments/:id/export` with an
+`X-EnvHQ-Deploy-Key` header returns the wrap and its `keyVersion` alongside
+the pairs. Revocation drops the wrap, deletes the token and flags the project
+rotation-pending, in one action.
 
 **`access_grants`** — project-level role grant to a user or group (M5).
 | col | type | notes |

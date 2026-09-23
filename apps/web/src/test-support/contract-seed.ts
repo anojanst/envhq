@@ -124,10 +124,16 @@ export async function createApiToken(
   return { token, row: row! };
 }
 
-export async function createUserKeys(userId: string): Promise<void> {
+/**
+ * `publicKey` is a placeholder by default — nothing in most suites seals to
+ * it. Pass a real X25519 public key where the test actually performs crypto
+ * (the deploy-key suite does), or `sealToPublicKey` rejects the placeholder
+ * as a malformed curve point.
+ */
+export async function createUserKeys(userId: string, publicKey?: string): Promise<void> {
   await testDb.insert(userKeys).values({
     userId,
-    publicKey: `pub-${uniqueSuffix()}`,
+    publicKey: publicKey ?? `pub-${uniqueSuffix()}`,
     kdfSalt: `salt-${uniqueSuffix()}`,
     kdfT: 3,
     kdfM: 65536,

@@ -432,6 +432,38 @@ components:
           type: string
         anyKeyExists:
           type: boolean
+    DeployKey:
+      type: object
+      description: >-
+        A machine credential for a CI pipeline. Only the public half exists
+        server-side; the private half was shown once at creation and cannot
+        be recovered.
+      required: [id, label, environmentId, environmentName, publicKey, createdByUserId, createdAt, lastUsedAt, revokedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        environmentId:
+          type: [string, "null"]
+          format: uuid
+          description: null = the whole project. An authorization cap, not an isolation boundary.
+        environmentName:
+          type: [string, "null"]
+        publicKey:
+          type: string
+        createdByUserId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: [string, "null"]
+          format: date-time
+        revokedAt:
+          type: [string, "null"]
+          format: date-time
     ProjectMemberKey:
       type: object
       required: [userId, publicKey]
@@ -631,8 +663,23 @@ paths:
       tags: [Environments]
       operationId: exportEnvironment
       summary: Export an environment's active variables as ciphertext
+      description: >-
+        With `X-EnvHQ-Deploy-Key` set this is also the CI path: the response
+        additionally carries the project DEK sealed to that deploy key, plus
+        the DEK generation the ciphertext belongs to. Both authorizations
+        must pass — the bearer token to read the environment, the deploy key
+        to receive a wrap — and a token alone still yields only ciphertext.
       parameters:
         - $ref: '#/components/parameters/idPathParam'
+        - name: X-EnvHQ-Deploy-Key
+          in: header
+          required: false
+          description: >-
+            Base64 X25519 **public** half of a deploy key on this project. A
+            header rather than a query parameter so it stays out of access
+            and proxy logs.
+          schema:
+            type: string
       responses:
         "200":
           description: Ciphertext pairs — decrypted client-side.
@@ -650,8 +697,32 @@ paths:
                     type: integer
                   version:
                     type: integer
+                  wrappedDek:
+                    type: string
+                    description: >-
+                      Present only when a valid deploy key was presented. The
+                      project DEK sealed to it; only its private half opens
+                      this, and the server never held that half.
+                  keyVersion:
+                    type: integer
+                    description: >-
+                      Present only alongside `wrappedDek`. Which DEK
+                      generation `pairs` and `wrappedDek` belong to, so a
+                      long-running job can tell a mid-job rotation apart from
+                      a corrupt value.
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: >-
+            The presented deploy key is unknown, revoked, or capped to a
+            different environment. Unknown and revoked answer identically on
+            purpose.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: This deploy key is not valid for this project.
         "404":
           description: Environment not found, or caller lacks viewer role on it.
           content:
@@ -1729,6 +1800,175 @@ paths:
                   value: { error: Project not found }
                 noKeyYet:
                   value: { error: "No key registered for you on this project yet", anyKeyExists: true }
+  /api/projects/{id}/deploy-keys:
+    get:
+      tags: [Projects]
+      operationId: listDeployKeys
+      summary: List a project's deploy keys
+      description: >-
+        Includes revoked keys — a revoked key is part of the audit trail.
+        Admin-only.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deployKeys]
+                properties:
+                  deployKeys:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DeployKey'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Project not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+    post:
+      tags: [Projects]
+      operationId: createDeployKey
+      summary: Issue a deploy key
+      description: >-
+        The keypair is generated in the browser and only the public half is
+        sent. There is no field for the private half: the server does not
+        receive it, cannot store it, and cannot show it again. The API token
+        is returned in the clear exactly once, here.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label, publicKey, wrappedDek]
+              properties:
+                label:
+                  type: string
+                  description: What this key is for, so nobody is afraid to revoke it.
+                publicKey:
+                  type: string
+                  description: Base64 X25519 public half.
+                wrappedDek:
+                  type: string
+                  description: The project DEK sealed to `publicKey`, client-side.
+                environmentId:
+                  type: [string, "null"]
+                  format: uuid
+                  description: >-
+                    Restricts which environment the API will serve to this
+                    key. An authorization cap, **not** an isolation boundary:
+                    DEKs are per project, so the key itself opens every
+                    environment in it.
+      responses:
+        "201":
+          description: Issued. The token is shown once and is not retrievable.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, label, publicKey, createdAt, token]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  label:
+                    type: string
+                  environmentId:
+                    type: [string, "null"]
+                    format: uuid
+                  publicKey:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+                  token:
+                    type: string
+        "400":
+          description: A required field was missing, or the environment isn't this project's.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: label is required
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: A read-only token may not issue a credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: This token is read-only.
+        "404":
+          description: Project not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Project not found
+  /api/projects/{id}/deploy-keys/{keyId}:
+    delete:
+      tags: [Projects]
+      operationId: revokeDeployKey
+      summary: Revoke a deploy key
+      description: >-
+        Drops its DEK wrap, deletes its API token and flags the project for
+        rotation — one action, because a holder left with a live token keeps
+        reading ciphertext indefinitely. Revocation does not make already
+        copied ciphertext safe; rotating the project DEK afterwards is
+        mandatory.
+      parameters:
+        - $ref: '#/components/parameters/idPathParam'
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, rotationRequired]
+                properties:
+                  ok:
+                    type: boolean
+                  rotationRequired:
+                    type: boolean
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: A read-only token may not revoke.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: This token is read-only.
+        "404":
+          description: Project or deploy key not found, or caller isn't admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Deploy key not found
   /api/projects/{id}/keys/members:
     get:
       tags: [Projects]
@@ -1744,12 +1984,27 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [members, totalAccessible]
+                required: [members, deployKeys, totalAccessible]
                 properties:
                   members:
                     type: array
                     items:
                       $ref: '#/components/schemas/ProjectMemberKey'
+                  deployKeys:
+                    type: array
+                    description: >-
+                      Active deploy keys, which are part of the expected wrap
+                      set. A rotation that omits them is rejected.
+                    items:
+                      type: object
+                      required: [subjectId, publicKey, label]
+                      properties:
+                        subjectId:
+                          type: string
+                        publicKey:
+                          type: string
+                        label:
+                          type: string
                   totalAccessible:
                     type: integer
         "401":

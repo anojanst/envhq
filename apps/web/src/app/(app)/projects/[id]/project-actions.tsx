@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { MoreVertical, Pencil, Trash2, Users } from "lucide-react";
+import { KeyRound, MoreVertical, Pencil, Trash2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -76,6 +76,9 @@ export function ProjectActions({
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push(`/projects/${project.id}/access`)}>
             <Users className="size-4" /> Manage access
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push(`/projects/${project.id}/deploy-keys`)}>
+            <KeyRound className="size-4" /> Deploy keys
           </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="size-4" /> Delete project

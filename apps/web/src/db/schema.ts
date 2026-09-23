@@ -122,6 +122,65 @@ export const projectKeys = pgTable(
 );
 
 /**
+ * A machine credential for a CI pipeline (RM-11, designed in
+ * docs/DEPLOY_KEYS.md / ADR-020). An X25519 keypair generated **in the
+ * browser**; only the public half is here. The private half is shown to the
+ * customer once, at creation, and EnvHQ cannot show it again or recover it —
+ * storing it, even "encrypted at rest", would mean the server could decrypt
+ * customer values, which is the one thing this product does not do.
+ *
+ * WHERE THE WRAP LIVES, and why not here. The project DEK sealed to this
+ * public key is a `project_keys` row, exactly like a member's, under the
+ * subject id `deploy:<this row's id>` (`lib/deploy-keys.ts`). ADR-020 left
+ * the choice between a reserved subject namespace and a table of its own to
+ * this ticket; one wrap table wins because every operation that has to be
+ * right — rotation's expected-wrap-set, reconciliation, "who can decrypt
+ * this project" — then has exactly one place to look, and the design's own
+ * gotcha is "do not introduce a second sealing path".
+ *
+ * `environmentId` is an authorization cap, **not** an isolation boundary,
+ * and the UI has to say so. DEKs are per project (see `projects.keyVersion`
+ * and `cloneVars`), so this key mathematically opens every environment in
+ * the project; the column only limits what the API is willing to serve.
+ * Anyone holding this key plus ciphertext obtained another way reads
+ * production regardless of what this says.
+ *
+ * `tokenId` ties the key to the API token issued with it. A pipeline needs
+ * both — the token to fetch ciphertext, the key to decrypt it — and ADR-020
+ * requires revocation to end both in one action, because a holder left with
+ * a live token keeps reading ciphertext and variable names indefinitely.
+ */
+export const deployKeys = pgTable(
+  "deploy_keys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** NULL = the whole project. An authorization cap only — see above. */
+    environmentId: uuid("environment_id").references(() => environments.id, { onDelete: "cascade" }),
+    /** Base64 X25519 public half. The private half never reaches the server. */
+    publicKey: text("public_key").notNull(),
+    /** What this key is for, so nobody is afraid to revoke it. */
+    label: text("label").notNull(),
+    createdByUserId: text("created_by_user_id").notNull(),
+    /** The API token issued alongside; revoked in the same action. */
+    tokenId: uuid("token_id").references(() => apiTokens.id, { onDelete: "set null" }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedByUserId: text("revoked_by_user_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // Lookup key for the CI export path: a pipeline presents its public half
+    // and the server finds the wrap. Unique per project so that lookup can't
+    // be ambiguous.
+    unique("deploy_keys_project_id_public_key_uq").on(t.projectId, t.publicKey),
+    index("deploy_keys_project_id_idx").on(t.projectId),
+  ],
+);
+
+/**
  * An environment under a project (dev, qa, staging, uat, prod, ...).
  * Unlimited per project; name is unique within its project.
  */
@@ -404,6 +463,7 @@ export type AccessGrant = typeof accessGrants.$inferSelect;
 export type PersonalOrg = typeof personalOrgs.$inferSelect;
 export type UserKeys = typeof userKeys.$inferSelect;
 export type ProjectKeys = typeof projectKeys.$inferSelect;
+export type DeployKey = typeof deployKeys.$inferSelect;
 
 /**
  * A local mirror of the Clerk user fields we render (RM-6). Display names are
