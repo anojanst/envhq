@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { Webhook } from "svix";
 import { db } from "@/db";
+import { reportError } from "@/lib/observability";
 import { webhookEvents } from "@/db/schema";
 import { deleteUserProfile, upsertUserProfile } from "@/lib/user-profiles";
 
@@ -52,7 +53,14 @@ function json(body: unknown, status: number): Response {
 export async function POST(req: Request): Promise<Response> {
   const secret = process.env.CLERK_WEBHOOK_SIGNING_SECRET;
   if (!secret) {
-    console.error("clerk webhook: CLERK_WEBHOOK_SIGNING_SECRET is unset — rejecting delivery");
+    // Silent by nature (RM-18): every delivery is refused, nothing in the
+    // app looks broken, and display names just quietly stop updating. A
+    // misconfiguration nobody would notice is exactly what should alert.
+    await reportError(new Error("CLERK_WEBHOOK_SIGNING_SECRET is unset - every delivery is being refused"), {
+      route: "api/webhooks/clerk",
+      kind: "WebhookNotConfigured",
+      status: 500,
+    });
     return json({ error: "Webhook not configured" }, 500);
   }
 
@@ -111,7 +119,12 @@ export async function POST(req: Request): Promise<Response> {
     // Give the row back so Svix's retry can actually retry, rather than
     // hitting the duplicate guard and silently succeeding forever.
     await db.delete(webhookEvents).where(eq(webhookEvents.id, svixId));
-    console.error("clerk webhook: handler failed", { type: event.type, error });
+    // Caught, so it never reaches `instrumentation.ts`'s hook — reported
+    // explicitly. A webhook that fails every delivery is invisible from
+    // inside the app: Svix retries, gives up, and the only symptom is data
+    // that slowly goes stale. When Stripe webhooks land they inherit this
+    // path unchanged.
+    await reportError(error, { route: "api/webhooks/clerk", kind: `WebhookHandlerFailed:${event.type}`, status: 500 });
     return json({ error: "Handler failed" }, 500);
   }
 

@@ -20,6 +20,11 @@ info:
 tags:
   - name: Cli
     description: CLI browser-login (PKCE loopback) exchange.
+  - name: Ops
+    description: >-
+      Operational visibility (RM-18) — the uptime endpoint, and EnvHQ's own
+      metrics. The metrics routes are staff-only and answer 404 to everyone
+      else.
   - name: Environments
     description: Environment CRUD, variable commits, version history and rollback.
   - name: Groups
@@ -432,6 +437,102 @@ components:
           type: string
         anyKeyExists:
           type: boolean
+    Health:
+      type: object
+      required: [ok, database, latencyMs]
+      properties:
+        ok:
+          type: boolean
+        database:
+          type: string
+          enum: [ok, down]
+        auth:
+          type: string
+          enum: [ok, rejected, down]
+          description: >-
+            Present only when a bearer token was supplied. `rejected` means
+            the monitor's own credential is bad (401); `down` means the
+            service could not evaluate it at all (503).
+        latencyMs:
+          type: integer
+    OpsIssue:
+      type: object
+      required: [fingerprint, route, kind, message, occurrences, firstSeenAt, lastSeenAt, release, muted]
+      properties:
+        fingerprint:
+          type: string
+        route:
+          type: string
+        kind:
+          type: string
+        message:
+          type: string
+          description: Scrubbed and truncated. Never carries ciphertext, a token or a variable name.
+        occurrences:
+          type: integer
+        firstSeenAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+        release:
+          type: [string, "null"]
+        muted:
+          type: boolean
+    OpsMetrics:
+      type: object
+      required: [generatedAt, growth, usage, health, recentIssues]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        growth:
+          type: object
+          required: [totalUsers, newUsers7d, newUsers30d, activeOrgs]
+          properties:
+            totalUsers:
+              type: integer
+            newUsers7d:
+              type: integer
+            newUsers30d:
+              type: integer
+            activeOrgs:
+              type: integer
+        usage:
+          type: object
+          required: [projects, environments, variables, tokensActive24h, tokensActive7d, deployKeysActive, deployKeysRevoked, deployKeysUsed24h]
+          properties:
+            projects:
+              type: integer
+            environments:
+              type: integer
+            variables:
+              type: integer
+            tokensActive24h:
+              type: integer
+            tokensActive7d:
+              type: integer
+            deployKeysActive:
+              type: integer
+            deployKeysRevoked:
+              type: integer
+            deployKeysUsed24h:
+              type: integer
+        health:
+          type: object
+          required: [webhookDeliveries24h, issues24h, unmutedIssues]
+          properties:
+            webhookDeliveries24h:
+              type: integer
+            issues24h:
+              type: integer
+            unmutedIssues:
+              type: integer
+        recentIssues:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpsIssue'
     DeployKey:
       type: object
       description: >-
@@ -658,6 +759,122 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VersionConflictWithPairs'
+  /api/health:
+    get:
+      tags: [Ops]
+      operationId: health
+      summary: Liveness, for an uptime monitor
+      description: >-
+        Unauthenticated, this reports whether the process is up and can reach
+        the database, and deliberately nothing else — a health endpoint that
+        enumerated versions or dependencies would be free reconnaissance.
+        With a bearer token it additionally exercises the authentication
+        path, so a monitor notices an auth outage instead of reporting green
+        while every customer is locked out. Never cached.
+      security: []
+      responses:
+        "200":
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        "401":
+          description: >-
+            A bearer token was presented and did not resolve. The monitor's
+            credential has expired or been revoked — a misconfiguration on
+            its side, deliberately not reported as an outage.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        "503":
+          description: The database is unreachable, or the token path could not be evaluated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /api/ops/metrics:
+    get:
+      tags: [Ops]
+      operationId: opsMetrics
+      summary: EnvHQ's own growth, usage and health numbers
+      description: >-
+        Staff only. A non-staff caller gets 404 rather than 403, matching the
+        rule used everywhere else: probing for an admin surface tells you
+        nothing a stranger wouldn't learn.
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsMetrics'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Not staff.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Not found
+  /api/ops/issues/{fingerprint}:
+    patch:
+      tags: [Ops]
+      operationId: setIssueMuted
+      summary: Mute or unmute a known issue
+      description: >-
+        An alert that fires constantly is an alert nobody reads, and the
+        usual cause is a known failure nobody can silence. Reversible.
+      parameters:
+        - name: fingerprint
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [muted]
+              properties:
+                muted:
+                  type: boolean
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, muted]
+                properties:
+                  ok:
+                    type: boolean
+                  muted:
+                    type: boolean
+        "400":
+          description: "`muted` was missing or not a boolean."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: muted must be a boolean
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          description: Not staff, or no such issue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error: Issue not found
   /api/environments/{id}/export:
     get:
       tags: [Environments]

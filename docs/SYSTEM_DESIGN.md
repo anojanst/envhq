@@ -209,6 +209,18 @@ per user, `user_id` PK; `INSERT ... ON CONFLICT DO NOTHING` is the atomic get-or
 | key_version | integer | which DEK generation this wrap corresponds to; default `1`, bumped by a rotation finalize |
 | | | **unique(project_id, subject_user_id)**, index on `project_id` |
 
+**`error_events`** — errors the app has seen, grouped (RM-18). One row per
+`fingerprint` (a hash of route + kind + top stack frame location — never of
+the message, which can vary per occurrence). `occurrences` counts every
+sighting; `alerted_at` records that a human was told once, so the thousandth
+occurrence is silent; `muted_at` stops a known issue alerting at all. In our
+own database rather than a third-party tracker because alerting only on
+*new* issues needs state shared across serverless instances, and because
+scrubbing would be needed either way — request bodies here carry ciphertext
+and variable names. `message` is scrubbed and truncated by
+`lib/observability.ts` before it arrives; there is deliberately no column for
+a request body, query parameters or a stack trace.
+
 **`deploy_keys`** — a machine credential for a CI pipeline (RM-11, designed in
 [DEPLOY_KEYS.md](./DEPLOY_KEYS.md) / ADR-020). Only the public half exists
 server-side; the private half is shown once at creation and is unrecoverable.
@@ -494,7 +506,8 @@ into the CLI by tsup). Runs on server and client.
   routing vars, and `CLERK_WEBHOOK_SIGNING_SECRET`. Optional:
   `DATABASE_POOL_MAX`, `DATABASE_PREPARE`, `DATABASE_CA_CERT` — all three are
   connection-pool settings, explained with their measurements in
-  [`OPERATIONS.md`](./OPERATIONS.md).
+  [`OPERATIONS.md`](./OPERATIONS.md) — plus `ALERT_WEBHOOK_URL` and
+  `ENVHQ_STAFF_USER_IDS` (RM-18), also covered there.
   There is no `ENV_ENCRYPTION_KEY` — M6 moved encryption client-side and no
   code reads it (§6).
 - Migrations run with prod `DATABASE_URL`: `pnpm --filter @envhq/web db:migrate`.

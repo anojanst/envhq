@@ -154,3 +154,109 @@ its first test.
 There is no per-user caching anywhere in the app, and adding one would need
 more care than a header: a cache key that varies by user is a cache key you
 can get wrong once and leak with.
+
+## Knowing when something is broken
+
+Added by RM-18. Before it, a production failure was noticed when a customer
+wrote in.
+
+### Errors
+
+Every uncaught error in any route or page reaches `lib/observability.ts`
+through Next's `onRequestError` hook (`src/instrumentation.ts`), so a new
+route cannot forget to report. Failures that are *caught* and turned into a
+500 — the Clerk webhook handler, and Stripe's when it exists — call
+`reportError` explicitly, because nothing else will see them.
+
+Issues are grouped by a fingerprint of **route + error kind + top stack frame
+location**, never the message. A message interpolating a project id would
+otherwise make every project its own issue and alert on each one.
+
+**Alerts fire on a new issue, and again only after it has been quiet for a
+day.** The thousandth occurrence is silent; a regression that returns weeks
+later is news again. Set `ALERT_WEBHOOK_URL` to any endpoint accepting
+`{"text": "..."}` — a Slack incoming webhook, an incident tool, your own
+relay. Unset, errors are still recorded and visible; nobody is told.
+
+A known, accepted failure can be **muted** at `/ops`, which stops it alerting
+permanently until a human unmutes it. This exists because the alternative to
+muting one noisy issue is to stop reading alerts, and that takes the real
+ones with it.
+
+#### What is deliberately not recorded
+
+The store is our own database, not a third-party tracker, and it holds far
+less than one would:
+
+| Kept | Not kept |
+|---|---|
+| Route *pattern* (`/api/projects/[id]`) | The resolved URL, which carries real ids |
+| Error kind, scrubbed and truncated message | Request bodies, query parameters, headers |
+| Occurrence counts, first/last seen, release | Stack traces (they stay in the platform log) |
+
+Messages are scrubbed for the shapes a secret takes here — `envhq_` tokens,
+connection strings, bearer credentials, and base64 runs of 24 characters or
+more, which is every ciphertext, nonce, sealed DEK and public key in the
+system. The scrubber over-redacts on purpose: losing a detail costs a slower
+debugging session, and the other direction costs a customer's variable names
+in a log drain. Variable names are unencrypted metadata (ADR-012), so they
+are both the easiest thing to leak and genuinely useful to an attacker.
+
+### Uptime
+
+`GET /api/health` is what a monitor polls.
+
+| Called | Answers |
+|---|---|
+| With no credential | 200 if the process is up and can reach Postgres; 503 if not |
+| With `Authorization: Bearer <token>` | Additionally exercises the token lookup — 200 `auth: ok` |
+| With a token that doesn't resolve | **401**, not 503 |
+
+That last row is the one worth setting up deliberately. Point a monitor at
+the authenticated form with a read-only PAT, because a shallow check keeps
+reporting green through an auth failure while every customer is locked out.
+But a rejected token means *the monitor's own credential* expired — a
+misconfiguration on its side, not an outage — so it answers 401 and should
+not page anyone. Configure the monitor to alarm on 5xx, and to treat 401 as
+"go fix the monitor".
+
+The endpoint deliberately reveals nothing beyond up/down. A health check
+listing versions or dependency hostnames is free reconnaissance.
+
+### EnvHQ's own numbers
+
+`/ops` (and `GET /api/ops/metrics`) shows growth, usage and health counts.
+Access is `ENVHQ_STAFF_USER_IDS`, a comma-separated allowlist of Clerk user
+ids; unset or empty admits nobody. Org admin is deliberately not sufficient —
+that means admin of a *customer's* org, and using it would show every
+customer everyone else's aggregate numbers. A real staff role belongs to
+RM-17's admin dashboard; this is a list in an environment variable precisely
+so there is no half-built permissions model there to unpick. Non-staff get
+404, not 403.
+
+**What it cannot show, and why** — the page says this too, so nobody reads a
+zero as a fact:
+
+- **Failed logins.** Clerk owns authentication; a failed sign-in never
+  reaches this app. Clerk's dashboard has them.
+- **Subscriptions and Stripe webhook failures.** There is no billing in this
+  codebase yet. When it arrives its webhook failures appear under "Recent
+  issues" with no change here — they go through the same `reportError` path
+  the Clerk webhook already uses.
+- **Per-request pull counts.** Tokens and deploy keys record their *last*
+  use, not every use, so "active in the last 24h" is answerable and a total
+  is not. Counting every request means a write on the request path, which is
+  a cost to take deliberately rather than by accident.
+
+### Checking it actually works
+
+Throw a deliberate error on a deployed environment and watch it arrive:
+
+```bash
+curl -s "$APP_URL/api/health" | jq          # expect ok: true
+curl -s -H "Authorization: Bearer $PAT" "$APP_URL/api/health" | jq
+```
+
+Then visit `/ops` as a staff user. A permanently empty issue list on a live
+system means the reporter is broken, not that nothing has failed — the page
+says so where the list would be.

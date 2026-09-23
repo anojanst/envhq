@@ -464,6 +464,7 @@ export type PersonalOrg = typeof personalOrgs.$inferSelect;
 export type UserKeys = typeof userKeys.$inferSelect;
 export type ProjectKeys = typeof projectKeys.$inferSelect;
 export type DeployKey = typeof deployKeys.$inferSelect;
+export type ErrorEvent = typeof errorEvents.$inferSelect;
 
 /**
  * A local mirror of the Clerk user fields we render (RM-6). Display names are
@@ -501,6 +502,54 @@ export const userProfiles = pgTable("user_profiles", {
  * housekeeping concern, not a correctness one — an unpruned table costs disk,
  * never a wrong answer.
  */
+/**
+ * Errors the application has seen, grouped (RM-18).
+ *
+ * In our own database rather than a third-party tracker, for two reasons.
+ * The first is the gotcha: request bodies here carry ciphertext and variable
+ * names, and variable names are unencrypted metadata (ADR-012), so anything
+ * shipped to a vendor has to be scrubbed by us anyway — and once we are
+ * doing the scrubbing, sending it somewhere else buys little and adds a
+ * place customer data could end up. The second is that alerting only on
+ * *new* issues, which is the whole point of alerting at all, needs state
+ * shared across serverless instances. On Vercel each invocation is its own
+ * process; in-memory dedup would alert once per instance, which is the
+ * "alert that fires constantly and nobody reads" the ticket warns about.
+ *
+ * One row per `fingerprint` — a stable hash of where the error came from and
+ * what kind it was, never of its message, which can vary per occurrence.
+ * `occurrences` counts everything; `alertedAt` records that a human was told
+ * once, so the thousandth occurrence is silent.
+ *
+ * NOTHING HERE MAY CARRY A SECRET. `message` is scrubbed by
+ * `lib/observability.ts` before it arrives, and there is deliberately no
+ * column for a request body, query parameters or a stack trace's local
+ * variables. See that module's invariant.
+ */
+export const errorEvents = pgTable(
+  "error_events",
+  {
+    /** Stable hash of (route, error name, normalised location). Not of the message. */
+    fingerprint: text("fingerprint").primaryKey(),
+    /** Where it happened — a route name, never a URL with parameters in it. */
+    route: text("route").notNull(),
+    /** The error's constructor name, e.g. `TypeError`. */
+    kind: text("kind").notNull(),
+    /** Scrubbed, truncated message. Enough to recognise the issue, never enough to leak one. */
+    message: text("message").notNull(),
+    /** The deploy this was first seen on, so an issue can be tied to a release. */
+    release: text("release"),
+    occurrences: integer("occurrences").notNull().default(1),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    /** When a human was last told. NULL = never alerted. */
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+    /** Set by a human to stop it alerting again — a known, accepted issue. */
+    mutedAt: timestamp("muted_at", { withTimezone: true }),
+  },
+  (t) => [index("error_events_last_seen_idx").on(t.lastSeenAt)],
+);
+
 export const webhookEvents = pgTable("webhook_events", {
   /** The `svix-id` header of the delivery. */
   id: text("id").primaryKey(),

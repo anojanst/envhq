@@ -14,7 +14,7 @@ which runs weekly from [`audit.yml`](../.github/workflows/audit.yml).
 | `lint` | web | ESLint, including the Next rules. |
 | `build` | web | A broken production build. Also generates `.next/types`, which the typecheck needs. |
 | `typecheck` | web, cli, packages | Type errors anywhere in the tsconfig, including files nothing imports. |
-| `test:coverage` | web | 202 tests across the `unit`, `ui`, `authz-db` and `contract` projects, plus the coverage floor. |
+| `test:coverage` | web | 250 tests across the `unit`, `ui`, `authz-db` and `contract` projects, plus the coverage floor. |
 | `test` | cli, packages | The `node --test` suites for the CLI, crypto and parser. |
 | `audit` | weekly | New advisories against production dependencies. |
 
