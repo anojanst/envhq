@@ -1,0 +1,38 @@
+name: EnvHQ
+description: Load an EnvHQ environment into your job — decrypted on the runner, masked before it can reach a log.
+author: EnvHQ
+branding:
+  icon: lock
+  color: green
+
+inputs:
+  token:
+    description: The deploy key's API token (store it as a secret, e.g. ENVHQ_TOKEN). Fetches ciphertext; decrypts nothing on its own.
+    required: true
+  key:
+    description: The deploy key (store it as a secret, e.g. ENVHQ_DEPLOY_KEY). Decrypts on the runner; EnvHQ never sees it.
+    required: true
+  project:
+    description: Project name or id.
+    required: true
+  environment:
+    description: Environment name, e.g. staging.
+    required: true
+  format:
+    description: >-
+      Where the values go. `env` — environment variables for every later step in this job.
+      `outputs` — step outputs, read as steps.<id>.outputs.<NAME>. `dotenv` — a .env file at `path`.
+    required: false
+    default: env
+  mask:
+    description: Register every value with the log masker before anything else runs. Only turn this off for values that aren't secret.
+    required: false
+    default: "true"
+  path:
+    description: File to write when format is `dotenv`.
+    required: false
+    default: .env
+
+runs:
+  using: node24
+  main: dist/index.cjs

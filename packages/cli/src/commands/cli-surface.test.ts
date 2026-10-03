@@ -29,7 +29,7 @@ const invoke = async (args: string[]) => (await run(process.execPath, [CLI, ...a
 const SECTIONS: string[][] = [
   [],
   ...["login", "logout", "unlock", "lock", "whoami", "orgs", "projects", "link", "init", "env",
-      "pull", "push", "diff", "history", "rollback", "status"].map((c) => [c]),
+      "pull", "push", "diff", "history", "rollback", "run", "export", "status"].map((c) => [c]),
   ["projects", "create"],
   ...["map", "create", "list"].map((s) => ["env", s]),
 ];
@@ -69,7 +69,7 @@ test("every top-level command is registered and runnable", async () => {
 
   assert.deepEqual(listed, [
     "login", "logout", "unlock", "lock", "whoami", "orgs", "projects", "link",
-    "init", "env", "pull", "push", "diff", "history", "rollback", "status", "help",
+    "init", "env", "pull", "push", "diff", "history", "rollback", "run", "export", "status", "help",
   ]);
 });
 

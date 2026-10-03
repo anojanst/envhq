@@ -141,6 +141,36 @@ npx envhq <command>`}</CodeBlock>
         <a href="/docs/limitations" className="underline underline-offset-2">Limitations &amp; FAQ</a>.
       </Callout>
 
+      <H2>Run and export</H2>
+      <P>
+        For scripts and CI. Neither command prompts. Both take <Code>-p, --project &lt;name|id&gt;</Code>{" "}
+        and <Code>-e, --env &lt;name&gt;</Code>, which default to the linked folder, or to{" "}
+        <Code>ENVHQ_PROJECT</Code>/<Code>ENVHQ_ENVIRONMENT</Code> when those are set.
+      </P>
+      <Table>
+        <thead>
+          <tr>
+            <Th>Command</Th>
+            <Th>Description</Th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <Td><Code>envhq run -- &lt;command&gt;</Code></Td>
+            <Td>Run a command with the environment&apos;s variables set. Nothing is written to disk, and the command doesn&apos;t receive <Code>ENVHQ_TOKEN</Code> or <Code>ENVHQ_DEPLOY_KEY</Code>. EnvHQ&apos;s values replace any variable already set with the same name. Exits with the command&apos;s exit code.</Td>
+          </tr>
+          <tr>
+            <Td><Code>envhq export</Code></Td>
+            <Td>Print the decrypted variables. <Code>--format</Code> takes <Code>dotenv</Code> (default), <Code>json</Code>, <Code>github-env</Code> or <Code>github-output</Code>. <Code>-o, --output &lt;file&gt;</Code> writes a file readable only by you, instead of printing. Inside GitHub Actions it won&apos;t print values to the log; use <Code>--output</Code> or a <Code>github-*</Code> format there.</Td>
+          </tr>
+        </tbody>
+      </Table>
+      <P>
+        Inside GitHub Actions, both commands register every value with the log masker before
+        printing anything. <Code>--no-mask</Code> turns that off for <Code>export</Code>. See{" "}
+        <a href="/docs/ci" className="underline underline-offset-2">CI &amp; GitHub Actions</a>.
+      </P>
+
       <H2>Version history</H2>
       <Table>
         <thead>
@@ -195,7 +225,15 @@ npx envhq <command>`}</CodeBlock>
           </tr>
           <tr>
             <Td><Code>ENVHQ_TOKEN</Code></Td>
-            <Td>Use a personal access token from the environment instead of the OS keychain — the standard way to authenticate in CI.</Td>
+            <Td>Use a token from the environment instead of the OS keychain. This is the standard way to authenticate in CI, and no <Code>envhq login</Code> is needed.</Td>
+          </tr>
+          <tr>
+            <Td><Code>ENVHQ_DEPLOY_KEY</Code></Td>
+            <Td>A deploy key. <Code>run</Code> and <Code>export</Code> use it to decrypt with no keychain and no passphrase prompt. Issue one in the web app (project → Deploy keys). On a CI runner (<Code>CI=true</Code>), these commands fail straight away without it, instead of waiting for a passphrase.</Td>
+          </tr>
+          <tr>
+            <Td><Code>ENVHQ_PROJECT</Code>, <Code>ENVHQ_ENVIRONMENT</Code></Td>
+            <Td>Defaults for <Code>--project</Code> and <Code>--env</Code> on <Code>run</Code> and <Code>export</Code>.</Td>
           </tr>
         </tbody>
       </Table>

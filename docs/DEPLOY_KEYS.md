@@ -324,3 +324,33 @@ Two further notes on what exists:
   it is for"). It is not an event log: it records the last use, not every
   use. A per-request audit trail is a larger thing and belongs with RM-18's
   operational visibility, not here.
+
+## What RM-12 built
+
+Implemented 2026-10-03. This is the client half, which consumes what RM-11 issues.
+Nothing changed on the server.
+
+- **The CLI decrypts. The action doesn't.** `envhq run` and `envhq export`
+  read `ENVHQ_DEPLOY_KEY`, send only its public half in `X-EnvHQ-Deploy-Key`,
+  and unseal the returned `wrappedDek` on the runner. The GitHub Action
+  (`packages/github-action`) runs a pinned `npx envhq@<version> export` and
+  holds no decryption code. Per ADR-018, every integration wraps that one
+  primitive, so the decrypt path is reviewed once.
+- **`envhq run` is ADR-018's primitive, now on `main`.** It injects the
+  values into one child process, writes nothing to disk, and removes
+  `ENVHQ_TOKEN` and `ENVHQ_DEPLOY_KEY` from that child's environment.
+- **The action's `env`, `outputs` and `dotenv` formats go further than ADR-018.**
+  The ticket asks for them, and a GitHub Action is a single step, so it
+  can't wrap later steps the way `run` does. `env` writes to `GITHUB_ENV`,
+  which exposes the values to every later step. `dotenv` writes a file that
+  stays on the runner for the rest of the job. The docs list the options
+  from most to least exposed, recommend `envhq run` for one command, and say
+  plainly what `dotenv` leaves behind.
+- **A revoked key surfaces as a 401, not a 403.** `revokeDeployKey` deletes
+  the token as well, so the first request fails authentication before the
+  key is ever checked. The CLI reports this, on the pipeline path, as
+  "the deploy key may have been revoked" with re-issue instructions.
+- **CI without a deploy key fails immediately.** With `CI=true` and no
+  `ENVHQ_DEPLOY_KEY`, `run` and `export` exit at once instead of reaching
+  the passphrase prompt that would block forever, the failure this
+  document's Context section describes.

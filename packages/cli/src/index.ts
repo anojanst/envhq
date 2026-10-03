@@ -17,6 +17,8 @@ import * as push from "./commands/push.ts";
 import * as diff from "./commands/diff.ts";
 import * as history from "./commands/history.ts";
 import * as rollback from "./commands/rollback.ts";
+import * as run from "./commands/run.ts";
+import * as exportCmd from "./commands/export.ts";
 import * as status from "./commands/status.ts";
 
 /**
@@ -51,6 +53,8 @@ for (const command of [
   diff,
   history,
   rollback,
+  run,
+  exportCmd,
   status,
 ]) {
   command.register(program);

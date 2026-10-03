@@ -1,0 +1,90 @@
+name: GitHub Action E2E
+
+# RM-12's acceptance run: the action from this checkout, against a real EnvHQ
+# environment, on all three runner OSes. Manual, because it needs a live
+# deploy key and the pinned `envhq` release on npm.
+#
+# One-time setup:
+#   - secrets ENVHQ_E2E_TOKEN / ENVHQ_E2E_DEPLOY_KEY — an active deploy key
+#   - secret  ENVHQ_E2E_REVOKED_TOKEN / ENVHQ_E2E_REVOKED_KEY — a deploy key
+#     issued and then revoked, to prove a revoked key fails the job
+#   - vars    ENVHQ_E2E_PROJECT / ENVHQ_E2E_ENVIRONMENT — where to read
+#   - that environment must hold E2E_CANARY (any value) and E2E_MULTILINE
+#     (a value spanning at least two lines)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  load:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Load as environment variables
+        uses: ./packages/github-action
+        with:
+          token: ${{ secrets.ENVHQ_E2E_TOKEN }}
+          key: ${{ secrets.ENVHQ_E2E_DEPLOY_KEY }}
+          project: ${{ vars.ENVHQ_E2E_PROJECT }}
+          environment: ${{ vars.ENVHQ_E2E_ENVIRONMENT }}
+
+      - name: Values arrived, and a deliberate echo prints *** in this log
+        shell: bash
+        run: |
+          test -n "$E2E_CANARY"
+          test -n "$E2E_MULTILINE"
+          echo "deliberate echo: $E2E_CANARY"
+          echo "$E2E_MULTILINE"
+          echo "$E2E_CANARY" | base64
+
+      - name: Load as step outputs
+        id: envhq
+        uses: ./packages/github-action
+        with:
+          token: ${{ secrets.ENVHQ_E2E_TOKEN }}
+          key: ${{ secrets.ENVHQ_E2E_DEPLOY_KEY }}
+          project: ${{ vars.ENVHQ_E2E_PROJECT }}
+          environment: ${{ vars.ENVHQ_E2E_ENVIRONMENT }}
+          format: outputs
+
+      - name: Outputs arrived
+        shell: bash
+        env:
+          CANARY: ${{ steps.envhq.outputs.E2E_CANARY }}
+        run: test -n "$CANARY"
+
+      - name: Load as a .env file
+        uses: ./packages/github-action
+        with:
+          token: ${{ secrets.ENVHQ_E2E_TOKEN }}
+          key: ${{ secrets.ENVHQ_E2E_DEPLOY_KEY }}
+          project: ${{ vars.ENVHQ_E2E_PROJECT }}
+          environment: ${{ vars.ENVHQ_E2E_ENVIRONMENT }}
+          format: dotenv
+          path: e2e.env
+
+      - name: File arrived
+        shell: bash
+        run: grep -q '^E2E_CANARY=' e2e.env && rm e2e.env
+
+      - name: A revoked deploy key fails the step
+        id: revoked
+        continue-on-error: true
+        uses: ./packages/github-action
+        with:
+          token: ${{ secrets.ENVHQ_E2E_REVOKED_TOKEN }}
+          key: ${{ secrets.ENVHQ_E2E_REVOKED_KEY }}
+          project: ${{ vars.ENVHQ_E2E_PROJECT }}
+          environment: ${{ vars.ENVHQ_E2E_ENVIRONMENT }}
+
+      - name: …and it did
+        shell: bash
+        run: test "${{ steps.revoked.outcome }}" = "failure"

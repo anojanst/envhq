@@ -33,6 +33,11 @@ Commands:
   history [options] [env]             Show version history for an environment.
   rollback [options] <version> [env]  Restore an environment to a previous
                                       version (creates a new version).
+  run [options] <command...>          Run a command with an environment's
+                                      variables injected, without writing them
+                                      to disk.
+  export [options]                    Print or write an environment's decrypted
+                                      variables, for scripts and CI.
   status                              Show login and link status for this
                                       folder.
   help [command]                      display help for command
@@ -202,6 +207,39 @@ Options:
   --yes                skip confirmation (default: false)
   -m, --message <msg>  commit message for the rollback
   -h, --help           display help for command
+### envhq run --help
+Usage: envhq run [options] <command...>
+
+Run a command with an environment's variables injected, without writing them to
+disk.
+
+Arguments:
+  command                  the command to run, after `--` (e.g. envhq run -- npm
+                           start)
+
+Options:
+  -p, --project <name|id>  project name or id (defaults to the linked project)
+                           (env: ENVHQ_PROJECT)
+  -e, --env <name>         environment (defaults to the linked default) (env:
+                           ENVHQ_ENVIRONMENT)
+  -h, --help               display help for command
+### envhq export --help
+Usage: envhq export [options]
+
+Print or write an environment's decrypted variables, for scripts and CI.
+
+Options:
+  -p, --project <name|id>  project name or id (defaults to the linked project)
+                           (env: ENVHQ_PROJECT)
+  -e, --env <name>         environment (defaults to the linked default) (env:
+                           ENVHQ_ENVIRONMENT)
+  --format <format>        output format (choices: "dotenv", "json",
+                           "github-env", "github-output", default: "dotenv")
+  -o, --output <file>      write to this file instead of stdout (dotenv and json
+                           only)
+  --no-mask                don't register values with the GitHub Actions log
+                           masker
+  -h, --help               display help for command
 ### envhq status --help
 Usage: envhq status [options]
 

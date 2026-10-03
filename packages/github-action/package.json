@@ -1,0 +1,18 @@
+{
+  "name": "@envhq/github-action",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Load an EnvHQ environment into a GitHub Actions job, decrypted on the runner.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "tsup --silent && node --test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.0"
+  }
+}

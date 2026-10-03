@@ -9,6 +9,7 @@ const NAV = [
   { href: "/docs/getting-started", label: "Getting started" },
   { href: "/docs/web-app", label: "Using the web app" },
   { href: "/docs/cli", label: "CLI reference" },
+  { href: "/docs/ci", label: "CI & GitHub Actions" },
   { href: "/docs/security", label: "Security model" },
   { href: "/docs/limitations", label: "Limitations & FAQ" },
 ];

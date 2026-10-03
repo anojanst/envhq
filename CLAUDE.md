@@ -12,7 +12,7 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
   - `src/instrumentation.ts` — Next's `onRequestError` hook; every uncaught error in any route or page reaches `lib/observability.ts` through here, so a new route can't forget to report
   - `src/app/api/` — Next.js route handlers: `orgs`, `projects` (incl. `[id]/deploy-keys`), `environments`, `vars`, `groups`, `tokens`, `users`, `cli`, `me`, `health` (the uptime endpoint — unauthenticated), `ops` (staff-only metrics and issue muting), `webhooks/clerk` (inbound Clerk user sync — Svix-signature authenticated, the one route that doesn't call `getUserId`)
   - `src/app/sign-in`, `src/app/sign-up` — Clerk-hosted auth pages
-  - `src/app/docs/` — public docs site (`getting-started`, `cli`, `security`, `limitations`, `web-app`) — distinct from the internal `docs/` at repo root
+  - `src/app/docs/` — public docs site (`getting-started`, `cli`, `ci`, `security`, `limitations`, `web-app`) — distinct from the internal `docs/` at repo root
   - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client, `pool.ts` (connection-pool sizing and prepared-statement settings — pure, so it is testable; see `docs/OPERATIONS.md`)
   - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` / `deploy-keys.ts` (key management; `deploy-key-client.ts` is its browser half — it generates the keypair and seals, and is a separate module so a test can assert the private key never reaches the wire), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/Clerk measurement — counts and durations only, never SQL or parameters), `observability.ts` (error grouping, scrubbing and alert-once — same counts-only invariant, and the only place a message is allowed to reach storage), `ops-metrics.ts` (EnvHQ's own numbers, and the `ENVHQ_STAFF_USER_IDS` gate), `user-profiles.ts` (the local `user_profiles` mirror of Clerk display names — decorative only, never an authorization input)
   - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db` and `contract` vitest projects; `contract/` holds the openapi.yaml-vs-live-routes contract suite; `perf/` holds the RM-5 baseline harness and RM-8's connection load test (its own `perf` vitest project, excluded from `pnpm test`); `ui.setup.ts` backs the `ui` project — happy-dom component tests named `*.render.test.tsx`, which is where render cost and re-render behaviour are pinned (RM-9)
@@ -20,12 +20,13 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
   - `src/index.ts` — wiring only: it registers each command, in the order `--help` lists them
   - `src/commands/` — one module per command, each exporting `register(program)`; `projects` and `env` carry their own subcommands
-  - `src/shared/` — helpers the commands share: `ui.ts` (prompts, `fail`), `link.ts`, `secrets.ts` (the client-side encryption boundary), `resolve.ts`, `fs.ts`
+  - `src/shared/` — helpers the commands share: `ui.ts` (prompts, `fail`), `link.ts`, `secrets.ts` (the client-side encryption boundary, including the deploy-key decrypt path `run`/`export` use in CI), `deploy-key.ts` (parses `ENVHQ_DEPLOY_KEY`), `github.ts` (Actions log masking and `GITHUB_ENV`/`GITHUB_OUTPUT` writes), `target.ts` (project/env resolution that works without a linked folder), `resolve.ts`, `fs.ts`
   - `src/commands/cli-surface.fixture.txt` — the pinned `--help` output; regenerate deliberately with `UPDATE_FIXTURES=1 pnpm --filter envhq test`
+- `packages/github-action` — the EnvHQ GitHub Action (RM-12): `action.yml` plus a thin Node entry that runs a pinned `envhq export`. Its `dist/` is committed, because GitHub runs it directly, and CI fails if `dist/` is stale. It is published by mirroring this directory into its own repository (see its README)
 - `packages/crypto` — `@envhq/crypto`, shared encryption primitives (noble libs)
 - `packages/parser` — `@envhq/parser`, env file parsing
 - `.claude/commands/` — repo slash commands: `/recommend-next` (pick the next roadmap ticket) and `/implement <ticket>` (fetch it from Notion and build it)
-- `.github/workflows/` — CI (`ci.yml`), the weekly dependency audit (`audit.yml`), CLI publishing via Changesets (`release.yml`), CLA enforcement (`cla.yml`)
+- `.github/workflows/` — CI (`ci.yml`), the weekly dependency audit (`audit.yml`), CLI publishing via Changesets (`release.yml`), CLA enforcement (`cla.yml`), the manual cross-OS GitHub Action acceptance run (`action-e2e.yml`, needs live deploy-key secrets)
 - `.changeset/` — Changesets config and pending release notes for the published packages
 - `docs/` (repo root) — internal planning docs: `PLAN.md`, `ROADMAP.md`, `SYSTEM_DESIGN.md`, `RELEASE_POLICY.md` (how the app deploys and the CLI is published), `DEPLOY_KEYS.md` (how CI decrypts without the server holding a key — the security design the Pipelines work builds on), `PERF_BASELINE.md` (the measured numbers every Performance ticket is compared against), `CI.md` (what CI enforces and why — typecheck, coverage floor, dependency audit), `OPERATIONS.md` (the `instances × pool max` connection ceiling, and what may be cached)
 - root `package.json` — workspace scripts fan out via `pnpm --filter`
@@ -44,6 +45,7 @@ Commands (run from repo root unless noted):
 - `pnpm --filter @envhq/web db:studio` — Drizzle Studio
 - `pnpm cli` — run the CLI locally
 - `pnpm --filter envhq test` — CLI tests (`node --test`); builds first, since the surface test runs the real `dist/` binary. Keychain-backed cases skip where no OS keyring exists
+- `pnpm --filter @envhq/github-action test` — rebuilds the action's `dist/` and tests it; commit the rebuilt `dist/` with any change to `src/`
 
 **Keep this file current.** Before marking any task done, check whether it added/removed/moved a top-level directory or package, changed what a `src/lib` file is responsible for, added a new route group, or changed one of the invariants below. If so, update this file in the same change — don't defer it to a follow-up task.
 

@@ -251,7 +251,12 @@ export function DeployKeysManager({
 
             <p className="text-xs text-muted-foreground">
               A pipeline needs both. The token alone fetches ciphertext and variable names but
-              decrypts nothing; the key alone has nothing to decrypt.
+              decrypts nothing; the key alone has nothing to decrypt.{" "}
+              {/* A new tab: navigating here would close this show-once dialog before the secrets are saved. */}
+              <a href="/docs/ci" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                Use them in GitHub Actions or another CI
+              </a>
+              .
             </p>
 
             <label className="flex items-start gap-2 rounded-md bg-muted/50 p-3 text-sm">

@@ -30,3 +30,5 @@ coverage/
 # local Claude Code config (dev-server launch config, permission settings)
 .claude/settings.local.json
 apps/web/.agents/*
+# The GitHub Action runs its committed bundle directly — there is no install step.
+!packages/github-action/dist/

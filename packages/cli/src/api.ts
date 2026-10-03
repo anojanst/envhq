@@ -1,4 +1,4 @@
-import { readGlobalConfig, writeGlobalConfig } from "./config.ts";
+import { readGlobalConfig, writeGlobalConfig, DEFAULT_URL } from "./config.ts";
 import { resolveToken, storeSession, envToken } from "./token-store.ts";
 import { runLoginFlow } from "./auth/login.ts";
 
@@ -21,6 +21,8 @@ interface Options {
   body?: unknown;
   /** Override token/url (used during `login` before anything is stored). */
   auth?: { url: string; token: string };
+  /** Extra request headers, e.g. the deploy key's public half on a pipeline export. */
+  headers?: Record<string, string>;
   /** Internal: set after a transparent re-login to avoid retry loops. */
   _retried?: boolean;
 }
@@ -40,7 +42,12 @@ interface ResolvedAuth {
  */
 async function loadAuth(): Promise<ResolvedAuth | null> {
   const config = await readGlobalConfig();
-  if (!config) return null;
+  if (!config) {
+    // A CI runner never ran `envhq login`, so it has no config file — only
+    // `ENVHQ_TOKEN`, and `ENVHQ_URL` when it points somewhere non-default.
+    const token = envToken();
+    return token ? { url: DEFAULT_URL, token, source: "env" } : null;
+  }
   const url = config.url;
 
   const resolved = resolveToken(url);
@@ -73,6 +80,7 @@ async function request<T>(path: string, options: Options = {}): Promise<T> {
     res = await fetch(`${auth.url}${path}`, {
       method: options.method ?? "GET",
       headers: {
+        ...options.headers,
         Authorization: `Bearer ${auth.token}`,
         ...(options.body ? { "Content-Type": "application/json" } : {}),
       },
@@ -105,7 +113,9 @@ async function request<T>(path: string, options: Options = {}): Promise<T> {
           : "Your session has expired. Run `envhq login` again.",
       );
     }
-    throw new ApiError("Unauthorized — your token may be invalid or revoked.");
+    const err = new ApiError("Unauthorized — your token may be invalid or revoked.");
+    err.status = 401;
+    throw err;
   }
 
   if (!res.ok) {
@@ -170,6 +180,20 @@ export const apiClient = {
 
   exportEnv: (envId: string) =>
     request<{ pairs: EncryptedPair[]; count: number; version: number }>(`/api/environments/${envId}/export`),
+
+  /**
+   * The pipeline export (RM-11): the same ciphertext, plus the project DEK
+   * sealed to the presented deploy key. Only the key's *public* half is sent;
+   * the private half never leaves the runner.
+   */
+  exportEnvForDeployKey: (envId: string, publicKey: string) =>
+    request<{
+      pairs: EncryptedPair[];
+      count: number;
+      version: number;
+      wrappedDek: string;
+      keyVersion: number;
+    }>(`/api/environments/${envId}/export`, { headers: { "X-EnvHQ-Deploy-Key": publicKey } }),
 
   commit: (
     envId: string,

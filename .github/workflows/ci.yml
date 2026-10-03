@@ -101,3 +101,20 @@ jobs:
       - run: pnpm --filter @envhq/parser typecheck
       - run: pnpm --filter @envhq/crypto test
       - run: pnpm --filter @envhq/parser test
+
+  github-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @envhq/github-action typecheck
+      - run: pnpm --filter @envhq/github-action test
+      # GitHub runs the committed bundle, not the source. A source change
+      # without a rebuilt dist/ would ship the old behaviour silently.
+      - name: Committed dist/ matches the source
+        run: git diff --exit-code -- packages/github-action/dist/
