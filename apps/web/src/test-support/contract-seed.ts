@@ -10,6 +10,8 @@ import {
   apiTokens,
   userKeys,
   projectKeys,
+  orgs,
+  orgMembers,
   type Project,
   type Environment,
   type Group,
@@ -18,7 +20,6 @@ import {
 import { generateToken, hashToken } from "@/lib/crypto";
 import type { Role } from "@/lib/access";
 import { setOrgRole } from "@/test-support/mock-orgs";
-import { setFakeOrgMembership } from "@/test-support/mock-clerk.setup";
 
 /**
  * Programmatic DB builders for the HQ-53 contract suite — one concrete,
@@ -39,7 +40,7 @@ export async function resetContractWorld(): Promise<void> {
       project_keys, user_keys, api_tokens, cli_auth_requests,
       environment_versions, env_vars, environments,
       access_grants, group_members, groups,
-      projects, personal_orgs,
+      projects, personal_orgs, org_members, orgs,
       user_profiles, webhook_events
     RESTART IDENTITY CASCADE
   `);
@@ -160,15 +161,19 @@ export function bearer(token: string): HeadersInit {
 }
 
 /**
- * Grants `userId` a Clerk org role for `orgId`, keeping both fakes that
- * back it in sync: `mock-orgs.ts`'s map (read by every `@/lib/orgs` export
- * called through its normal module boundary, e.g. from `access.ts`) and
- * `mock-clerk.setup.ts`'s fake membership list (read by `getClerkOrgRole`
- * when it's reached via `resolveRequestedOrgId`'s same-module call, which
- * bypasses the `@/lib/orgs` mock entirely). Always use this instead of
+ * Grants `userId` an org role for `orgId`, keeping both places that answer
+ * role checks in sync: `mock-orgs.ts`'s map (read by every `@/lib/orgs`
+ * export called through its normal module boundary, e.g. from `access.ts`)
+ * and a real `org_members` row (read by `getOrgRole` when it's reached via
+ * `resolveRequestedOrgId`'s same-module call, which bypasses the `@/lib/orgs`
+ * mock entirely, and by the member-list routes). Always use this instead of
  * calling `setOrgRole` directly in contract tests.
  */
-export function grantOrgRole(userId: string, orgId: string, role: "admin" | "member"): void {
+export async function grantOrgRole(userId: string, orgId: string, role: "admin" | "member"): Promise<void> {
   setOrgRole(userId, orgId, role);
-  setFakeOrgMembership({ userId, orgId, role });
+  await testDb.insert(orgs).values({ id: orgId, name: `org-${orgId}` }).onConflictDoNothing();
+  await testDb
+    .insert(orgMembers)
+    .values({ orgId, userId, role })
+    .onConflictDoUpdate({ target: [orgMembers.orgId, orgMembers.userId], set: { role } });
 }

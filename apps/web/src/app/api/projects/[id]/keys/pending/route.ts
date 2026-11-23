@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * Users authorized for this project (per `access_grants` / Clerk org role)
+ * Users authorized for this project (per `access_grants` / org role)
  * who don't yet hold a `project_keys` wrap, along with their public key so
  * a client already holding the DEK can seal a copy for them (M6 PR6). Only
  * lists those who've completed ZK onboarding (have a public key to seal

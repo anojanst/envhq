@@ -305,7 +305,7 @@ components:
           format: date-time
     OrgMember:
       type: object
-      description: Clerk-derived membership row, shared shape between org members and project access members.
+      description: An org member with display fields, shared shape between org members and project access members. Labels come from the local user_profiles mirror.
       required: [userId, name, email, imageUrl]
       properties:
         userId:

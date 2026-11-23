@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { projects, environments } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
 import { isFullAccess, isRole, listAccessibleProjects, type Role } from "@/lib/access";
-import { resolveRequestedOrgId, getClerkOrgRole } from "@/lib/orgs";
+import { resolveRequestedOrgId, getOrgRole } from "@/lib/orgs";
 import { getGroup } from "@/lib/groups";
 import { upsertGrant, type SubjectType } from "@/lib/grants";
 import { json, badRequest, unauthorized, tokenExpired, forbidden, conflict } from "@/lib/api";
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     const role = typeof grant?.role === "string" ? grant.role : "";
     if (!subjectId || !isRole(role)) return badRequest("Each grant needs a subjectId and a valid role");
     if (subjectType === "user") {
-      if (!(await getClerkOrgRole(subjectId, orgId))) return badRequest("A granted user isn't a member of this org");
+      if (!(await getOrgRole(subjectId, orgId))) return badRequest("A granted user isn't a member of this org");
     } else {
       if (!(await getGroup(orgId, subjectId))) return badRequest("A granted group doesn't belong to this org");
     }

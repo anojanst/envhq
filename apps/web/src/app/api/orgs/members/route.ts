@@ -1,7 +1,6 @@
-import { clerkClient } from "@clerk/nextjs/server";
-import { timeClerk } from "@/lib/perf";
 import { getUserId } from "@/lib/auth";
-import { resolveRequestedOrgId, getClerkOrgRole } from "@/lib/orgs";
+import { resolveRequestedOrgId, getOrgRole, listOrgMembers } from "@/lib/orgs";
+import { describeMembers } from "@/lib/user-profiles";
 import { json, unauthorized, tokenExpired, forbidden } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -18,21 +17,9 @@ export async function GET(req: Request) {
 
   const requestedOrgId = new URL(req.url).searchParams.get("orgId");
   const orgId = await resolveRequestedOrgId(userId, requestedOrgId);
-  if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return forbidden();
+  if (!orgId || (await getOrgRole(userId, orgId)) !== "admin") return forbidden();
 
-  const client = await clerkClient();
-  const { data: memberships } = await timeClerk("organizations.getOrganizationMembershipList", () =>
-    client.organizations.getOrganizationMembershipList({ organizationId: orgId }),
-  );
-
-  const members = memberships
-    .filter((m) => m.publicUserData)
-    .map((m) => ({
-      userId: m.publicUserData!.userId,
-      name: m.publicUserData!.firstName || m.publicUserData!.identifier,
-      email: m.publicUserData!.identifier,
-      imageUrl: m.publicUserData!.imageUrl,
-    }));
+  const members = await describeMembers(await listOrgMembers(orgId));
 
   return json({ members });
 }

@@ -14,8 +14,8 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
   - `src/app/sign-in`, `src/app/sign-up` — Clerk-hosted auth pages
   - `src/app/docs/` — public docs site (`getting-started`, `cli`, `ci`, `security`, `limitations`, `web-app`) — distinct from the internal `docs/` at repo root
   - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client, `pool.ts` (connection-pool sizing and prepared-statement settings — pure, so it is testable; see `docs/OPERATIONS.md`)
-  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` / `deploy-keys.ts` (key management; `deploy-key-client.ts` is its browser half — it generates the keypair and seals, and is a separate module so a test can assert the private key never reaches the wire), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts`, `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/Clerk measurement — counts and durations only, never SQL or parameters), `observability.ts` (error grouping, scrubbing and alert-once — same counts-only invariant, and the only place a message is allowed to reach storage), `ops-metrics.ts` (EnvHQ's own numbers, and the `ENVHQ_STAFF_USER_IDS` gate), `user-profiles.ts` (the local `user_profiles` mirror of Clerk display names — decorative only, never an authorization input), `identity/` (who is signed in, and user lookups — the only place that asks Clerk who someone is; `clerk.ts` is today's adapter, OIDC replaces it in self-hosting phase 3. Never orgs or roles)
-  - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db` and `contract` vitest projects; `contract/` holds the openapi.yaml-vs-live-routes contract suite; `perf/` holds the RM-5 baseline harness and RM-8's connection load test (its own `perf` vitest project, excluded from `pnpm test`); `ui.setup.ts` backs the `ui` project — happy-dom component tests named `*.render.test.tsx`, which is where render cost and re-render behaviour are pinned (RM-9)
+  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` / `deploy-keys.ts` (key management; `deploy-key-client.ts` is its browser half — it generates the keypair and seals, and is a separate module so a test can assert the private key never reaches the wire), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts` (org roles — read live from Postgres) / `org-store.ts` (its SQL) / `org-sync.ts` (Clerk → Postgres copy of team orgs, until self-hosting phase 4), `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/Clerk measurement — counts and durations only, never SQL or parameters), `observability.ts` (error grouping, scrubbing and alert-once — same counts-only invariant, and the only place a message is allowed to reach storage), `ops-metrics.ts` (EnvHQ's own numbers, and the `ENVHQ_STAFF_USER_IDS` gate), `user-profiles.ts` (the local `user_profiles` mirror of Clerk display names — decorative only, never an authorization input), `identity/` (who is signed in, and user lookups — the only place that asks Clerk who someone is; `clerk.ts` is today's adapter, OIDC replaces it in self-hosting phase 3. Never orgs or roles)
+  - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db`, `orgs-db` and `contract` vitest projects (`orgs-db` runs the real `lib/orgs.ts` over real `org_members` rows, with only Clerk faked — `*.orgs-db.test.ts`); `contract/` holds the openapi.yaml-vs-live-routes contract suite; `perf/` holds the RM-5 baseline harness and RM-8's connection load test (its own `perf` vitest project, excluded from `pnpm test`); `ui.setup.ts` backs the `ui` project — happy-dom component tests named `*.render.test.tsx`, which is where render cost and re-render behaviour are pinned (RM-9)
   - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
   - `src/index.ts` — wiring only: it registers each command, in the order `--help` lists them
@@ -96,7 +96,7 @@ display names cost no Clerk call per render. It is refreshed by the
 `api/webhooks/clerk`, with a batched lazy fill in `lib/user-profiles.ts`.
 
 - **Nothing in `user_profiles` may become an access decision.** A stale row
-  must only ever mislabel a name. Org role still resolves live against Clerk on
+  must only ever mislabel a name. Org role resolves live from `org_members` on
   every request (`lib/orgs.ts`) — do not add a role, membership or entitlement
   column to this table, and do not read it to answer "may they?".
 - Org membership *is* cached, but only within a single request (React `cache()`
@@ -104,6 +104,14 @@ display names cost no Clerk call per render. It is refreshed by the
   admin staying admin for the length of a TTL is a real access consequence.
   The per-org fan-out was removed by passing the already-fetched role down, not
   by caching it longer.
+- **`orgs` / `org_members` are authorization inputs** (self-hosting phase 2).
+  Org admins get admin on every project in the org, so a wrong row is a
+  cross-org leak. Personal orgs are created there directly; team orgs are
+  still made on Clerk's `/teams` screen until phase 4 and copied in by the
+  Clerk webhook via `lib/org-sync.ts`, which re-reads the org from Clerk
+  rather than applying the payload (deliveries can arrive out of order).
+  The `orgs-db` vitest project replays the access matrix against real
+  `org_members` rows — a change to role resolution must pass it.
 
 ### Public pages are static; authenticated responses are never cached
 

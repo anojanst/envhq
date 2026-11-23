@@ -1,5 +1,5 @@
 import { getUserId } from "@/lib/auth";
-import { getClerkOrgRole } from "@/lib/orgs";
+import { getOrgRole } from "@/lib/orgs";
 import { deleteGroup, getGroupOrgId } from "@/lib/groups";
 import { deleteProjectKeysForGroupEverywhere } from "@/lib/project-keys";
 import { json, unauthorized, tokenExpired, notFound } from "@/lib/api";
@@ -19,7 +19,7 @@ export async function DELETE(req: Request, { params }: Params) {
   // and not-admin-of-its-org both 404 (not 403), same "don't reveal whether
   // it exists" convention as the project access layer.
   const orgId = await getGroupOrgId(id);
-  if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return notFound("Group not found");
+  if (!orgId || (await getOrgRole(userId, orgId)) !== "admin") return notFound("Group not found");
 
   // M6 PR6: read members/grants and clean up project_keys *before* deleting
   // the group — deleteGroup cascades group_members away, and this needs

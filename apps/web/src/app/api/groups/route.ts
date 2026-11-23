@@ -1,5 +1,5 @@
 import { getUserId } from "@/lib/auth";
-import { resolveRequestedOrgId, getClerkOrgRole } from "@/lib/orgs";
+import { resolveRequestedOrgId, getOrgRole } from "@/lib/orgs";
 import { listGroups, createGroup } from "@/lib/groups";
 import { json, badRequest, unauthorized, tokenExpired, forbidden, conflict } from "@/lib/api";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -20,7 +20,7 @@ export async function GET(req: Request) {
 
   const requestedOrgId = new URL(req.url).searchParams.get("orgId");
   const orgId = await resolveRequestedOrgId(userId, requestedOrgId);
-  if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return forbidden();
+  if (!orgId || (await getOrgRole(userId, orgId)) !== "admin") return forbidden();
 
   const groups = await listGroups(orgId);
   return json({ groups });
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const requestedOrgId = typeof body?.orgId === "string" ? body.orgId : null;
   const orgId = await resolveRequestedOrgId(userId, requestedOrgId);
-  if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return forbidden();
+  if (!orgId || (await getOrgRole(userId, orgId)) !== "admin") return forbidden();
 
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!name) return badRequest("name is required");

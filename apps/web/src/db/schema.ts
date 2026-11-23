@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   index,
   jsonb,
+  check,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -60,6 +61,46 @@ export const personalOrgs = pgTable("personal_orgs", {
   orgId: text("org_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * Organizations, owned by EnvHQ (self-hosting phase 2 — docs/SELF_HOSTING_PLAN.md).
+ *
+ * THESE ROWS ARE AUTHORIZATION INPUTS. Org admins get automatic admin on
+ * every project in the org (`lib/access.ts`), so a wrong `org_members` row is
+ * a cross-org leak. Unlike `user_profiles`, nothing here is decorative.
+ *
+ * This is the only source of org roles (`lib/orgs.ts`). Personal orgs are
+ * created here with a generated `org_…` id. Team orgs are still created on
+ * Clerk's `/teams` screen until phase 4, keep Clerk's `org_…` id, and are
+ * copied in by `lib/org-sync.ts` on every Clerk org webhook.
+ */
+export const orgs = pgTable("orgs", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  /** Auto-provisioned personal org (one per user, see `personalOrgs`). */
+  personal: boolean("personal").notNull().default(false),
+  createdByUserId: text("created_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** One row per (org, user). `role` is the whole org-level permission model: admin or member. */
+export const orgMembers = pgTable(
+  "org_members",
+  {
+    orgId: text("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    role: text("role").$type<"admin" | "member">().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("org_members_org_id_user_id_uq").on(t.orgId, t.userId),
+    index("org_members_user_id_idx").on(t.userId),
+    check("org_members_role_ck", sql`${t.role} in ('admin', 'member')`),
+  ],
+);
 
 /**
  * A user's zero-knowledge identity (M6 PR1) — one row per Clerk user, keyed
@@ -478,7 +519,7 @@ export type ErrorEvent = typeof errorEvents.$inferSelect;
  * `lib/user-profiles.ts` for users who predate the webhook.
  *
  * NOT an authorization input. Nothing here decides what anyone may read or
- * write — org role still resolves live against Clerk on every request (see
+ * write — org role resolves live from `org_members` on every request (see
  * `lib/orgs.ts`). A stale row here shows an old display name; it can never
  * grant access. Keep it that way.
  */

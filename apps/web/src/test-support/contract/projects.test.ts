@@ -31,7 +31,7 @@ beforeAll(resetContractWorld);
 async function setup() {
   const orgId = `org-${crypto.randomUUID()}`;
   const userId = `user-${crypto.randomUUID()}`;
-  grantOrgRole(userId, orgId, "admin");
+  await grantOrgRole(userId, orgId, "admin");
   // listAccessibleUserIds (used by keys/members, keys/pending, and
   // finalize's membership check) enumerates org admins via a *separate*
   // list from the role check above — populate both so DEK-wrap
@@ -89,7 +89,7 @@ describe("GET/POST /api/projects", () => {
   test("POST 201 creates a project with its default environment", async () => {
     const orgId = `org-${crypto.randomUUID()}`;
     const userId = `user-${crypto.randomUUID()}`;
-    grantOrgRole(userId, orgId, "admin");
+    await grantOrgRole(userId, orgId, "admin");
     const { token } = await createApiToken(userId);
     const path = "/api/projects";
     const { res, body } = await call(createProjectRoute, path, {}, { method: "POST", token, json: { name: `New ${crypto.randomUUID()}`, orgId } });
@@ -134,7 +134,7 @@ describe("GET/POST /api/projects/{id}/access, DELETE /api/projects/{id}/access/{
   test("POST 201 grants a user a role", async () => {
     const { orgId, project, token } = await setup();
     const subjectId = `user-${crypto.randomUUID()}`;
-    grantOrgRole(subjectId, orgId, "member");
+    await grantOrgRole(subjectId, orgId, "member");
     const path = `/api/projects/${project.id}/access`;
     const { res, body } = await call(upsertAccess, path, { id: project.id }, {
       method: "POST",

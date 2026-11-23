@@ -12,8 +12,8 @@ import { lookupDirectoryUsers } from "@/lib/identity";
  * sitting in front of a page that is otherwise one database query.
  *
  * THE RULE THIS MODULE MUST NOT BREAK: names are decorative, access decisions
- * are not. Nothing here is an authorization input. Org role is still resolved
- * live against Clerk on every request (`lib/orgs.ts`); a stale or missing row
+ * are not. Nothing here is an authorization input. Org role is resolved live
+ * from `org_members` on every request (`lib/orgs.ts`); a stale or missing row
  * here degrades a label, never a permission. Do not add a role, a membership
  * or any other access-bearing field to `user_profiles` — the moment it feeds
  * a decision, this table's staleness becomes a security property.
@@ -120,4 +120,32 @@ export async function getDisplayNames(userIds: string[]): Promise<Record<string,
   return Object.fromEntries(
     unique.map((id) => [id, displayName({ name: profiles.get(id)?.name ?? null, userId: id })]),
   );
+}
+
+export interface MemberDescription {
+  userId: string;
+  name: string;
+  email: string;
+  imageUrl: string;
+}
+
+/**
+ * Display fields for a member picker (`OrgMember` in openapi.yaml), in the
+ * order given. Decorative only, like everything in this module: the list of
+ * *who* is a member comes from `lib/orgs.ts`; this only labels them. Same
+ * fallbacks the Clerk-backed pickers used — a name falls back to the email,
+ * then to the raw id — and empty strings rather than nulls, as the schema
+ * has always promised.
+ */
+export async function describeMembers(members: { userId: string }[]): Promise<MemberDescription[]> {
+  const profiles = await getUserProfiles(members.map((m) => m.userId));
+  return members.map(({ userId }) => {
+    const p = profiles.get(userId);
+    return {
+      userId,
+      name: p?.name || p?.email || userId,
+      email: p?.email ?? "",
+      imageUrl: p?.imageUrl ?? "",
+    };
+  });
 }

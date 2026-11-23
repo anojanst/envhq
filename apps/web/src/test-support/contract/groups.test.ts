@@ -13,8 +13,8 @@ async function setup() {
   const orgId = `org-${crypto.randomUUID()}`;
   const adminUserId = `user-${crypto.randomUUID()}`;
   const memberUserId = `user-${crypto.randomUUID()}`;
-  grantOrgRole(adminUserId, orgId, "admin");
-  grantOrgRole(memberUserId, orgId, "member");
+  await grantOrgRole(adminUserId, orgId, "admin");
+  await grantOrgRole(memberUserId, orgId, "member");
   const group = await seedGroup(orgId);
   const { token: adminToken } = await createApiToken(adminUserId);
   const { token: memberToken } = await createApiToken(memberUserId);
@@ -73,7 +73,7 @@ describe("GET/POST /api/groups/{id}/members, DELETE /api/groups/{id}/members/{us
   test("POST 201 adds a member and returns the full updated list", async () => {
     const { orgId, group, adminToken } = await setup();
     const newMemberId = `user-${crypto.randomUUID()}`;
-    grantOrgRole(newMemberId, orgId, "member");
+    await grantOrgRole(newMemberId, orgId, "member");
     const path = `/api/groups/${group.id}/members`;
     const { res, body } = await call(addMember, path, { id: group.id }, { method: "POST", token: adminToken, json: { userId: newMemberId } });
     expectStatus(res, 201);

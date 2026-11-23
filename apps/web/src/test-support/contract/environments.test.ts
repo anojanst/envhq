@@ -15,7 +15,7 @@ beforeAll(resetContractWorld);
 async function setup() {
   const orgId = `org-${crypto.randomUUID()}`;
   const userId = `user-${crypto.randomUUID()}`;
-  grantOrgRole(userId, orgId, "admin");
+  await grantOrgRole(userId, orgId, "admin");
   const project = await createProject(orgId);
   const environment = await createEnvironment(project.id);
   const { token } = await createApiToken(userId);

@@ -40,7 +40,7 @@ beforeAll(resetContractWorld);
 async function setup() {
   const orgId = `org-${crypto.randomUUID()}`;
   const userId = `user-${crypto.randomUUID()}`;
-  grantOrgRole(userId, orgId, "admin");
+  await grantOrgRole(userId, orgId, "admin");
   setOrgAdminList(orgId, [userId]);
   // A real curve point: this suite seals to it for the rotation tests, and
   // the placeholder the helper uses by default is not a valid X25519 key.

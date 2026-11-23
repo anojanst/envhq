@@ -1,5 +1,5 @@
 import { getUserId } from "@/lib/auth";
-import { getClerkOrgRole } from "@/lib/orgs";
+import { getOrgRole } from "@/lib/orgs";
 import { getGroupOrgId, removeGroupMember } from "@/lib/groups";
 import { deleteProjectKeysForGroupMember } from "@/lib/project-keys";
 import { json, unauthorized, tokenExpired, notFound } from "@/lib/api";
@@ -17,7 +17,7 @@ export async function DELETE(req: Request, { params }: Params) {
   // The group's own org is the source of truth — not a session-level
   // "active org" (there is none now that the org switcher is gone).
   const orgId = await getGroupOrgId(id);
-  if (!orgId || (await getClerkOrgRole(userId, orgId)) !== "admin") return notFound("Group not found");
+  if (!orgId || (await getOrgRole(userId, orgId)) !== "admin") return notFound("Group not found");
 
   const removed = await removeGroupMember(id, memberUserId);
   if (!removed) return notFound("Member not found in this group");

@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { environments } from "@/db/schema";
 import { getUserId } from "@/lib/auth";
 import { getAccessibleProject, isReadOnly, isRole, type EnvScope, type Role } from "@/lib/access";
-import { getClerkOrgRole } from "@/lib/orgs";
+import { getOrgRole } from "@/lib/orgs";
 import { getGroup } from "@/lib/groups";
 import { listGrants, upsertGrant, withGrantNames, type SubjectType } from "@/lib/grants";
 import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden } from "@/lib/api";
@@ -82,7 +82,7 @@ export async function POST(req: Request, { params }: Params) {
   if (!ROLES.includes(role as Role)) return badRequest("role must be one of viewer, editor, admin");
 
   if (subjectType === "user") {
-    const memberRole = await getClerkOrgRole(subjectId, owned.project.orgId);
+    const memberRole = await getOrgRole(subjectId, owned.project.orgId);
     if (!memberRole) return badRequest("That user isn't a member of this project's org");
   } else {
     const group = await getGroup(owned.project.orgId, subjectId);

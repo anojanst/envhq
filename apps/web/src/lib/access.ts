@@ -2,7 +2,7 @@ import { and, asc, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from 
 import { db } from "@/db";
 import { projects, environments, envVars, accessGrants, groupMembers, type Project } from "@/db/schema";
 import type { TokenScope } from "@/lib/auth";
-import { getClerkOrgRole, listMyOrgs, listOrgAdminUserIds } from "@/lib/orgs";
+import { getOrgRole, listMyOrgs, listOrgAdminUserIds } from "@/lib/orgs";
 import { timeDb } from "@/lib/perf";
 
 /**
@@ -151,7 +151,7 @@ async function resolveGrantRole(userId: string, projectId: string, envName?: str
 
 /** Clerk org admin/owner ⇒ `"admin"` outright (unaffected by env_scope — org admins are always full access); else the highest `access_grants` role for `envName`, or `null`. */
 async function resolveRole(userId: string, orgId: string, projectId: string, envName?: string): Promise<Role | null> {
-  if ((await getClerkOrgRole(userId, orgId)) === "admin") return "admin";
+  if ((await getOrgRole(userId, orgId)) === "admin") return "admin";
   return resolveGrantRole(userId, projectId, envName);
 }
 
@@ -276,7 +276,7 @@ function visibleInOrg(userId: string, orgId: string, role: OrgRole) {
 
 /** Every project in `orgId` the caller can see: all of them if org admin, else only ones with an `access_grants` row. */
 export async function listAccessibleProjects(userId: string, orgId: string, scope?: TokenScope): Promise<Project[]> {
-  const role = await getClerkOrgRole(userId, orgId);
+  const role = await getOrgRole(userId, orgId);
   return db
     .select()
     .from(projects)
@@ -291,7 +291,7 @@ export async function listAccessibleProjects(userId: string, orgId: string, scop
  * `ProjectListItem[]`, so that grouping code doesn't need to change.
  */
 export async function listAccessibleProjectsWithEnvs(userId: string, orgId: string) {
-  const role = await getClerkOrgRole(userId, orgId);
+  const role = await getOrgRole(userId, orgId);
   return db
     .select({
       id: projects.id,

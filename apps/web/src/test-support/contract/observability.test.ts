@@ -176,7 +176,7 @@ describe("the staff-only ops surface", () => {
   async function setupUser() {
     const orgId = `org-${crypto.randomUUID()}`;
     const userId = `user-${crypto.randomUUID()}`;
-    grantOrgRole(userId, orgId, "admin");
+    await grantOrgRole(userId, orgId, "admin");
     setOrgAdminList(orgId, [userId]);
     const { token } = await createApiToken(userId);
     return { userId, token };

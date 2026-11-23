@@ -1,7 +1,7 @@
-import { clerkClient } from "@clerk/nextjs/server";
-import { timeClerk } from "@/lib/perf";
 import { getUserId } from "@/lib/auth";
 import { getAccessibleProject } from "@/lib/access";
+import { listOrgMembers } from "@/lib/orgs";
+import { describeMembers } from "@/lib/user-profiles";
 import { json, unauthorized, tokenExpired, notFound } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -20,19 +20,7 @@ export async function GET(req: Request, { params }: Params) {
   const owned = await getAccessibleProject(userId, id, "admin", scope);
   if (!owned) return notFound("Project not found");
 
-  const client = await clerkClient();
-  const { data: memberships } = await timeClerk("organizations.getOrganizationMembershipList", () =>
-    client.organizations.getOrganizationMembershipList({ organizationId: owned.project.orgId }),
-  );
-
-  const members = memberships
-    .filter((m) => m.publicUserData)
-    .map((m) => ({
-      userId: m.publicUserData!.userId,
-      name: m.publicUserData!.firstName || m.publicUserData!.identifier,
-      email: m.publicUserData!.identifier,
-      imageUrl: m.publicUserData!.imageUrl,
-    }));
+  const members = await describeMembers(await listOrgMembers(owned.project.orgId));
 
   return json({ members });
 }

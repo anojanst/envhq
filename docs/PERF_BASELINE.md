@@ -229,3 +229,12 @@ the keystroke ratio above drifting off flat. The curve is linear, so a
 thousand variables is about double the current cost and two thousand about
 quadruple; there is no point before that where this decision changes
 suddenly.
+
+## 2026-11-23 — org roles moved to Postgres (self-hosting phase 2)
+
+`lib/orgs.ts` no longer calls Clerk: every membership and role read is one
+Postgres query (`org_members` joined to `orgs`). The "Clerk calls" column
+above therefore overstates today's cost for every route that resolves an org
+role — those reads are now 0 Clerk calls and +1 query. The harness asserts the
+new shape (`dashboard` makes 0 Clerk calls); re-run `test:perf` and refresh
+the table before the next Performance ticket relies on these numbers.

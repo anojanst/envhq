@@ -95,6 +95,7 @@ export default defineConfig({
             "**/dist/**",
             "src/lib/access-matrix.test.ts",
             "src/lib/access.list.test.ts",
+            "src/**/*.orgs-db.test.ts",
             "src/test-support/contract/**/*.test.ts",
             "src/test-support/perf/**/*.test.ts",
             "src/**/*.render.test.tsx",
@@ -137,6 +138,22 @@ export default defineConfig({
           // Only two files touch the shared Postgres service container —
           // serializing them is cheap and avoids reasoning about concurrent
           // truncate/insert seeding against the one instance.
+          fileParallelism: false,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          // Self-hosting phase 2: the real `lib/orgs.ts` against real
+          // Postgres — NOT the mocked `@/lib/orgs` the projects around it
+          // use — with only Clerk's network boundary faked. Holds the access
+          // matrix replayed with roles from `org_members`, and the Clerk →
+          // Postgres org sync.
+          name: "orgs-db",
+          environment: "node",
+          include: ["src/**/*.orgs-db.test.ts"],
+          setupFiles: ["./src/test-support/mock-db.setup.ts", "./src/test-support/mock-clerk.setup.ts"],
+          globalSetup: ["./src/test-support/migrate.global-setup.ts"],
           fileParallelism: false,
         },
       },

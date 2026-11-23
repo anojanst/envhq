@@ -116,8 +116,8 @@ beforeAll(async () => {
 
   // A returning user already has a personal org row, so the dashboard's
   // `getOrCreatePersonalOrg` is one cheap query and no Clerk call. A brand-new
-  // account pays a `users.getUser` + `createOrganization` on its first load;
-  // that one-off is out of scope for a steady-state baseline.
+  // account pays a `users.getUser` and a few inserts on its first load; that
+  // one-off is out of scope for a steady-state baseline.
   await testDb
     .insert(personalOrgs)
     .values({ userId: sample.userId, orgId: sample.orgs[0]!.id })
@@ -138,7 +138,9 @@ describe("RM-5 baseline", () => {
     // equality, so adding a cheap query is not a test failure — but going back
     // to per-org fan-out is.
     expect(row.queries, "the dashboard must not scale its query count with org count").toBeLessThanOrEqual(3);
-    expect(row.clerkCalls, "one membership read, not one per org").toBe(1);
+    // Org memberships are a Postgres read since self-hosting phase 2; the
+    // dashboard asks Clerk nothing at all.
+    expect(row.clerkCalls, "org roles come from Postgres, not Clerk").toBe(0);
   });
 
   test("dashboard cost is flat in org count — neither queries nor Clerk calls grow", async () => {

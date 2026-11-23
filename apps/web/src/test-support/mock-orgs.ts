@@ -1,14 +1,12 @@
 import { vi } from "vitest";
 
 /**
- * Stubs the Clerk network boundary that `apps/web/src/lib/access.ts` calls
- * through `@/lib/orgs` (`getClerkOrgRole`, `listOrgAdminUserIds`) and
- * `listAccessibleProjectsWithEnvsAcrossOrgs` (`listMyOrgs`) — real network
- * calls would make the authz-db suite slow, flaky, and dependent on Clerk's
- * uptime. Mocked at the `@/lib/orgs` module boundary (not `@clerk/nextjs`
- * internals) so this seam survives ADR-008's later move of org-role lookups
- * to Postgres unchanged — only `orgs.ts`'s implementation would need to
- * change, not this stub.
+ * Stubs the org-role boundary that `apps/web/src/lib/access.ts` calls
+ * through `@/lib/orgs` (`getOrgRole`, `listOrgAdminUserIds`) and
+ * `listAccessibleProjectsWithEnvsAcrossOrgs` (`listMyOrgs`), so the authz-db
+ * and contract suites can state each case's org role directly instead of
+ * seeding `org_members`. The real `lib/orgs.ts` over real rows is exercised
+ * separately, by the `orgs-db` project — including this same access matrix.
  *
  * Each fixture case calls `setOrgRole`/`setOrgAdminList`/`setMyOrgs` before
  * exercising the function under test; state accumulates in these maps for
@@ -35,28 +33,17 @@ export function setMyOrgs(userId: string, orgs: { id: string; name: string; role
 }
 
 /**
- * Each stub is wrapped in `timeClerk` so it still *counts* as the Clerk
- * round-trip it stands in for. Without this the RM-5 perf harness would report
- * zero Clerk calls on every route, since mocking at the `@/lib/orgs` boundary
- * replaces the very functions carrying the real instrumentation.
- *
- * The count is real; the latency is not — a stub returns from a Map. See
- * `docs/PERF_BASELINE.md` for where the real numbers come from. `timeClerk` is
- * a no-op outside a measured span, so the other suites are unaffected.
+ * Org lookups are Postgres reads now (self-hosting phase 2), not Clerk calls,
+ * so these stubs no longer go through `timeClerk` — the perf harness must not
+ * count a Clerk round-trip that no longer happens. The real query cost of
+ * `lib/orgs.ts` is covered by the `orgs-db` project, which runs it unmocked.
  */
 vi.mock("@/lib/orgs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/orgs")>();
-  const { timeClerk } = await import("@/lib/perf");
   return {
     ...actual,
-    getClerkOrgRole: vi.fn(async (userId: string, orgId: string): Promise<OrgRole> =>
-      timeClerk("users.getOrganizationMembershipList", async () => orgRole.get(`${userId}:${orgId}`) ?? null),
-    ),
-    listOrgAdminUserIds: vi.fn(async (orgId: string): Promise<string[]> =>
-      timeClerk("organizations.getOrganizationMembershipList", async () => orgAdmins.get(orgId) ?? []),
-    ),
-    listMyOrgs: vi.fn(async (userId: string) =>
-      timeClerk("users.getOrganizationMembershipList", async () => myOrgs.get(userId) ?? []),
-    ),
+    getOrgRole: vi.fn(async (userId: string, orgId: string): Promise<OrgRole> => orgRole.get(`${userId}:${orgId}`) ?? null),
+    listOrgAdminUserIds: vi.fn(async (orgId: string): Promise<string[]> => orgAdmins.get(orgId) ?? []),
+    listMyOrgs: vi.fn(async (userId: string) => myOrgs.get(userId) ?? []),
   };
 });

@@ -1,6 +1,6 @@
 # Self-hosting plan
 
-Status: **in progress** — phase 1 done 2026-11-23. Reopens the direction
+Status: **in progress** — phases 1 and 2 done 2026-11-23. Reopens the direction
 retired on 2026-09-18 (`7d5e990`, "retiring self hosting roadmap").
 
 Goal: an organization can run EnvHQ inside its own network, sign in with its own
@@ -98,21 +98,27 @@ Each phase lands on `main` on its own, and envhq.dev keeps working after each.
 - Design reference: `apps/api/internal/identity/identity.go` on the local branch
   `archive/go-api-1044fda` — identity answers *who is this*, never orgs or roles.
 
-### 2 · Orgs into Postgres, and migrate SaaS (5–7 days) — highest risk
-- Tables `orgs`, `org_members` (role `admin|member`), `org_invites` (token hash
-  + expiry, the `cli_auth_requests` pattern). Existing `org_id` values are kept
-  as-is, so `projects.org_id` and every grant still point at the same org.
-- `lib/orgs.ts` reads Postgres instead of Clerk. Roles still resolve **per
-  request** with `cache()` only — the invariant in CLAUDE.md is unchanged except
-  for where the row lives.
-- One-off migration script: copy every Clerk org, membership and role into
-  Postgres; idempotent; dry-run mode that prints counts and diffs.
-- Rollout: deploy reading Postgres behind a flag; run the migration; compare
-  Clerk vs Postgres answers for real requests (shadow read, counts only); flip.
-  Until phase 4 ships, Clerk-side org changes are mirrored via the existing
-  webhook so the two can't diverge.
-- **Gate:** the `authz-db` access matrix passes with no change to
-  `access-matrix.fixtures.json`, plus new cases for invites and role changes.
+### 2 · Orgs into Postgres (done)
+- Tables `orgs` and `org_members` (role `admin|member`), migration `0016`.
+  `lib/orgs.ts` answers every role check from Postgres; Clerk is no longer
+  asked who belongs to what. Roles still resolve **per request** with
+  `cache()` only.
+- **No data migration.** Existing data was declared disposable (2026-11-23),
+  so there is no backfill, no dual-read rollout and no source switch. Deploy
+  this on an empty database (or wipe): users and orgs created before it have
+  no `org_members` rows and would see no orgs.
+- Personal orgs are created in Postgres only, with a generated `org_…` id.
+- Team orgs are still created on Clerk's `/teams` screen until phase 4. The
+  Clerk webhook copies each one in (`lib/org-sync.ts`): it re-reads the org
+  from Clerk on every `organization.*` / `organizationMembership.*` event
+  instead of applying the payload, so out-of-order deliveries converge.
+  **Those events must be enabled on the Clerk webhook endpoint.**
+- Gate met: the `orgs-db` vitest project replays `access-matrix.fixtures.json`,
+  unchanged, against real `org_members` rows; plus sync and webhook tests.
+- Also fixed: Clerk's membership lists default to 10 per page, and the old
+  code read only the first page — an org with more than 10 members was
+  silently truncated in role checks and DEK reconciliation.
+- Invites (`org_invites`) move to phase 4, where the UI that uses them lands.
 
 ### 3 · OIDC sign-in, everywhere (4–6 days)
 - `lib/identity/oidc.ts` on `openid-client`: authorization code + PKCE,
@@ -167,10 +173,11 @@ Each phase lands on `main` on its own, and envhq.dev keeps working after each.
 
 ## Risks
 
-- **Phase 2 is a SaaS data migration of authorization data.** A wrong
-  membership leaks secrets across orgs. Mitigations: idempotent script with dry
-  run, shadow comparison before the flip, the access matrix as the gate, and a
-  flag to fall back to Clerk reads until phase 4.
+- **Org rows are authorization data.** A wrong membership leaks secrets
+  across orgs. Mitigation: the access matrix runs against real `org_members`
+  rows in CI (`orgs-db`). Until phase 4, a missed Clerk webhook means a team
+  change in Clerk isn't reflected here — Svix retries, and failures reach
+  `/ops` through `reportError`.
 - **Everyone signs in once more** when phase 3 reaches envhq.dev. Announce it;
   CLI tokens are unaffected (they are EnvHQ's own API tokens, not Clerk's).
 - **Clerk plan gating** of the OIDC provider on production — checked before

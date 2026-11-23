@@ -83,8 +83,8 @@ describe("GET /api/orgs, GET /api/orgs/members", () => {
     const orgId = `org-${crypto.randomUUID()}`;
     const adminId = `user-${crypto.randomUUID()}`;
     const memberId = `user-${crypto.randomUUID()}`;
-    grantOrgRole(adminId, orgId, "admin");
-    grantOrgRole(memberId, orgId, "member");
+    await grantOrgRole(adminId, orgId, "admin");
+    await grantOrgRole(memberId, orgId, "member");
     setFakeUser({ id: memberId, firstName: "Mem", email: "mem@example.test" });
     const { token: adminToken } = await createApiToken(adminId);
     const { token: memberToken } = await createApiToken(memberId);
@@ -135,7 +135,7 @@ describe("PATCH/DELETE /api/vars/{id}", () => {
   async function setup() {
     const orgId = `org-${crypto.randomUUID()}`;
     const userId = `user-${crypto.randomUUID()}`;
-    grantOrgRole(userId, orgId, "admin");
+    await grantOrgRole(userId, orgId, "admin");
     const project = await createProject(orgId);
     const environment = await createEnvironment(project.id);
     const variable = await createEnvVar(environment.id, { key: "ORIGINAL" });
