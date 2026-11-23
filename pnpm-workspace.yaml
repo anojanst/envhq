@@ -7,6 +7,9 @@ packages:
 # upstream chain ships a patched range on its own.
 overrides:
   browserslist: ">=4.28.7"
+  # source-map-js <1.2.2 (event-loop DoS) arrives via next > postcss; same
+  # story as browserslist: a floor until postcss requires a patched range.
+  source-map-js: ">=1.2.2"
 allowBuilds:
   esbuild: true
   sharp: true
