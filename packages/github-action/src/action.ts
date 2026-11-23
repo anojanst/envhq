@@ -16,7 +16,7 @@
  * has to mean one specific decrypt implementation, and a compromised or
  * broken `envhq` publish must not reach every pipeline on its next run.
  */
-export const CLI_VERSION = "0.10.0";
+export const CLI_VERSION = "0.11.0";
 
 const FORMATS = { env: "github-env", outputs: "github-output", dotenv: "dotenv" } as const;
 type Format = keyof typeof FORMATS;
@@ -29,6 +29,7 @@ export interface Inputs {
   format: string;
   mask: string;
   path: string;
+  required: string;
 }
 
 /** Action inputs as the runner passes them: `INPUT_<NAME>`, uppercased. */
@@ -42,6 +43,7 @@ export function readInputs(env: NodeJS.ProcessEnv): Inputs {
     format: get("format") || "env",
     mask: get("mask") || "true",
     path: get("path") || ".env",
+    required: get("required"),
   };
 }
 
@@ -90,6 +92,8 @@ export function plan(inputs: Inputs, base: NodeJS.ProcessEnv, platform: NodeJS.P
       ENVHQ_DEPLOY_KEY: inputs.key,
       ENVHQ_PROJECT: inputs.project,
       ENVHQ_ENVIRONMENT: inputs.environment,
+      // Only when given: an ENVHQ_REQUIRE set on the job still applies otherwise.
+      ...(inputs.required ? { ENVHQ_REQUIRE: inputs.required } : {}),
       npm_config_update_notifier: "false",
       npm_config_fund: "false",
     },

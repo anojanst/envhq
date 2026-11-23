@@ -4,6 +4,7 @@ import { serializeEnv, type EnvPair } from "@envhq/parser";
 import { fail } from "../shared/ui.ts";
 import { resolveTarget } from "../shared/target.ts";
 import { failureMessage, fetchPlaintextEnv } from "../shared/secrets.ts";
+import { checkRequired, parseRequired } from "../shared/require.ts";
 import { appendFileCommand, emitMasks, inGitHubActions } from "../shared/github.ts";
 
 export const FORMATS = ["dotenv", "json", "github-env", "github-output"] as const;
@@ -28,14 +29,20 @@ export function register(program: Command): void {
     )
     .addOption(new Option("-e, --env <name>", "environment (defaults to the linked default)").env("ENVHQ_ENVIRONMENT"))
     .addOption(new Option("--format <format>", "output format").choices(FORMATS).default("dotenv"))
+    .addOption(
+      new Option("--require <names>", "fail unless these variables exist and are non-empty (comma-separated)").env(
+        "ENVHQ_REQUIRE",
+      ),
+    )
     .option("-o, --output <file>", "write to this file instead of stdout (dotenv and json only)")
     .option("--no-mask", "don't register values with the GitHub Actions log masker")
-    .action(async (opts: { project?: string; env?: string; format: Format; output?: string; mask: boolean }) => {
+    .action(async (opts: { project?: string; env?: string; require?: string; format: Format; output?: string; mask: boolean }) => {
       try {
         checkDestination(opts.format, opts.output, inGitHubActions());
 
         const target = await resolveTarget(opts);
         const pairs = await fetchPlaintextEnv(target.projectId, target.envId);
+        checkRequired(pairs, parseRequired(opts.require), `${target.projectName}/${target.envName}`);
 
         // First, before any value can reach a log.
         if (inGitHubActions()) {

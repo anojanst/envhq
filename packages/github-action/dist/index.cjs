@@ -4,7 +4,7 @@
 var import_node_child_process = require("child_process");
 
 // src/action.ts
-var CLI_VERSION = "0.10.0";
+var CLI_VERSION = "0.11.0";
 var FORMATS = { env: "github-env", outputs: "github-output", dotenv: "dotenv" };
 function readInputs(env) {
   const get = (name) => (env[`INPUT_${name.toUpperCase()}`] ?? "").trim();
@@ -15,7 +15,8 @@ function readInputs(env) {
     environment: get("environment"),
     format: get("format") || "env",
     mask: get("mask") || "true",
-    path: get("path") || ".env"
+    path: get("path") || ".env",
+    required: get("required")
   };
 }
 function plan(inputs2, base, platform) {
@@ -46,6 +47,8 @@ function plan(inputs2, base, platform) {
       ENVHQ_DEPLOY_KEY: inputs2.key,
       ENVHQ_PROJECT: inputs2.project,
       ENVHQ_ENVIRONMENT: inputs2.environment,
+      // Only when given: an ENVHQ_REQUIRE set on the job still applies otherwise.
+      ...inputs2.required ? { ENVHQ_REQUIRE: inputs2.required } : {},
       npm_config_update_notifier: "false",
       npm_config_fund: "false"
     },

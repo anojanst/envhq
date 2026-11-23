@@ -145,7 +145,10 @@ npx envhq <command>`}</CodeBlock>
       <P>
         For scripts and CI. Neither command prompts. Both take <Code>-p, --project &lt;name|id&gt;</Code>{" "}
         and <Code>-e, --env &lt;name&gt;</Code>, which default to the linked folder, or to{" "}
-        <Code>ENVHQ_PROJECT</Code>/<Code>ENVHQ_ENVIRONMENT</Code> when those are set.
+        <Code>ENVHQ_PROJECT</Code>/<Code>ENVHQ_ENVIRONMENT</Code> when those are set. Both also take{" "}
+        <Code>--require &lt;names&gt;</Code>: the variables you can&apos;t do without, comma-separated.
+        If any is missing or empty, the command stops before writing anything or starting your
+        command, and names each one.
       </P>
       <Table>
         <thead>
@@ -234,6 +237,10 @@ npx envhq <command>`}</CodeBlock>
           <tr>
             <Td><Code>ENVHQ_PROJECT</Code>, <Code>ENVHQ_ENVIRONMENT</Code></Td>
             <Td>Defaults for <Code>--project</Code> and <Code>--env</Code> on <Code>run</Code> and <Code>export</Code>.</Td>
+          </tr>
+          <tr>
+            <Td><Code>ENVHQ_REQUIRE</Code></Td>
+            <Td>Same as <Code>--require</Code> on <Code>run</Code> and <Code>export</Code>.</Td>
           </tr>
         </tbody>
       </Table>

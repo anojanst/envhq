@@ -17,6 +17,7 @@ const inputs = (over: Partial<Inputs> = {}): Inputs => ({
   format: "env",
   mask: "true",
   path: ".env",
+  required: "",
   ...over,
 });
 
@@ -32,9 +33,27 @@ test("the pinned CLI version has the export command this action calls", () => {
   assert.ok(maj! > 0 || min! >= 10, "`envhq export` first shipped in 0.10.0");
 });
 
+test("the pinned CLI version understands ENVHQ_REQUIRE, which the `required` input relies on", () => {
+  const [maj, min] = CLI_VERSION.split(".").map(Number);
+  assert.ok(maj! > 0 || min! >= 11, "`--require` / ENVHQ_REQUIRE first shipped in 0.11.0");
+});
+
+test("`required` reaches the CLI as ENVHQ_REQUIRE, and only when it was given", () => {
+  const given = plan(inputs({ required: "DATABASE_URL,\nSTRIPE_KEY" }), { ENVHQ_REQUIRE: "FROM_JOB" }, "linux");
+  assert.ok(!("errors" in given));
+  assert.equal(given.env.ENVHQ_REQUIRE, "DATABASE_URL,\nSTRIPE_KEY");
+  assert.ok(!given.args.join(" ").includes("DATABASE_URL"), "names travel as environment, not argv");
+
+  const omitted = plan(inputs(), { ENVHQ_REQUIRE: "FROM_JOB" }, "linux");
+  assert.ok(!("errors" in omitted));
+  assert.equal(omitted.env.ENVHQ_REQUIRE, "FROM_JOB", "a job-level ENVHQ_REQUIRE still applies");
+
+  assert.equal(readInputs({ INPUT_REQUIRED: " A, B " }).required, "A, B");
+});
+
 test("inputs are read the way the runner passes them", () => {
   const read = readInputs({ INPUT_TOKEN: " t ", INPUT_KEY: "k", INPUT_PROJECT: "p", INPUT_ENVIRONMENT: "e" });
-  assert.deepEqual(read, { token: "t", key: "k", project: "p", environment: "e", format: "env", mask: "true", path: ".env" });
+  assert.deepEqual(read, { token: "t", key: "k", project: "p", environment: "e", format: "env", mask: "true", path: ".env", required: "" });
 });
 
 test("each format maps to one pinned export invocation", () => {

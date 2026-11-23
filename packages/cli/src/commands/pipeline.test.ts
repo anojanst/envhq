@@ -147,6 +147,39 @@ test("run propagates the child's exit code", async () => {
   );
 });
 
+test("--require: a missing name fails before anything is written, naming it and the likely typo", async () => {
+  const githubEnv = join(home, "github_env_required");
+  await assert.rejects(
+    () =>
+      cli(
+        ["export", "-p", "shop", "-e", "staging", "--format", "github-env", "--require", "SECRET,SECRT"],
+        runner({ GITHUB_ENV: githubEnv }),
+      ),
+    (err: { code?: number; stderr?: string; stdout?: string }) =>
+      err.code === 1 &&
+      /shop\/staging is missing 1 required variable: SECRT \(did you mean SECRET\?\)/.test(err.stderr ?? "") &&
+      !(err.stdout ?? "").includes("::add-mask::"),
+  );
+  await assert.rejects(() => stat(githubEnv), "GITHUB_ENV was never written");
+});
+
+test("ENVHQ_REQUIRE works the same as --require, and run never starts the command", async () => {
+  await assert.rejects(
+    () =>
+      cli(
+        ["run", "-p", "shop", "-e", "staging", "--", process.execPath, "-e", "console.log('started')"],
+        runner({ ENVHQ_REQUIRE: "SECRET\nMISSING_ONE" }),
+      ),
+    (err: { code?: number; stderr?: string; stdout?: string }) =>
+      err.code === 1 && /MISSING_ONE/.test(err.stderr ?? "") && !(err.stdout ?? "").includes("started"),
+  );
+  const { stdout } = await cli(
+    ["run", "-p", "shop", "-e", "staging", "--require", "SECRET PEM", "--", process.execPath, "-e", "console.log('started')"],
+    runner(),
+  );
+  assert.equal(stdout.trimEnd().split("\n").at(-1), "started");
+});
+
 test("a revoked deploy key fails the job loudly and says what to do", async () => {
   await assert.rejects(
     () => cli(["export", "-p", "shop", "-e", "staging", "--format", "github-env"], runner({ ENVHQ_TOKEN: "envhq_revoked", GITHUB_ENV: join(home, "unused") })),

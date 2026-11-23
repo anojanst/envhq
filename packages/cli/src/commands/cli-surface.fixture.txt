@@ -222,6 +222,8 @@ Options:
                            (env: ENVHQ_PROJECT)
   -e, --env <name>         environment (defaults to the linked default) (env:
                            ENVHQ_ENVIRONMENT)
+  --require <names>        fail unless these variables exist and are non-empty
+                           (comma-separated) (env: ENVHQ_REQUIRE)
   -h, --help               display help for command
 ### envhq export --help
 Usage: envhq export [options]
@@ -235,6 +237,8 @@ Options:
                            ENVHQ_ENVIRONMENT)
   --format <format>        output format (choices: "dotenv", "json",
                            "github-env", "github-output", default: "dotenv")
+  --require <names>        fail unless these variables exist and are non-empty
+                           (comma-separated) (env: ENVHQ_REQUIRE)
   -o, --output <file>      write to this file instead of stdout (dotenv and json
                            only)
   --no-mask                don't register values with the GitHub Actions log

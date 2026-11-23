@@ -36,6 +36,7 @@ alone is useless.
 | `environment` | yes | | Environment name. |
 | `format` | no | `env` | `env`: environment variables for every later step. `outputs`: step outputs (`steps.<id>.outputs.<NAME>`). `dotenv`: a file at `path`. |
 | `mask` | no | `true` | Register every value with the log masker. Turn off only for values that aren't secret. |
+| `required` | no | | Names the job can't run without, separated by commas or newlines. The step fails, exporting nothing, if any is missing or empty. |
 | `path` | no | `.env` | Where `format: dotenv` writes. |
 
 Set `ENVHQ_URL` in the job's `env` to use a server other than envhq.dev.
@@ -66,6 +67,19 @@ will print as-is. Don't echo secrets just because the log masks them.
 The step fails, and no variables are exported. Later steps never run with
 half an environment. The log says why. A revoked deploy key, for example,
 tells you to issue a new one and update both secrets.
+
+The action can't know which variables your job reads, so a misspelled or
+deleted name just ends up unset in later steps. List the names you depend on
+in `required` to catch that here instead:
+
+```yaml
+    required: |
+      DATABASE_URL
+      STRIPE_KEY
+```
+
+A missing name fails the step with the closest existing name as a hint
+(`HEL_ENVHC (did you mean HELLO_ENVHQ?)`).
 
 ## How it works
 

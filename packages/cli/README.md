@@ -53,8 +53,8 @@ envhq status                # show login + link state
 | `env map <env> <file>` | Change which local file an environment maps to. |
 | `pull [env] [--file <p>] [--all] [--force] [--yes]` | Write remote variables to a local file (defaults to the linked default environment). |
 | `push [env] [--file <p>] [--all] [--yes]` | Upload a local file to the remote (upsert/merge). |
-| `run [-p <project>] [-e <env>] -- <command>` | Run a command with an environment's variables injected. Nothing is written to disk. |
-| `export [-p <project>] [-e <env>] [--format <f>] [-o <file>] [--no-mask]` | Print or write decrypted variables. Formats: `dotenv` (default), `json`, `github-env`, `github-output`. |
+| `run [-p <project>] [-e <env>] [--require <names>] -- <command>` | Run a command with an environment's variables injected. Nothing is written to disk. |
+| `export [-p <project>] [-e <env>] [--format <f>] [--require <names>] [-o <file>] [--no-mask]` | Print or write decrypted variables. Formats: `dotenv` (default), `json`, `github-env`, `github-output`. |
 | `status` | Show login and link status. |
 
 `--env <list>` on `init`/`projects create` is a comma-separated list (default
@@ -78,6 +78,9 @@ confirmation unless you pass `--yes`.
   (project → Deploy keys), which also gives you its `ENVHQ_TOKEN`.
 - **`ENVHQ_PROJECT` / `ENVHQ_ENVIRONMENT`** — defaults for `--project` /
   `--env` on `run` and `export`, for runners with no linked folder.
+- **`ENVHQ_REQUIRE`** — same as `--require` on `run` and `export`: names
+  (comma- or whitespace-separated) that must exist and be non-empty, or the
+  command stops before writing anything or starting the child.
 
 ### In CI
 

@@ -44,6 +44,7 @@ export default function CiDocsPage() {
     key: \${{ secrets.ENVHQ_DEPLOY_KEY }}
     project: shop
     environment: staging
+    required: DATABASE_URL, STRIPE_KEY   # optional: fail here if either is missing
 - run: npm test   # every variable in shop/staging is set`}</CodeBlock>
 
       <Table>
@@ -68,6 +69,14 @@ export default function CiDocsPage() {
               <Code>env</Code> (default): environment variables for every later step.{" "}
               <Code>outputs</Code>: step outputs, read as <Code>steps.&lt;id&gt;.outputs.NAME</Code>.{" "}
               <Code>dotenv</Code>: a file at <Code>path</Code> (default <Code>.env</Code>).
+            </Td>
+          </tr>
+          <tr>
+            <Td><Code>required</Code></Td>
+            <Td>
+              Optional. Names the job can&rsquo;t run without, separated by commas or newlines. If any
+              is missing or empty, the step fails and nothing is exported. Without it, a misspelled
+              or deleted variable just ends up unset in later steps.
             </Td>
           </tr>
           <tr>
@@ -194,6 +203,11 @@ jobs:
           one environment. Point the job at that environment, or issue a key for this one.
         </li>
         <li>
+          <strong>A required variable is missing.</strong> The log names it, and suggests the
+          closest existing name when it looks like a typo. Fix the name in the workflow, or add the
+          variable in EnvHQ. Only applies to names listed in <Code>required</Code>.
+        </li>
+        <li>
           <strong>The project key rotated while the job was running.</strong> Re-run the job.
         </li>
       </UL>
@@ -208,7 +222,7 @@ jobs:
         The action wraps the CLI. Anywhere that can run <Code>npx</Code> can do the same thing. Set{" "}
         <Code>ENVHQ_TOKEN</Code> and <Code>ENVHQ_DEPLOY_KEY</Code> as secret variables, then run:
       </P>
-      <CodeBlock>{`npx envhq@0.10.0 run -p shop -e staging -- ./deploy.sh`}</CodeBlock>
+      <CodeBlock>{`npx envhq@0.11.0 run -p shop -e staging --require DATABASE_URL -- ./deploy.sh`}</CodeBlock>
       <P>
         To use a server other than envhq.dev, set <Code>ENVHQ_URL</Code>. For every command and
         flag, see the <Link href="/docs/cli" className="underline underline-offset-2">CLI reference</Link>.

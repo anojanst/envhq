@@ -28,6 +28,13 @@ inputs:
     description: Register every value with the log masker before anything else runs. Only turn this off for values that aren't secret.
     required: false
     default: "true"
+  required:
+    description: >-
+      Variable names this job can't run without, separated by commas or newlines. The step fails,
+      exporting nothing, if any is missing or empty — so a typo or a deleted variable stops the job
+      here instead of reaching a later step as an unset variable.
+    required: false
+    default: ""
   path:
     description: File to write when format is `dotenv`.
     required: false

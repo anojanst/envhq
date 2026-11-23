@@ -4,6 +4,7 @@ import type { EnvPair } from "@envhq/parser";
 import { fail } from "../shared/ui.ts";
 import { resolveTarget } from "../shared/target.ts";
 import { failureMessage, fetchPlaintextEnv } from "../shared/secrets.ts";
+import { checkRequired, parseRequired } from "../shared/require.ts";
 import { emitMasks, inGitHubActions } from "../shared/github.ts";
 
 /**
@@ -26,11 +27,17 @@ export function register(program: Command): void {
       new Option("-p, --project <name|id>", "project name or id (defaults to the linked project)").env("ENVHQ_PROJECT"),
     )
     .addOption(new Option("-e, --env <name>", "environment (defaults to the linked default)").env("ENVHQ_ENVIRONMENT"))
-    .action(async (command: string[], opts: { project?: string; env?: string }) => {
+    .addOption(
+      new Option("--require <names>", "fail unless these variables exist and are non-empty (comma-separated)").env(
+        "ENVHQ_REQUIRE",
+      ),
+    )
+    .action(async (command: string[], opts: { project?: string; env?: string; require?: string }) => {
       let pairs: EnvPair[];
       try {
         const target = await resolveTarget(opts);
         pairs = await fetchPlaintextEnv(target.projectId, target.envId);
+        checkRequired(pairs, parseRequired(opts.require), `${target.projectName}/${target.envName}`);
       } catch (err) {
         fail(failureMessage(err));
       }
