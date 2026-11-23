@@ -82,8 +82,8 @@ export default function LimitationsPage() {
       <H2>Access &amp; collaboration</H2>
       <QA q="Can I share a project with my team?">
         <P>
-          Yes. Create or switch to a team organization from the sidebar switcher, invite people
-          (handled by Clerk&apos;s hosted invite UI under <Code>Teams</Code>), then use{" "}
+          Yes. Create a team under <Code>Teams</Code>, send people an invite link from there, then
+          use{" "}
           <strong>Manage access</strong> on a project to grant an org member — or a group of
           them, from <Code>Settings → Groups</Code> — Viewer, Editor, or Admin access. Org
           admins/owners get admin access to every project in the org automatically.
@@ -118,8 +118,10 @@ export default function LimitationsPage() {
       <H2>General</H2>
       <QA q="Where is my data hosted?">
         <P>
-          In a managed Postgres database (Neon); authentication is handled by Clerk. Values are
-          stored encrypted, as described in the{" "}
+          On envhq.dev, in a managed Postgres database (Neon), with sign-in through Clerk as an
+          OpenID Connect provider. You can also{" "}
+          <Link href="/docs/self-hosting" className="underline underline-offset-2">host it yourself</Link>.
+          Values are stored encrypted either way, as described in the{" "}
           <Link href="/docs/security" className="underline underline-offset-2">Security model</Link>.
         </P>
       </QA>

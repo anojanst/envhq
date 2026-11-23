@@ -1,6 +1,7 @@
 import { createInvite, listPendingInvites } from "@/lib/org-admin";
 import { orgGate, orgRuleResponse, readJson } from "@/lib/org-routes";
 import { json } from "@/lib/api";
+import { publicUrl } from "@/lib/public-url";
 
 export const runtime = "nodejs";
 
@@ -29,7 +30,7 @@ export async function POST(req: Request, { params }: Params) {
   const { role } = await readJson(req);
   try {
     const invite = await createInvite(id, gate.userId, role ?? "member");
-    const url = new URL(`/invite/${invite.token}`, req.url).toString();
+    const url = publicUrl(`/invite/${invite.token}`, req.url).toString();
     return json({ invite: view(invite), url }, 201);
   } catch (err) {
     return orgRuleResponse(err);

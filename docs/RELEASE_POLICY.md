@@ -18,11 +18,12 @@ being asked.
 
 ## Tagging convention
 
-One tag namespace:
+Two tag namespaces:
 
 | Tag format | What it marks | Cut by |
 |---|---|---|
 | `envhq@X.Y.Z` | A published release of the `envhq` CLI package to npm. | Changesets, automatically, via [`release.yml`](../.github/workflows/release.yml) when a "Version Packages" PR merges to `main`. |
+| `product-vX.Y.Z` | A published self-hosted image, `ghcr.io/envhq/envhq:X.Y.Z`. | A person, by hand. The push runs [`image.yml`](../.github/workflows/image.yml). |
 
 `@envhq/web`, `@envhq/crypto`, and `@envhq/parser` are versioned and changelogged
 by Changesets (crypto/parser genuinely, web is excluded — see
@@ -55,6 +56,17 @@ production database explicitly:
 ```bash
 pnpm --filter @envhq/web db:migrate    # with the production DATABASE_URL
 ```
+
+## Publishing the self-hosted image
+
+The self-hosted image (`Dockerfile`) is published to `ghcr.io/envhq/envhq` by
+`.github/workflows/image.yml` when someone pushes a `product-vX.Y.Z` tag. That
+tag is cut by hand, from a commit that has already been running on envhq.dev.
+The workflow runs the self-hosted smoke test (`deploy/e2e/selfhost-smoke.sh`)
+before it pushes, and tags the image `X.Y.Z` and `latest`.
+
+Self-hosted installs apply migrations on start, so the migration constraints
+below matter twice over: an install may jump several versions at once.
 
 ## Migration constraints
 

@@ -58,8 +58,10 @@ export default function SecurityDocsPage() {
       <H2>Authentication</H2>
       <UL>
         <li>
-          <strong>Web sessions</strong> are handled by Clerk (identity, session cookies, login
-          UI).
+          <strong>Web sign-in</strong> uses OpenID Connect (authorization code with PKCE): envhq.dev
+          uses Clerk as its provider; a self-hosted install uses yours. After sign-in EnvHQ issues
+          its own encrypted, HTTP-only session cookie and doesn&apos;t keep the provider&apos;s tokens.
+          The provider only says who you are — teams and roles live in EnvHQ.
         </li>
         <li>
           <strong>CLI sessions</strong> use a browser-based login: the CLI opens a local loopback
@@ -86,7 +88,7 @@ export default function SecurityDocsPage() {
         Every project belongs to an organization (every account gets a personal one
         automatically; you can also create or be invited to team organizations). Every API
         request is checked against the acting user&apos;s resolved role in that project&apos;s
-        org — from either the Clerk session or a bearer token. A request for a project you have
+        org — from either the web session or a bearer token. A request for a project you have
         no access to returns &quot;not found&quot;, not &quot;forbidden&quot; — it doesn&apos;t
         reveal whether the resource exists, and a Viewer probing something they can see but
         can&apos;t edit doesn&apos;t learn more than a stranger would.
@@ -97,8 +99,8 @@ export default function SecurityDocsPage() {
         an explicit grant (to them directly, or to a group they&apos;re in) of{" "}
         <strong>Viewer</strong>, <strong>Editor</strong>, or <strong>Admin</strong>. A grant can
         also be capped per environment — e.g. Editor on <Code>dev</Code> but Viewer-only on{" "}
-        <Code>prod</Code> — from the same &quot;Manage access&quot; dialog. Org invitations,
-        membership, and roles are managed entirely by Clerk&apos;s own hosted UI.
+        <Code>prod</Code> — from the same &quot;Manage access&quot; dialog. Team membership and roles
+        are managed on the <Code>Teams</Code> page, by team admins, with single-use invite links.
       </P>
       <P>
         Being <em>authorized</em> for a project and being able to <em>decrypt</em> it are separate

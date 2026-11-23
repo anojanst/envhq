@@ -58,11 +58,12 @@ export default function WebAppDocsPage() {
 
       <H2 id="teams-and-sharing">Teams &amp; sharing</H2>
       <P>
-        Every account gets a personal organization automatically. Create or join a{" "}
-        <strong>team</strong> organization from <Code>Teams</Code> in the sidebar — invitations,
-        pending status, member roles, and removal are handled entirely by Clerk&apos;s own
-        organization UI there. When you belong to more than one org, a picker on that page lets
-        you switch which one you&apos;re managing.
+        Every account gets a personal workspace automatically — just you. To collaborate, create a{" "}
+        <strong>team</strong> from <Code>Teams</Code> in the sidebar. Team admins invite people with a
+        single-use link (it expires after 7 days), change roles between Admin and Member, and remove
+        people; anyone can leave. A team always keeps at least one admin. Removing someone also
+        removes their project grants and group memberships in that team. When you belong to more
+        than one team, a picker on that page switches between them.
       </P>
       <UL>
         <li>

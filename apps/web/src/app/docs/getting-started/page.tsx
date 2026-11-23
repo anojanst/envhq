@@ -13,9 +13,11 @@ export default function GettingStartedPage() {
 
       <H2>1. Create an account</H2>
       <P>
-        Go to the <Link href="/sign-up" className="underline underline-offset-2">sign-up page</Link> and
-        create an account. Authentication is handled by Clerk (email/password or supported social
-        logins, depending on how the deployment is configured).
+        Go to the <Link href="/sign-in" className="underline underline-offset-2">sign-in page</Link> and
+        choose Continue — your first sign-in creates your account. EnvHQ signs people in through an
+        OpenID Connect provider: on envhq.dev that offers email and social logins; on a{" "}
+        <Link href="/docs/self-hosting" className="underline underline-offset-2">self-hosted</Link> install
+        it&apos;s your organization&apos;s own (Entra ID, Okta, Google Workspace, …).
       </P>
 
       <H2>2. Create your first project</H2>

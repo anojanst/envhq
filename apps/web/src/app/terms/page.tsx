@@ -49,8 +49,8 @@ export default function TermsPage() {
               create or be invited to team organizations. Within an org, project access is
               role-based (Viewer, Editor, Admin), grantable to individual members or groups, and
               can be capped per environment (e.g. Editor on <code>dev</code> but Viewer-only on{" "}
-              <code>prod</code>). Org membership and invites are handled by our identity
-              provider&apos;s (Clerk) own hosted UI.
+              <code>prod</code>). Team membership and invites are managed within EnvHQ by team
+              admins.
             </p>
           </Section>
 

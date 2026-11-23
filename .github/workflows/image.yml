@@ -1,0 +1,43 @@
+name: Publish self-hosted image
+
+# Publishes ghcr.io/envhq/envhq when a human pushes a `product-vX.Y.Z` tag
+# (see docs/RELEASE_POLICY.md: the product tag namespace, cut from a commit
+# that has already run on envhq.dev). Never on an ordinary push.
+#
+#   git tag product-v1.0.0 <commit> && git push origin product-v1.0.0
+
+on:
+  push:
+    tags: ["product-v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Build
+        run: docker build -t envhq:release .
+      - name: Smoke test before publishing
+        run: deploy/e2e/selfhost-smoke.sh envhq:release
+      - name: Push
+        env:
+          TAG: ${{ github.ref_name }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          version="${TAG#product-v}"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/envhq"
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          docker tag envhq:release "$image:$version"
+          docker tag envhq:release "$image:latest"
+          docker push "$image:$version"
+          docker push "$image:latest"
+          echo "Published $image:$version"

@@ -1,6 +1,6 @@
 # Self-hosting plan
 
-Status: **in progress** — phases 1 and 2 done 2026-11-23. Reopens the direction
+Status: **built** (2026-11-23) — all six phases. Not yet deployed to envhq.dev: see *Rolling out to envhq.dev* below. Reopens the direction
 retired on 2026-09-18 (`7d5e990`, "retiring self hosting roadmap").
 
 Goal: an organization can run EnvHQ inside its own network, sign in with its own
@@ -66,123 +66,61 @@ No client changes are needed:
 - **Licensing** — the server is under the Elastic License 2.0, which permits
   self-hosting for your own organization.
 
-## What changes in `apps/web`
+## What was built
 
-At runtime the app needs Postgres and Clerk; Clerk currently does four jobs:
+The phases ran in the order 1, 2, 4, 3, 5, 6. Phase 4 moved ahead of 3 once
+the rule below was settled, because it removed the need to sync orgs from
+Clerk at all.
 
-| Job today (Clerk SDK) | Where | After |
-|---|---|---|
-| Sign-in / session — `auth()`, `clerkMiddleware`, `<SignIn>`, `<SignUp>` | `lib/auth.ts`, `middleware.ts`, `sign-in`, `sign-up`, 10 pages | OIDC (`openid-client`) + EnvHQ's own encrypted session cookie |
-| Orgs, membership, **roles** — `clerkClient().organizations…` | `lib/orgs.ts`, `api/orgs/members`, `api/projects/[id]/access/members` | Postgres: `orgs`, `org_members`, `org_invites` |
-| User directory — names, emails, avatars | `lib/user-profiles.ts`, `api/webhooks/clerk` | Claims written to `user_profiles` at every sign-in; webhook retired |
-| Org UI — `<OrganizationProfile>`, `<UserButton>` | `teams/[[...rest]]`, `app-shell.tsx` | EnvHQ's own members/invites page and account menu |
+**The rule:** orgs, members, roles and invites live only in Postgres and
+change only through EnvHQ. The identity provider says who someone is and
+nothing else. OIDC has no standard for org membership, and every provider
+differs.
 
-Platform extras to make optional in self-hosted mode: `@vercel/analytics`,
-`@vercel/speed-insights`, the staff `/ops` page and outbound alerting (RM-18).
+| Phase | What landed |
+|---|---|
+| 1 · Identity seam | `lib/identity/`: who is signed in, and display details. Callers never talk to a provider. |
+| 2 · Orgs in Postgres | `orgs`, `org_members` (migration 0016). `lib/orgs.ts` answers every role check from them, per request. Fixed: Clerk's 10-per-page membership lists had truncated orgs with more than 10 members. |
+| 4 · Own team management | `/teams` page and `api/orgs/{id}/…`: create, rename, delete, roles, leave. Single-use, hashed, 7-day invite links (`org_invites`, migration 0017; `/invite/[token]`). Invariants in `lib/org-admin.ts`: a team keeps one admin; personal workspaces are single-member; removing someone also removes their grants, group memberships and key wraps in that team, and marks those projects for rotation. |
+| 3 · OIDC sign-in | `/auth/sign-in`, `/auth/callback`, `/auth/sign-out` (`openid-client`: code + PKCE, state, nonce). EnvHQ's own encrypted session cookie (`lib/session.ts`, `SESSION_SECRET`), read at the edge by `middleware.ts`. Profiles are written from claims at sign-in. Optional email-domain allow-list. `@clerk/nextjs`, the Clerk webhook and `svix` are removed. |
+| 5 · Packaging | `Dockerfile` (standalone Next build, non-root), `deploy/docker-compose.yml`, `deploy/envhq.env.example`. Migrations run on start behind a Postgres advisory lock (`ENVHQ_MIGRATE_ON_START`, set by the image). Vercel analytics render only on Vercel. No "self-hosted mode" flag was needed: `/ops` and alerting are already off unless configured. |
+| 6 · Release & verification | `deploy/e2e/selfhost-smoke.sh`, run by `.github/workflows/selfhost.yml`: image boots, migrates, passes health, real OIDC sign-in against a throwaway provider, team created, published CLI pointed at the instance. `.github/workflows/image.yml` publishes `ghcr.io/envhq/envhq` on a human-pushed `product-v*` tag. Public docs: `/docs/self-hosting`. |
 
-## Phases
+## Rolling out to envhq.dev
 
-Each phase lands on `main` on its own, and envhq.dev keeps working after each.
+These steps need a person with dashboard and database access. **Do them in
+order, before pushing these commits to `main`** (a push deploys):
 
-### 1 · Identity seam — no behaviour change (2–3 days) — **done**
-- `lib/identity/`: `currentUser()`, `requireUser()`, `resolveUsers(ids)`. One
-  adapter for now, wrapping today's Clerk SDK calls.
-- Every `auth()` and `clerkClient().users` call goes through it.
-- Done when no server code asks Clerk *who someone is* except `lib/identity/clerk.ts`,
-  and every existing test passes unchanged.
-- Result: `lib/identity/` (`sessionUserId`, `requireSessionUserId`,
-  `getDirectoryUser`, `lookupDirectoryUsers`). Still importing `@clerk/*`, by
-  design until their phase: org calls (`lib/orgs.ts`, `api/orgs/members`,
-  `api/projects/[id]/access/members` — phase 2); `middleware.ts`, `sign-in`,
-  `sign-up`, `ClerkProvider` (phase 3); `teams`, `UserButton` (phase 4).
-- Design reference: `apps/api/internal/identity/identity.go` on the local branch
-  `archive/go-api-1044fda` — identity answers *who is this*, never orgs or roles.
-
-### 2 · Orgs into Postgres (done)
-- Tables `orgs` and `org_members` (role `admin|member`), migration `0016`.
-  `lib/orgs.ts` answers every role check from Postgres; Clerk is no longer
-  asked who belongs to what. Roles still resolve **per request** with
-  `cache()` only.
-- **No data migration.** Existing data was declared disposable (2026-11-23),
-  so there is no backfill, no dual-read rollout and no source switch. Deploy
-  this on an empty database (or wipe): users and orgs created before it have
-  no `org_members` rows and would see no orgs.
-- Personal orgs are created in Postgres only, with a generated `org_…` id.
-- Team orgs are still created on Clerk's `/teams` screen until phase 4. The
-  Clerk webhook copies each one in (`lib/org-sync.ts`): it re-reads the org
-  from Clerk on every `organization.*` / `organizationMembership.*` event
-  instead of applying the payload, so out-of-order deliveries converge.
-  **Those events must be enabled on the Clerk webhook endpoint.**
-- Gate met: the `orgs-db` vitest project replays `access-matrix.fixtures.json`,
-  unchanged, against real `org_members` rows; plus sync and webhook tests.
-- Also fixed: Clerk's membership lists default to 10 per page, and the old
-  code read only the first page — an org with more than 10 members was
-  silently truncated in role checks and DEK reconciliation.
-- Invites (`org_invites`) move to phase 4, where the UI that uses them lands.
-
-### 3 · OIDC sign-in, everywhere (4–6 days)
-- `lib/identity/oidc.ts` on `openid-client`: authorization code + PKCE,
-  discovery from `OIDC_ISSUER`, with `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`.
-- Session: encrypted, HTTP-only, `SameSite=Lax` cookie (`jose`); sliding expiry;
-  logout clears it and calls the IdP's end-session endpoint where offered.
-- `/sign-in` is one "Continue" button that redirects to the IdP. No `/sign-up`:
-  the IdP decides who exists. Optional `OIDC_ALLOWED_EMAIL_DOMAINS`.
-- First sign-in of a brand-new user creates their personal org (today's
-  behaviour). On a fresh self-hosted instance the first user becomes instance
-  admin, or `ENVHQ_BOOTSTRAP_ADMIN_EMAIL` decides.
-- envhq.dev switches to Clerk-as-OIDC: register EnvHQ as a Clerk OAuth app
-  (consent off), set the three env vars. Existing users sign in once more and
-  keep all their data, because `sub` equals their existing user ID.
-- Static pages stay static: the session is read in `middleware.ts` and
-  `(app)` routes only, never on `/`, `/terms`, `/docs/**`.
-
-### 4 · Our own org and account UI (3–4 days)
-- `/teams` becomes EnvHQ's own page — members, roles, invite links,
-  leave/remove — following `settings/groups`; breadcrumb header, empty and
-  loading states, collapsed sidebar.
-- Invites are copyable links; no email service required (SMTP optional later).
-- `<UserButton>` → EnvHQ's account menu (name, email, sign out).
-- After this, `@clerk/*` is no longer a dependency of `apps/web` at all, and
-  the Clerk webhook route is removed.
-
-### 5 · Packaging (3–4 days)
-- `output: "standalone"`; multi-stage `Dockerfile`, non-root, Node 24.
-- `docker-compose.yml`: app + Postgres 17 + volume. Migrations run on start,
-  before the server listens.
-- `/api/health` as the container health check.
-- Self-hosted mode (`ENVHQ_MODE=selfhosted`) switches off Vercel analytics,
-  `/ops` and outbound alerting; errors go to stdout as structured logs.
-- `.env.selfhosted.example`; startup fails loudly on missing settings.
-- TLS via the customer's reverse proxy (document Caddy and nginx).
-  `docs/OPERATIONS.md`'s `instances × pool max` rule applies unchanged.
-
-### 6 · Release, docs, verification (3–4 days)
-- Image `ghcr.io/envhq/envhq:<product-version>` from a revived
-  `enterprise-tag.yml` (human-gated after the SaaS soak; the workflow is on
-  `archive/go-api-1044fda`).
-- CI: build the image, `docker compose up` with a throwaway OIDC provider
-  (Keycloak or a mock-OIDC container), sign in, then push and pull a secret with
-  the real CLI using `--url`.
-- `/docs/self-hosting`: requirements, compose quick start, IdP setup for Entra,
-  Okta, Google and Keycloak, upgrades, backups (Postgres only — ciphertext, so
-  backups hold no plaintext), pointing the CLI and Action at the instance.
-- `CLAUDE.md`: "cached identity is decorative; roles are not" now refers to
-  Postgres orgs; repo map gains `lib/identity/`, Docker files, the new docs.
-
-**Total: roughly 4–5 weeks**, most of it phases 2–4.
+1. **Clerk dashboard → OAuth applications → add one.** Redirect URI
+   `https://envhq.dev/auth/callback`; scopes `openid email profile`; consent
+   screen **off** (EnvHQ is first-party). Note the client ID and secret.
+   Confirm your Clerk plan includes OAuth applications on production.
+2. **Vercel → Project → Environment Variables (Production):**
+   - `OIDC_ISSUER` = the instance's Frontend API URL (`https://clerk.envhq.dev`
+     or the `*.clerk.accounts.dev` one)
+   - `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` from step 1
+   - `SESSION_SECRET` = `openssl rand -base64 48`
+   - Remove `NEXT_PUBLIC_CLERK_*`, `CLERK_SECRET_KEY` and
+     `CLERK_WEBHOOK_SIGNING_SECRET`. Nothing reads them any more.
+3. **Migrate production:** `pnpm --filter @envhq/web db:migrate` with the
+   production `DATABASE_URL` (adds `org_invites`).
+4. **Clerk dashboard → Webhooks:** delete the endpoint for
+   `/api/webhooks/clerk`. The route no longer exists. Organizations can be
+   switched off in Clerk.
+5. **Push `main`.** Everyone signs in once more. Existing data was declared
+   disposable, so wipe it or let old accounts start fresh.
 
 ## Risks
 
 - **Org rows are authorization data.** A wrong membership leaks secrets
   across orgs. Mitigation: the access matrix runs against real `org_members`
-  rows in CI (`orgs-db`). Until phase 4, a missed Clerk webhook means a team
-  change in Clerk isn't reflected here — Svix retries, and failures reach
-  `/ops` through `reportError`.
-- **Everyone signs in once more** when phase 3 reaches envhq.dev. Announce it;
-  CLI tokens are unaffected (they are EnvHQ's own API tokens, not Clerk's).
-- **Clerk plan gating** of the OIDC provider on production — checked before
-  phase 3; fallback is to keep Clerk's SDK for SaaS sign-in only, behind the
-  phase-1 seam.
+  rows in CI (`orgs-db`), and every team mutation goes through
+  `lib/org-admin.ts`.
+- **Everyone signs in once more** when this reaches envhq.dev. CLI tokens
+  are unaffected (they are EnvHQ's own API tokens, not Clerk's).
+- **Clerk plan gating** of OAuth applications on production. Check it before
+  rollout step 1. If it isn't included, envhq.dev can point `OIDC_ISSUER` at
+  any other OIDC provider. Nothing in the code is Clerk-specific.
 - **Support load** — customers' IdPs, proxies and Postgres versions vary. Start
   with one documented compose setup; Helm later.
 - **Key loss stays the customer's.** Zero-knowledge means a self-hosted admin

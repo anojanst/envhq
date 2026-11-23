@@ -1,0 +1,47 @@
+name: Self-hosted image
+
+# Builds the self-hosted image and runs deploy/e2e/selfhost-smoke.sh against
+# it: migrations on start, health, a real OIDC sign-in (against a throwaway
+# provider), team creation, and the published CLI pointed at the instance.
+# Runs when something that goes into the image changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - deploy/**
+      - apps/web/**
+      - packages/crypto/**
+      - packages/parser/**
+      - pnpm-lock.yaml
+      - .github/workflows/selfhost.yml
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - deploy/**
+      - apps/web/**
+      - packages/crypto/**
+      - packages/parser/**
+      - pnpm-lock.yaml
+      - .github/workflows/selfhost.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Build the image
+        run: docker build -t envhq:e2e .
+      - name: Smoke test
+        run: deploy/e2e/selfhost-smoke.sh envhq:e2e

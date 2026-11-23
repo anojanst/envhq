@@ -90,3 +90,21 @@ describe("cookie attributes", () => {
     expect(cookieOptions("http://localhost:3000/x", 60).secure).toBe(false);
   });
 });
+
+describe("behind a proxy or in the Docker image", () => {
+  afterEach(() => {
+    delete process.env.ENVHQ_PUBLIC_URL;
+  });
+
+  test("redirects and cookies follow ENVHQ_PUBLIC_URL, not the server's bind address", async () => {
+    const { publicUrl } = await import("./public-url");
+    process.env.ENVHQ_PUBLIC_URL = "https://envhq.corp.example/";
+    expect(publicUrl("/teams", "http://0.0.0.0:3000/auth/callback").toString()).toBe("https://envhq.corp.example/teams");
+    expect(cookieOptions("http://0.0.0.0:3000/auth/callback", 60).secure).toBe(true);
+  });
+
+  test("without it, the request's own origin is used", async () => {
+    const { publicUrl } = await import("./public-url");
+    expect(publicUrl("/teams", "http://localhost:3000/x").toString()).toBe("http://localhost:3000/teams");
+  });
+});

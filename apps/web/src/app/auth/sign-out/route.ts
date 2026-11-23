@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { client, oidcConfig, publicOrigin } from "@/lib/oidc";
+import { client, oidcConfig } from "@/lib/oidc";
+import { publicOrigin } from "@/lib/public-url";
 import { SESSION_COOKIE } from "@/lib/session";
 
 export const runtime = "nodejs";

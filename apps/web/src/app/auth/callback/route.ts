@@ -4,6 +4,7 @@ import { callbackUrl, client, oidcConfig, oidcSettings, SignInRefused, toSignedI
 import { FLOW_COOKIE, SESSION_COOKIE, SESSION_TTL_S, cookieOptions, openFlow, sealSession } from "@/lib/session";
 import { upsertUserProfile } from "@/lib/user-profiles";
 import { reportError } from "@/lib/observability";
+import { publicUrl } from "@/lib/public-url";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export async function GET(req: Request) {
   const jar = await cookies();
   const flow = await openFlow(jar.get(FLOW_COOKIE)?.value);
   const fail = (code: string) => {
-    const res = NextResponse.redirect(new URL(`/sign-in?error=${code}`, req.url));
+    const res = NextResponse.redirect(publicUrl(`/sign-in?error=${code}`, req.url));
     res.cookies.delete(FLOW_COOKIE);
     return res;
   };
@@ -50,7 +51,7 @@ export async function GET(req: Request) {
     const user = toSignedInUser(claims, oidcSettings());
     await upsertUserProfile(user);
 
-    const res = NextResponse.redirect(new URL(flow.returnTo, req.url));
+    const res = NextResponse.redirect(publicUrl(flow.returnTo, req.url));
     res.cookies.set(SESSION_COOKIE, await sealSession(user.userId), cookieOptions(req.url, SESSION_TTL_S));
     res.cookies.delete(FLOW_COOKIE);
     res.headers.set("Cache-Control", "private, no-store");

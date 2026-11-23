@@ -1,4 +1,5 @@
 import * as client from "openid-client";
+import { publicOrigin } from "@/lib/public-url";
 
 /**
  * The one way EnvHQ signs people in: OpenID Connect, authorization code flow
@@ -70,10 +71,6 @@ export function oidcConfig(): Promise<client.Configuration> {
   return config;
 }
 
-/** Where people reach EnvHQ — `ENVHQ_PUBLIC_URL`, else the request's own origin. */
-export function publicOrigin(requestUrl: string): string {
-  return (process.env.ENVHQ_PUBLIC_URL || new URL(requestUrl).origin).replace(/\/$/, "");
-}
 
 export function callbackUrl(requestUrl: string): string {
   return `${publicOrigin(requestUrl)}/auth/callback`;

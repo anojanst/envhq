@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { DocsHeader } from "@/components/docs-ui";
-import { FolderTree, TerminalSquare, ShieldCheck, LifeBuoy } from "lucide-react";
+import { FolderTree, TerminalSquare, ShieldCheck, LifeBuoy, Server } from "lucide-react";
 
 export const metadata = { title: "Overview" };
 
@@ -28,6 +28,12 @@ const CARDS = [
     icon: ShieldCheck,
     title: "Security model",
     body: "How encryption, authentication, and access control work today.",
+  },
+  {
+    href: "/docs/self-hosting",
+    icon: Server,
+    title: "Self-hosting",
+    body: "Run EnvHQ in your own network with your own sign-in provider.",
   },
   {
     href: "/docs/limitations",

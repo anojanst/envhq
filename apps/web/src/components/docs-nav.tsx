@@ -11,6 +11,7 @@ const NAV = [
   { href: "/docs/cli", label: "CLI reference" },
   { href: "/docs/ci", label: "CI & GitHub Actions" },
   { href: "/docs/security", label: "Security model" },
+  { href: "/docs/self-hosting", label: "Self-hosting" },
   { href: "/docs/limitations", label: "Limitations & FAQ" },
 ];
 

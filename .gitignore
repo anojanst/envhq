@@ -32,3 +32,7 @@ coverage/
 apps/web/.agents/*
 # The GitHub Action runs its committed bundle directly — there is no install step.
 !packages/github-action/dist/
+
+# self-hosted compose settings (deploy/envhq.env.example is the template)
+deploy/envhq.env
+deploy/.env

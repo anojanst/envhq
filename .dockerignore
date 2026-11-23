@@ -1,0 +1,15 @@
+# Keep the build context small and free of anything secret.
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/coverage
+.git
+.github
+.claude
+**/.env
+**/.env.*
+!**/.env.example
+docs
+*.md
+!apps/web/**/*.md

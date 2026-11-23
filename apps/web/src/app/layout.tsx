@@ -68,11 +68,16 @@ export default function RootLayout({
         >
           {children}
           <Toaster />
-          {/* RM-5 baseline: real-user LCP/INP/TTFB and page views. Both are
-              no-ops off Vercel, and neither collects anything about the
-              contents of an environment — they see route paths, not data. */}
-          <SpeedInsights />
-          <Analytics />
+          {/* RM-5 baseline: real-user LCP/INP/TTFB and page views. They see
+              route paths, not data. Rendered only on Vercel: a self-hosted
+              install has no Vercel endpoint for them to report to, and its
+              operators didn't sign up to send one anything. */}
+          {process.env.VERCEL ? (
+            <>
+              <SpeedInsights />
+              <Analytics />
+            </>
+          ) : null}
         </ThemeProvider>
       </body>
     </html>

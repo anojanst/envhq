@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { publicUrl } from "@/lib/public-url";
 import { SESSION_COOKIE, SESSION_REFRESH_AFTER_S, cookieOptions, openSession, sealSession, SESSION_TTL_S } from "@/lib/session";
 
 /**
@@ -25,13 +26,13 @@ export async function middleware(req: NextRequest) {
   // Signed-in visitors don't want the marketing page (RM-8). Deciding here,
   // before the cache, is what lets `/` stay a static asset. Exact match only.
   if (pathname === "/") {
-    return session ? NextResponse.redirect(new URL("/dashboard", req.url)) : undefined;
+    return session ? NextResponse.redirect(publicUrl("/dashboard", req.url)) : undefined;
   }
 
   if (PUBLIC.some((re) => re.test(pathname))) return;
 
   if (!session) {
-    const signIn = new URL("/sign-in", req.url);
+    const signIn = publicUrl("/sign-in", req.url);
     signIn.searchParams.set("redirect_url", `${pathname}${search}`);
     return NextResponse.redirect(signIn);
   }

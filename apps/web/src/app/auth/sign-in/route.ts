@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { callbackUrl, client, oidcConfig, oidcSettings } from "@/lib/oidc";
 import { FLOW_COOKIE, FLOW_TTL_S, cookieOptions, safeReturnTo, sealFlow } from "@/lib/session";
 import { reportError } from "@/lib/observability";
+import { publicUrl } from "@/lib/public-url";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,6 @@ export async function GET(req: Request) {
     return res;
   } catch (error) {
     await reportError(error, { route: "auth/sign-in", kind: "SignInStartFailed" });
-    return NextResponse.redirect(new URL("/sign-in?error=provider", req.url));
+    return NextResponse.redirect(publicUrl("/sign-in?error=provider", req.url));
   }
 }

@@ -1,4 +1,5 @@
 import { EncryptJWT, jwtDecrypt } from "jose";
+import { publicOrigin } from "./public-url";
 
 /**
  * EnvHQ's own browser session (self-hosting phase 3). Edge-safe — no Node
@@ -106,7 +107,7 @@ export function safeReturnTo(raw: unknown): string {
 
 /** Cookie attributes shared by both cookies. `Secure` everywhere except plain-http localhost. */
 export function cookieOptions(requestUrl: string, maxAge: number) {
-  const url = new URL(requestUrl);
+  const url = new URL(publicOrigin(requestUrl));
   const local = url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
   return { httpOnly: true, sameSite: "lax" as const, secure: !local, path: "/", maxAge };
 }
