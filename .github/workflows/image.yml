@@ -23,6 +23,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+          # Only npx runs here (the published CLI); without this, setup-node
+          # sees packageManager in package.json and fails looking for pnpm.
+          package-manager-cache: false
       - name: Build
         run: docker build -t envhq:release .
       - name: Smoke test before publishing
