@@ -144,15 +144,14 @@ export default defineConfig({
       {
         extends: true,
         test: {
-          // Self-hosting phase 2: the real `lib/orgs.ts` against real
+          // Self-hosting phases 2 and 4: the real `lib/orgs.ts` against real
           // Postgres — NOT the mocked `@/lib/orgs` the projects around it
-          // use — with only Clerk's network boundary faked. Holds the access
-          // matrix replayed with roles from `org_members`, and the Clerk →
-          // Postgres org sync.
+          // use. Holds the access
+          // matrix replayed with roles from `org_members`, and the team API.
           name: "orgs-db",
           environment: "node",
           include: ["src/**/*.orgs-db.test.ts"],
-          setupFiles: ["./src/test-support/mock-db.setup.ts", "./src/test-support/mock-clerk.setup.ts"],
+          setupFiles: ["./src/test-support/mock-db.setup.ts"],
           globalSetup: ["./src/test-support/migrate.global-setup.ts"],
           fileParallelism: false,
         },
@@ -170,7 +169,6 @@ export default defineConfig({
           setupFiles: [
             "./src/test-support/mock-db.setup.ts",
             "./src/test-support/mock-orgs.ts",
-            "./src/test-support/mock-clerk.setup.ts",
           ],
           globalSetup: ["./src/test-support/migrate.global-setup.ts"],
           // Same shared-container reasoning as "authz-db".
@@ -180,7 +178,7 @@ export default defineConfig({
       {
         extends: true,
         test: {
-          // RM-5's performance baseline. Same real-Postgres + mocked-Clerk
+          // RM-5's performance baseline. Same real-Postgres + mocked-orgs
           // setup as "contract", but it measures rather than asserts, and it
           // seeds a deliberately large sample (~2,000 rows).
           //
@@ -194,7 +192,6 @@ export default defineConfig({
           setupFiles: [
             "./src/test-support/mock-db.setup.ts",
             "./src/test-support/mock-orgs.ts",
-            "./src/test-support/mock-clerk.setup.ts",
           ],
           globalSetup: ["./src/test-support/migrate.global-setup.ts"],
           fileParallelism: false,

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { beforeAll, describe, expect, test } from "vitest";
 import { setMyOrgs } from "@/test-support/mock-orgs";
-import { setFakeUser } from "@/test-support/mock-clerk.setup";
+import { setProfile } from "@/test-support/profiles";
 import {
   resetContractWorld,
   createProject,
@@ -85,7 +85,7 @@ describe("GET /api/orgs, GET /api/orgs/members", () => {
     const memberId = `user-${crypto.randomUUID()}`;
     await grantOrgRole(adminId, orgId, "admin");
     await grantOrgRole(memberId, orgId, "member");
-    setFakeUser({ id: memberId, firstName: "Mem", email: "mem@example.test" });
+    await setProfile({ id: memberId, name: "Mem", email: "mem@example.test" });
     const { token: adminToken } = await createApiToken(adminId);
     const { token: memberToken } = await createApiToken(memberId);
 

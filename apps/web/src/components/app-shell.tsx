@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UserButton } from "@clerk/nextjs";
 import { Folder, Settings, Users, type LucideIcon } from "lucide-react";
 import { BrandMark } from "@/components/brand";
+import { AccountMenu, type AccountUser } from "@/components/account-menu";
 import { CryptoSessionProvider } from "@/components/crypto-session-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
@@ -57,16 +57,18 @@ function isActive(pathname: string, prefixes: string[]): boolean {
 
 export function AppShell({
   defaultOpen,
+  user,
   children,
 }: {
   defaultOpen: boolean;
+  user: AccountUser;
   children: React.ReactNode;
 }) {
   return (
     <CryptoSessionProvider>
       <TooltipProvider>
         <SidebarProvider defaultOpen={defaultOpen}>
-          <AppSidebar />
+          <AppSidebar user={user} />
           <SidebarInset>
             {/* Sidebar is off-canvas on mobile (closed by default), so it needs
                 an entry point outside itself there. Desktop collapses the
@@ -88,7 +90,7 @@ export function AppShell({
   );
 }
 
-function AppSidebar() {
+function AppSidebar({ user }: { user: AccountUser }) {
   const pathname = usePathname();
 
   return (
@@ -147,7 +149,7 @@ function AppSidebar() {
 
       <SidebarFooter>
         <div className="flex items-center justify-between gap-2 px-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-2">
-          <UserButton />
+          <AccountMenu user={user} />
           <ThemeToggle />
         </div>
       </SidebarFooter>

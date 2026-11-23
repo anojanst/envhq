@@ -1,35 +1,47 @@
-import { NextResponse } from "next/server";
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { SESSION_COOKIE, SESSION_REFRESH_AFTER_S, cookieOptions, openSession, sealSession, SESSION_TTL_S } from "@/lib/session";
+
+/**
+ * Page-level sign-in gate (self-hosting phase 3). Edge runtime.
+ *
+ * Reads EnvHQ's own session cookie (`lib/session.ts`) — no identity-provider
+ * call on any request. Pages outside the public list need a session, and a
+ * visitor without one is sent to /sign-in with a way back. A session older
+ * than a day is re-issued, so people who keep using EnvHQ stay signed in.
+ */
 
 // Routes anyone can reach without a session.
-const isPublicRoute = createRouteMatcher([
-  "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
-  "/terms",
-  "/docs(.*)",
-]);
+const PUBLIC = [/^\/$/, /^\/sign-in(\/.*)?$/, /^\/sign-up(\/.*)?$/, /^\/auth\//, /^\/terms$/, /^\/docs(\/.*)?$/];
 
-export default clerkMiddleware(async (auth, req) => {
-  // API routes authenticate themselves (Clerk session OR CLI bearer token),
-  // so we let clerkMiddleware run but never force a redirect here.
-  if (req.nextUrl.pathname.startsWith("/api")) return;
+export async function middleware(req: NextRequest) {
+  const { pathname, search } = req.nextUrl;
 
-  // Signed-in visitors don't want the marketing page (RM-8). This lived in
-  // `app/page.tsx` as an `auth()` call, which made the one page every
-  // logged-out visitor lands on server-rendered on demand. Middleware runs
-  // before the cache, so the personalised decision happens here and the page
-  // itself stays a static asset. Exact match: only `/` redirects.
-  if (req.nextUrl.pathname === "/") {
-    const { userId } = await auth();
-    if (userId) return NextResponse.redirect(new URL("/dashboard", req.url));
-    return;
+  // API routes authenticate themselves (session cookie OR CLI bearer token)
+  // and answer 401 rather than redirecting.
+  if (pathname.startsWith("/api")) return;
+
+  const session = await openSession(req.cookies.get(SESSION_COOKIE)?.value);
+
+  // Signed-in visitors don't want the marketing page (RM-8). Deciding here,
+  // before the cache, is what lets `/` stay a static asset. Exact match only.
+  if (pathname === "/") {
+    return session ? NextResponse.redirect(new URL("/dashboard", req.url)) : undefined;
   }
 
-  if (!isPublicRoute(req)) {
-    await auth.protect();
+  if (PUBLIC.some((re) => re.test(pathname))) return;
+
+  if (!session) {
+    const signIn = new URL("/sign-in", req.url);
+    signIn.searchParams.set("redirect_url", `${pathname}${search}`);
+    return NextResponse.redirect(signIn);
   }
-});
+
+  if (Date.now() / 1000 - session.iat > SESSION_REFRESH_AFTER_S) {
+    const res = NextResponse.next();
+    res.cookies.set(SESSION_COOKIE, await sealSession(session.userId), cookieOptions(req.url, SESSION_TTL_S));
+    return res;
+  }
+}
 
 export const config = {
   matcher: [

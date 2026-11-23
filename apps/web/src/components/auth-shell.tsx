@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Logo } from "@/components/brand";
 
 /**
- * Branded frame for the Clerk auth pages. Committed dark like the rest of the
+ * Branded frame for the sign-in page. Committed dark like the rest of the
  * logged-out journey, so signing in is not a jarring flip to light halfway
  * through. No theme toggle: it would change nothing the visitor can see here.
  */

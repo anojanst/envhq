@@ -2,24 +2,21 @@ import { beforeEach, describe, expect, test } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { testDb } from "@/test-support/db";
 import { orgMembers, orgs, personalOrgs } from "@/db/schema";
-import { resetFakeClerk, setFakeOrgMembership, setFakeUser } from "@/test-support/mock-clerk.setup";
+import { setProfile } from "@/test-support/profiles";
 import { getOrCreatePersonalOrg, getOrgRole, listMyOrgs, listOrgAdminUserIds, listOrgMembers } from "./orgs";
 
 /**
- * Orgs and roles live in Postgres and nowhere else — against real Postgres,
- * with only Clerk's network boundary faked (`mock-clerk.setup.ts`).
+ * Orgs and roles live in Postgres and nowhere else — against real Postgres.
  */
 
 beforeEach(async () => {
-  await testDb.execute(sql`TRUNCATE TABLE org_members, orgs, personal_orgs, webhook_events CASCADE`);
-  resetFakeClerk();
+  await testDb.execute(sql`TRUNCATE TABLE org_members, orgs, personal_orgs, user_profiles CASCADE`);
 });
 
 describe("role checks read Postgres", () => {
-  test("roles come from org_members, and Clerk's opinion is ignored", async () => {
-    setFakeOrgMembership({ userId: "user_1", orgId: "org_a", role: "admin" }); // Clerk says admin…
+  test("roles come from org_members", async () => {
     await testDb.insert(orgs).values({ id: "org_a", name: "Acme" });
-    await testDb.insert(orgMembers).values({ orgId: "org_a", userId: "user_1", role: "member" }); // …Postgres says member.
+    await testDb.insert(orgMembers).values({ orgId: "org_a", userId: "user_1", role: "member" });
 
     expect(await getOrgRole("user_1", "org_a")).toBe("member");
     expect(await listMyOrgs("user_1")).toEqual([{ id: "org_a", name: "Acme", role: "member" }]);
@@ -34,8 +31,8 @@ describe("role checks read Postgres", () => {
 });
 
 describe("personal orgs", () => {
-  test("a personal org is created in Postgres, never in Clerk, with the user as admin", async () => {
-    setFakeUser({ id: "user_1", firstName: "Ada" });
+  test("a personal org is created in Postgres, named after the user, with them as admin", async () => {
+    await setProfile({ id: "user_1", name: "Ada" });
 
     const orgId = await getOrCreatePersonalOrg("user_1");
 

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apiTokens } from "@/db/schema";
 import { hashToken } from "./crypto";
-import { sessionUserId } from "./identity";
+import { requestSessionUserId } from "./identity";
 
 /** The capability + project scope carried by a CLI token (null project = all). */
 export interface TokenScope {
@@ -60,7 +60,7 @@ export async function getUserId(req: Request): Promise<AuthResult> {
     };
   }
 
-  return { userId: await sessionUserId() };
+  return { userId: await requestSessionUserId(req) };
 }
 
 /**

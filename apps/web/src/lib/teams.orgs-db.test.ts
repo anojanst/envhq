@@ -4,7 +4,7 @@ import { testDb } from "@/test-support/db";
 import { accessGrants, apiTokens, groupMembers, groups, orgMembers, orgs, projectKeys, projects } from "@/db/schema";
 import { generateToken, hashToken } from "@/lib/crypto";
 import { call, expectStatus } from "@/test-support/contract/helpers";
-import { setFakeUser } from "@/test-support/mock-clerk.setup";
+import { setProfile } from "@/test-support/profiles";
 import { getOrgRole } from "./orgs";
 import { GET as listMyOrgs, POST as createTeam } from "@/app/api/orgs/route";
 import { PATCH as renameOrg, DELETE as deleteOrg } from "@/app/api/orgs/[id]/route";
@@ -60,10 +60,10 @@ let eve: string;
 
 beforeEach(async () => {
   await testDb.execute(
-    sql`TRUNCATE TABLE org_invites, org_members, orgs, api_tokens, access_grants, group_members, groups, project_keys, projects CASCADE`,
+    sql`TRUNCATE TABLE user_profiles, org_invites, org_members, orgs, api_tokens, access_grants, group_members, groups, project_keys, projects CASCADE`,
   );
   for (const [id, firstName] of [["user_ada", "Ada"], ["user_bob", "Bob"], ["user_eve", "Eve"]]) {
-    setFakeUser({ id: id!, firstName, email: `${firstName!.toLowerCase()}@example.test` });
+    await setProfile({ id: id!, name: firstName, email: `${firstName!.toLowerCase()}@example.test` });
   }
   ada = await tokenFor("user_ada");
   bob = await tokenFor("user_bob");

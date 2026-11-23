@@ -1,10 +1,10 @@
 import { inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { userProfiles } from "@/db/schema";
-import { lookupDirectoryUsers } from "@/lib/identity";
 
 /**
- * The local mirror of the identity provider's user fields (RM-6; Clerk today). Server-only.
+ * The local mirror of the identity provider's user fields (RM-6), written from
+ * OIDC claims at every sign-in (`app/auth/callback`). Server-only.
  *
  * WHY THIS EXISTS: `resolveDisplayNames` used to call `users.getUser` once per
  * distinct user id. A version history with fifty authors meant fifty Clerk
@@ -26,12 +26,12 @@ export interface UserProfile {
   imageUrl: string | null;
 }
 
-/** The display-name fallback chain, kept identical to what Clerk gave us before. */
+/** Name, else the raw id. */
 function displayName(p: { name: string | null; userId: string }): string {
   return p.name || p.userId;
 }
 
-/** Writes (or refreshes) one profile. Used by the Clerk webhook and the lazy fill. */
+/** Writes (or refreshes) one profile — at every sign-in. */
 export async function upsertUserProfile(profile: UserProfile): Promise<void> {
   await db
     .insert(userProfiles)
@@ -68,44 +68,15 @@ export async function readLocalProfiles(userIds: string[]): Promise<Map<string, 
 }
 
 /**
- * Fetches profiles the identity provider knows about that we don't, and
- * stores them — the "lazy fill for users who predate the webhook" the ticket
- * asks for. Batched inside `lookupDirectoryUsers`, so fifty unknown authors
- * cost one provider call, not fifty; once filled, later renders cost zero.
- *
- * Never throws: ids the provider can't resolve stay unresolved, and the
- * caller falls back to raw ids — a degraded label, not a failed page.
- */
-async function fillFromDirectory(missing: string[]): Promise<Map<string, UserProfile>> {
-  const filled = new Map<string, UserProfile>();
-  for (const user of await lookupDirectoryUsers(missing)) {
-    filled.set(user.id, { userId: user.id, name: user.name, email: user.email, imageUrl: user.imageUrl });
-  }
-
-  // Persisted best-effort and awaited: the whole point is that the *next*
-  // request costs nothing, and these are small rows on a path that already
-  // went to the provider. A write failure is not worth failing the page over.
-  await Promise.all(
-    [...filled.values()].map((p) => upsertUserProfile(p).catch(() => undefined)),
-  );
-  return filled;
-}
-
-/**
- * Profiles for `userIds`, local-first. Anything we already hold costs zero
- * provider calls; anything we don't is filled in batches of 100 and cached for
- * next time. Ids the provider can't resolve are simply absent from the result.
+ * Profiles for `userIds`, from the local mirror only. Since self-hosting
+ * phase 3 every profile is written at sign-in from the identity provider's
+ * claims, so there is nothing further to fetch: OIDC has no standard "look
+ * up another user" call. Ids with no profile (never signed in) are absent.
  */
 export async function getUserProfiles(userIds: string[]): Promise<Map<string, UserProfile>> {
   const unique = [...new Set(userIds)];
   if (unique.length === 0) return new Map();
-
-  const local = await readLocalProfiles(unique);
-  const missing = unique.filter((id) => !local.has(id));
-  if (missing.length === 0) return local;
-
-  for (const [id, profile] of await fillFromDirectory(missing)) local.set(id, profile);
-  return local;
+  return readLocalProfiles(unique);
 }
 
 /**
