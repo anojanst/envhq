@@ -34,7 +34,10 @@ they don't get a tag namespace of their own.
 1. Open PRs with a `pnpm changeset` entry describing the change.
 2. On merge to `main`, [`release.yml`](../.github/workflows/release.yml)
    opens or updates a "Version Packages" PR.
-3. Merging that PR runs the actual `npm publish` and pushes the `envhq@X.Y.Z` tag.
+3. Merging that PR runs the actual publish and pushes the `envhq@X.Y.Z` tag.
+   There is no npm token: npm trusts `release.yml` in `envhq/envhq` directly
+   (trusted publishing, configured on the package's npm settings page), and
+   every release carries a provenance attestation.
 
 Release builds bake in the production URL (`https://envhq.dev`) — see the CLI
 section of [`../README.md`](../README.md) for building against a local server

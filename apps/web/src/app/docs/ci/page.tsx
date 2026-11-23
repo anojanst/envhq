@@ -38,7 +38,7 @@ export default function CiDocsPage() {
       <H2>GitHub Actions</H2>
       <CodeBlock>{`- uses: actions/setup-node@v5
   with: { node-version: 24 }
-- uses: anojanst/envhq-action@v1
+- uses: envhq/envhq-action@v1
   with:
     token: \${{ secrets.ENVHQ_TOKEN }}
     key: \${{ secrets.ENVHQ_DEPLOY_KEY }}
@@ -101,7 +101,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with: { node-version: 24 }
-      - uses: anojanst/envhq-action@v1
+      - uses: envhq/envhq-action@v1
         with:
           token: \${{ secrets.ENVHQ_TOKEN }}
           key: \${{ secrets.ENVHQ_DEPLOY_KEY }}
@@ -131,7 +131,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with: { node-version: 24 }
-      - uses: anojanst/envhq-action@v1
+      - uses: envhq/envhq-action@v1
         id: envhq
         with:
           token: \${{ secrets.ENVHQ_TOKEN }}

@@ -7,7 +7,7 @@ EnvHQ can't decrypt them, and every value is masked before it can reach a log.
 ```yaml
 - uses: actions/setup-node@v5
   with: { node-version: 24 }
-- uses: anojanst/envhq-action@v1
+- uses: envhq/envhq-action@v1
   with:
     token: ${{ secrets.ENVHQ_TOKEN }}
     key: ${{ secrets.ENVHQ_DEPLOY_KEY }}
@@ -71,7 +71,7 @@ tells you to issue a new one and update both secrets.
 
 This action runs a pinned release of the `envhq` CLI (`envhq export`), so it
 uses the same decryption code as everywhere else. See
-[how CI decrypts](https://github.com/anojanst/envhq/blob/main/docs/DEPLOY_KEYS.md).
+[how CI decrypts](https://github.com/envhq/envhq/blob/main/docs/DEPLOY_KEYS.md).
 
 ## Releasing (maintainers)
 

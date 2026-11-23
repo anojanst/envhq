@@ -13,11 +13,11 @@
   ],
   "license": "MIT",
   "author": "Anojan ST",
-  "homepage": "https://github.com/anojanst/envhq#readme",
-  "bugs": "https://github.com/anojanst/envhq/issues",
+  "homepage": "https://github.com/envhq/envhq#readme",
+  "bugs": "https://github.com/envhq/envhq/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/anojanst/envhq.git",
+    "url": "git+https://github.com/envhq/envhq.git",
     "directory": "packages/cli"
   },
   "type": "module",
@@ -31,7 +31,8 @@
     "node": ">=20"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "build": "tsup",

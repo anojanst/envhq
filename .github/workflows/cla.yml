@@ -44,7 +44,7 @@ jobs:
           PERSONAL_ACCESS_TOKEN: ${{ secrets.CLA_ASSISTANT_LITE_PAT }}
         with:
           path-to-signatures: ".github/cla-signatures.json"
-          path-to-document: "https://github.com/anojanst/envhq/blob/main/ICLA.md"
+          path-to-document: "https://github.com/envhq/envhq/blob/main/ICLA.md"
           branch: "main"
           allowlist: dependabot[bot],renovate[bot]
           create-file-commit-message: "chore: create CLA signatures file"
@@ -52,9 +52,9 @@ jobs:
           custom-notsigned-prcomment: >
             Thanks for the contribution! EnvHQ requires a signed Contributor
             License Agreement before this can be merged — see
-            [CONTRIBUTING.md](https://github.com/anojanst/envhq/blob/main/CONTRIBUTING.md)
-            for why. Please read the [ICLA](https://github.com/anojanst/envhq/blob/main/ICLA.md)
-            (or [CCLA](https://github.com/anojanst/envhq/blob/main/CCLA.md) if
+            [CONTRIBUTING.md](https://github.com/envhq/envhq/blob/main/CONTRIBUTING.md)
+            for why. Please read the [ICLA](https://github.com/envhq/envhq/blob/main/ICLA.md)
+            (or [CCLA](https://github.com/envhq/envhq/blob/main/CCLA.md) if
             you're contributing on behalf of an employer), then reply to this
             comment with the exact phrase below to sign.
           custom-pr-sign-comment: "I have read the CLA Document and I hereby sign the CLA"

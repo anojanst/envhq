@@ -102,6 +102,6 @@ Values are encrypted at rest on the server.
 
 This CLI was previously published as `@envsyncdev/cli` (command `envsync`)
 under the project's old name, envsync — see the note in the main
-[repo README](https://github.com/anojanst/envhq#readme).
+[repo README](https://github.com/envhq/envhq#readme).
 
 MIT © Anojan ST
