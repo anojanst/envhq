@@ -1,5 +1,15 @@
 # envhq
 
+## 0.11.0
+
+### Minor Changes
+
+- [`b376039`](https://github.com/envhq/envhq/commit/b3760396ee13ec72680707620cd71ce005da5f6f) Thanks [@anojanst](https://github.com/anojanst)! - Add `--require <names>` (or `ENVHQ_REQUIRE`) to `envhq run` and `envhq export`.
+  List the variables a job can't work without; if any is missing or empty, the
+  command fails before writing anything or starting the child, names each one,
+  and suggests the closest existing name when it looks like a typo. Without it, a
+  misspelled or deleted variable just reaches the job unset.
+
 ## 0.10.0
 
 ### Minor Changes
