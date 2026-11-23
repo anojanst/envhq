@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
+import { requireSessionUserId } from "@/lib/identity";
 import { redirect, notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { Layers } from "lucide-react";
@@ -20,8 +20,7 @@ async function renderProject({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  const userId = await requireSessionUserId();
   const { id } = await params;
 
   const owned = await getAccessibleProject(userId, id);

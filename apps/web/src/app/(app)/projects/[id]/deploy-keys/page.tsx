@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
-import { redirect, notFound } from "next/navigation";
+import { requireSessionUserId } from "@/lib/identity";
+import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
@@ -17,8 +17,7 @@ import { DeployKeysManager } from "./deploy-keys-manager";
  * grants and the rotation controls.
  */
 export default async function DeployKeysPage({ params }: { params: Promise<{ id: string }> }) {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  const userId = await requireSessionUserId();
   const { id } = await params;
 
   // Admin-only, matching the API: a deploy key is a standing credential for

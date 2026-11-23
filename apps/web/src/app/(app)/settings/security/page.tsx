@@ -1,10 +1,8 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
+import { requireSessionUserId } from "@/lib/identity";
 import { SecurityManager } from "./security-manager";
 
 export default async function SecurityPage() {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  await requireSessionUserId();
 
   return (
     <div className="flex flex-col gap-6">

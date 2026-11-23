@@ -1,5 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
+import { requireSessionUserId } from "@/lib/identity";
 import { FolderTree } from "lucide-react";
 import { listAccessibleProjectsWithEnvsAcrossOrgs } from "@/lib/access";
 import { withPerf } from "@/lib/perf";
@@ -12,8 +11,7 @@ export default async function DashboardPage() {
 }
 
 async function renderDashboard() {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  const userId = await requireSessionUserId();
 
   // Every user gets a personal org lazily on first touch (M5 PR1) — force it
   // to exist here so a brand-new account's very first dashboard load has

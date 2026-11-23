@@ -1,11 +1,10 @@
 import { inArray } from "drizzle-orm";
-import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { userProfiles } from "@/db/schema";
-import { timeClerk } from "@/lib/perf";
+import { lookupDirectoryUsers } from "@/lib/identity";
 
 /**
- * The local mirror of Clerk's user fields (RM-6). Server-only.
+ * The local mirror of the identity provider's user fields (RM-6; Clerk today). Server-only.
  *
  * WHY THIS EXISTS: `resolveDisplayNames` used to call `users.getUser` once per
  * distinct user id. A version history with fifty authors meant fifty Clerk
@@ -20,9 +19,6 @@ import { timeClerk } from "@/lib/perf";
  * a decision, this table's staleness becomes a security property.
  */
 
-/** Clerk caps `getUserList({ userId })` at 100 ids per call. */
-const CLERK_ID_BATCH = 100;
-
 export interface UserProfile {
   userId: string;
   name: string | null;
@@ -33,28 +29,6 @@ export interface UserProfile {
 /** The display-name fallback chain, kept identical to what Clerk gave us before. */
 function displayName(p: { name: string | null; userId: string }): string {
   return p.name || p.userId;
-}
-
-/** Clerk's user shape → the fields we mirror. Same chain `getOrCreatePersonalOrg` uses. */
-function toProfile(user: {
-  id: string;
-  firstName: string | null;
-  username: string | null;
-  imageUrl?: string;
-  primaryEmailAddress?: { emailAddress: string } | null;
-  emailAddresses?: { id: string; emailAddress: string }[];
-  primaryEmailAddressId?: string | null;
-}): UserProfile {
-  const primary =
-    user.primaryEmailAddress?.emailAddress ??
-    user.emailAddresses?.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ??
-    null;
-  return {
-    userId: user.id,
-    name: user.firstName || user.username || null,
-    email: primary,
-    imageUrl: user.imageUrl ?? null,
-  };
 }
 
 /** Writes (or refreshes) one profile. Used by the Clerk webhook and the lazy fill. */
@@ -78,7 +52,7 @@ export async function deleteUserProfile(userId: string): Promise<void> {
   await db.delete(userProfiles).where(inArray(userProfiles.userId, [userId]));
 }
 
-/** Reads whatever profiles we already hold. Never calls Clerk. */
+/** Reads whatever profiles we already hold. Never calls the identity provider. */
 export async function readLocalProfiles(userIds: string[]): Promise<Map<string, UserProfile>> {
   if (userIds.length === 0) return new Map();
   const rows = await db
@@ -94,41 +68,23 @@ export async function readLocalProfiles(userIds: string[]): Promise<Map<string, 
 }
 
 /**
- * Fetches profiles Clerk knows about that we don't, and stores them — the
- * "lazy fill for users who predate the webhook" the ticket asks for.
+ * Fetches profiles the identity provider knows about that we don't, and
+ * stores them — the "lazy fill for users who predate the webhook" the ticket
+ * asks for. Batched inside `lookupDirectoryUsers`, so fifty unknown authors
+ * cost one provider call, not fifty; once filled, later renders cost zero.
  *
- * Batched: `getUserList({ userId: [...] })` takes up to 100 ids per call, so
- * filling fifty unknown authors costs ONE Clerk call, not fifty. Once filled,
- * subsequent renders cost zero.
- *
- * Never throws. A Clerk outage during a fill leaves the ids unresolved, and
- * the caller falls back to raw ids — a degraded label, not a failed page.
+ * Never throws: ids the provider can't resolve stay unresolved, and the
+ * caller falls back to raw ids — a degraded label, not a failed page.
  */
-async function fillFromClerk(missing: string[]): Promise<Map<string, UserProfile>> {
+async function fillFromDirectory(missing: string[]): Promise<Map<string, UserProfile>> {
   const filled = new Map<string, UserProfile>();
-  if (missing.length === 0) return filled;
-
-  const client = await clerkClient();
-  for (let i = 0; i < missing.length; i += CLERK_ID_BATCH) {
-    const batch = missing.slice(i, i + CLERK_ID_BATCH);
-    try {
-      const { data } = await timeClerk("users.getUserList", () =>
-        client.users.getUserList({ userId: batch, limit: batch.length }),
-      );
-      for (const user of data) {
-        const profile = toProfile(user);
-        filled.set(profile.userId, profile);
-      }
-    } catch {
-      // Outage, rate limit, or a batch containing a deleted id. Leave these
-      // unresolved rather than failing the caller's page.
-      continue;
-    }
+  for (const user of await lookupDirectoryUsers(missing)) {
+    filled.set(user.id, { userId: user.id, name: user.name, email: user.email, imageUrl: user.imageUrl });
   }
 
   // Persisted best-effort and awaited: the whole point is that the *next*
   // request costs nothing, and these are small rows on a path that already
-  // went to Clerk. A write failure is not worth failing the page over.
+  // went to the provider. A write failure is not worth failing the page over.
   await Promise.all(
     [...filled.values()].map((p) => upsertUserProfile(p).catch(() => undefined)),
   );
@@ -137,8 +93,8 @@ async function fillFromClerk(missing: string[]): Promise<Map<string, UserProfile
 
 /**
  * Profiles for `userIds`, local-first. Anything we already hold costs zero
- * Clerk calls; anything we don't is filled in batches of 100 and cached for
- * next time. Ids Clerk can't resolve are simply absent from the result.
+ * provider calls; anything we don't is filled in batches of 100 and cached for
+ * next time. Ids the provider can't resolve are simply absent from the result.
  */
 export async function getUserProfiles(userIds: string[]): Promise<Map<string, UserProfile>> {
   const unique = [...new Set(userIds)];
@@ -148,7 +104,7 @@ export async function getUserProfiles(userIds: string[]): Promise<Map<string, Us
   const missing = unique.filter((id) => !local.has(id));
   if (missing.length === 0) return local;
 
-  for (const [id, profile] of await fillFromClerk(missing)) local.set(id, profile);
+  for (const [id, profile] of await fillFromDirectory(missing)) local.set(id, profile);
   return local;
 }
 

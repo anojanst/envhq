@@ -1,8 +1,8 @@
-import { auth } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apiTokens } from "@/db/schema";
 import { hashToken } from "./crypto";
+import { sessionUserId } from "./identity";
 
 /** The capability + project scope carried by a CLI token (null project = all). */
 export interface TokenScope {
@@ -17,25 +17,17 @@ export interface TokenScope {
  *                     should return a distinct `token_expired` 401 so the CLI
  *                     knows to re-run the browser login rather than give up
  *   - `scope`       → present only for CLI tokens; used to enforce PAT scoping
- *   - `orgId`       → whatever org Clerk considers "active" in the session,
- *                     if any; `undefined` for CLI bearer tokens, which have
- *                     no session concept at all. Not used for authorization
- *                     anywhere anymore — every org-scoped route takes an
- *                     explicit `orgId` (query param / body / a page-local
- *                     picker) since the sidebar's org switcher was removed.
- *                     Kept on `AuthResult` in case a future feature wants it.
  */
 export interface AuthResult {
   userId: string | null;
   expired?: boolean;
   scope?: TokenScope;
-  orgId?: string | null;
 }
 
 /**
  * Resolve the acting user for a request from EITHER source:
  *   1. `Authorization: Bearer <token>` — used by the CLI (personal token)
- *   2. Clerk session cookie — used by the web app
+ *   2. The identity provider's session cookie — used by the web app
  *
  * This is the single seam that lets both clients share the same API routes.
  */
@@ -68,8 +60,7 @@ export async function getUserId(req: Request): Promise<AuthResult> {
     };
   }
 
-  const { userId, orgId } = await auth();
-  return { userId: userId ?? null, orgId };
+  return { userId: await sessionUserId() };
 }
 
 /**

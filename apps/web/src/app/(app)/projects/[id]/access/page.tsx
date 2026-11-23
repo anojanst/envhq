@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
-import { redirect, notFound } from "next/navigation";
+import { requireSessionUserId } from "@/lib/identity";
+import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
@@ -13,8 +13,7 @@ export default async function AccessPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  const userId = await requireSessionUserId();
   const { id } = await params;
 
   const owned = await getAccessibleProject(userId, id, "admin");

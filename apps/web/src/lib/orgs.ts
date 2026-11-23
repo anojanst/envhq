@@ -4,6 +4,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { personalOrgs } from "@/db/schema";
 import { timeClerk } from "@/lib/perf";
+import { getDirectoryUser } from "@/lib/identity";
 
 /** Marks a Clerk Organization as auto-provisioned (not user-created). */
 const PERSONAL_ORG_METADATA = { personal: true } as const;
@@ -32,13 +33,13 @@ export async function getOrCreatePersonalOrg(userId: string): Promise<string> {
   if (existing[0]) return existing[0].orgId;
 
   const client = await clerkClient();
-  const user = await timeClerk("users.getUser", () => client.users.getUser(userId));
+  const user = await getDirectoryUser(userId);
   // Falls back through to the email as a last resort specifically so this
   // name is unique per user — a bare "Personal" literal collides across
   // every account that has neither a first name nor a username set (common
   // for freshly-signed-up test accounts), making every such user's org
   // indistinguishable from anyone else's in an org picker.
-  const name = user.firstName || user.username || user.primaryEmailAddress?.emailAddress || "Personal";
+  const name = user.name || user.email || "Personal";
   const org = await timeClerk("organizations.createOrganization", () =>
     client.organizations.createOrganization({
       name,

@@ -1,5 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
+import { requireSessionUserId } from "@/lib/identity";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apiTokens, projects } from "@/db/schema";
@@ -7,8 +6,7 @@ import { listAccessibleProjectsWithEnvsAcrossOrgs } from "@/lib/access";
 import { TokensManager } from "./tokens-manager";
 
 export default async function TokensPage() {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  const userId = await requireSessionUserId();
 
   // Project-scoping dropdown: every project the user can access across every
   // org they belong to, not just ones they personally created (this used to

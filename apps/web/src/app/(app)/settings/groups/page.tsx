@@ -1,5 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
+import { requireSessionUserId } from "@/lib/identity";
 import { resolveRequestedOrgId, listMyOrgs } from "@/lib/orgs";
 import { listGroups } from "@/lib/groups";
 import { OrgPicker } from "@/components/org-picker";
@@ -10,8 +9,7 @@ export default async function GroupsPage({
 }: {
   searchParams: Promise<{ org?: string }>;
 }) {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  const userId = await requireSessionUserId();
 
   const { org: requestedOrgId } = await searchParams;
   const orgs = await listMyOrgs(userId);

@@ -1,5 +1,5 @@
-import { auth } from "@clerk/nextjs/server";
-import { notFound, redirect } from "next/navigation";
+import { requireSessionUserId } from "@/lib/identity";
+import { notFound } from "next/navigation";
 import { collectOpsMetrics, isStaff } from "@/lib/ops-metrics";
 import { OpsIssues } from "./ops-issues";
 
@@ -19,8 +19,7 @@ export const dynamic = "force-dynamic";
  * means RM-17 has nothing to unpick when it arrives.
  */
 export default async function OpsPage() {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  const userId = await requireSessionUserId();
   if (!isStaff(userId)) notFound();
 
   const metrics = await collectOpsMetrics();

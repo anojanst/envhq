@@ -1,6 +1,6 @@
 # Self-hosting plan
 
-Status: **agreed direction, not started** (2026-11-23). Reopens the direction
+Status: **in progress** — phase 1 done 2026-11-23. Reopens the direction
 retired on 2026-09-18 (`7d5e990`, "retiring self hosting roadmap").
 
 Goal: an organization can run EnvHQ inside its own network, sign in with its own
@@ -84,12 +84,17 @@ Platform extras to make optional in self-hosted mode: `@vercel/analytics`,
 
 Each phase lands on `main` on its own, and envhq.dev keeps working after each.
 
-### 1 · Identity seam — no behaviour change (2–3 days)
+### 1 · Identity seam — no behaviour change (2–3 days) — **done**
 - `lib/identity/`: `currentUser()`, `requireUser()`, `resolveUsers(ids)`. One
   adapter for now, wrapping today's Clerk SDK calls.
 - Every `auth()` and `clerkClient().users` call goes through it.
-- Done when only `lib/identity/*` and `lib/orgs.ts` import `@clerk/*`, and every
-  existing test passes unchanged.
+- Done when no server code asks Clerk *who someone is* except `lib/identity/clerk.ts`,
+  and every existing test passes unchanged.
+- Result: `lib/identity/` (`sessionUserId`, `requireSessionUserId`,
+  `getDirectoryUser`, `lookupDirectoryUsers`). Still importing `@clerk/*`, by
+  design until their phase: org calls (`lib/orgs.ts`, `api/orgs/members`,
+  `api/projects/[id]/access/members` — phase 2); `middleware.ts`, `sign-in`,
+  `sign-up`, `ClerkProvider` (phase 3); `teams`, `UserButton` (phase 4).
 - Design reference: `apps/api/internal/identity/identity.go` on the local branch
   `archive/go-api-1044fda` — identity answers *who is this*, never orgs or roles.
 

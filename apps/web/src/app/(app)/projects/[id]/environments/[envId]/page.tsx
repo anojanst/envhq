@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
-import { redirect, notFound } from "next/navigation";
+import { requireSessionUserId } from "@/lib/identity";
+import { notFound } from "next/navigation";
 import { and, asc, eq, count, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { environments, envVars } from "@/db/schema";
@@ -25,8 +25,7 @@ async function renderEnvironment({
 }: {
   params: Promise<{ id: string; envId: string }>;
 }) {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  const userId = await requireSessionUserId();
   const { id: projectId, envId } = await params;
 
   const owned = await getAccessibleEnvironment(userId, envId);
