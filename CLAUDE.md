@@ -22,7 +22,7 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
   - `src/commands/` — one module per command, each exporting `register(program)`; `projects` and `env` carry their own subcommands
   - `src/shared/` — helpers the commands share: `ui.ts` (prompts, `fail`), `link.ts`, `secrets.ts` (the client-side encryption boundary, including the deploy-key decrypt path `run`/`export` use in CI), `deploy-key.ts` (parses `ENVHQ_DEPLOY_KEY`), `github.ts` (Actions log masking and `GITHUB_ENV`/`GITHUB_OUTPUT` writes), `target.ts` (project/env resolution that works without a linked folder), `resolve.ts`, `fs.ts`
   - `src/commands/cli-surface.fixture.txt` — the pinned `--help` output; regenerate deliberately with `UPDATE_FIXTURES=1 pnpm --filter envhq test`
-- `packages/github-action` — the EnvHQ GitHub Action (RM-12): `action.yml` plus a thin Node entry that runs a pinned `envhq export`. Its `dist/` is committed, because GitHub runs it directly, and CI fails if `dist/` is stale. It is published by mirroring this directory into its own repository (see its README)
+- `packages/github-action` — the EnvHQ GitHub Action (RM-12): `action.yml` plus a thin Node entry that runs a pinned `envhq export`. Its `dist/` is committed, because GitHub runs it directly, and CI fails if `dist/` is stale. It is published by mirroring this directory into `envhq/envhq-action` (see its README)
 - `packages/crypto` — `@envhq/crypto`, shared encryption primitives (noble libs)
 - `packages/parser` — `@envhq/parser`, env file parsing
 - `.claude/commands/` — repo slash commands: `/recommend-next` (pick the next roadmap ticket) and `/implement <ticket>` (fetch it from Notion and build it)

@@ -82,5 +82,6 @@ mirror of it, with `action.yml` at the repository root.
    The action calls `npx envhq@<that version>`, so it can't ship first.
 2. `pnpm --filter @envhq/github-action build`, then commit `dist/`. CI fails
    if it's stale.
-3. Copy this directory to the action repository, tag `v1.x.y`, and move the
+3. Copy `action.yml`, `dist/`, `README.md` and the root `LICENSE` to
+   [envhq/envhq-action](https://github.com/envhq/envhq-action), tag `v1.x.y`, and move the
    `v1` tag.
