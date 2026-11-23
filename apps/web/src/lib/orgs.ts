@@ -10,11 +10,10 @@ import { readMemberships, readOrgMembers, replaceOrg, type OrgRole, type StoredM
  * Orgs, memberships and roles — every org-level permission in the app comes
  * through here. Server-only.
  *
- * The answers come from Postgres (`orgs`, `org_members`; self-hosting phase 2,
- * docs/SELF_HOSTING_PLAN.md). Clerk is no longer asked who belongs to what.
- * Until phase 4 replaces Clerk's `/teams` screen, team orgs are still created
- * and edited there, and `lib/org-sync.ts` copies each change in through the
- * Clerk webhook. Personal orgs never touch Clerk.
+ * The answers come from Postgres (`orgs`, `org_members`), which EnvHQ alone
+ * writes: personal orgs here, teams in `lib/org-admin.ts`. The identity
+ * provider is never asked who belongs to what — it only says who someone is
+ * (docs/SELF_HOSTING_PLAN.md).
  *
  * Roles resolve LIVE on every request. The only caching is React's
  * request-scoped `cache()` — see `fetchMemberships`.

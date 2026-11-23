@@ -42,7 +42,6 @@ interface FakeMembership {
 
 const users = new Map<string, FakeUser>();
 const memberships: FakeMembership[] = [];
-const orgsById = new Map<string, { name: string; createdBy?: string; personal?: boolean }>();
 
 interface Paging {
   limit?: number;
@@ -81,25 +80,8 @@ export function setFakeOrgMembership(membership: FakeMembership): void {
   memberships.push(membership);
 }
 
-export function setFakeOrg(id: string, org: { name: string; createdBy?: string; personal?: boolean }): void {
-  orgsById.set(id, org);
-}
-
-/** Removes one membership — for the sync tests' "member was removed in Clerk" case. */
-export function removeFakeOrgMembership(userId: string, orgId: string): void {
-  const i = memberships.findIndex((m) => m.userId === userId && m.orgId === orgId);
-  if (i >= 0) memberships.splice(i, 1);
-}
-
-/** Forgets an org and all its memberships — for "org was deleted in Clerk". */
-export function deleteFakeOrg(orgId: string): void {
-  orgsById.delete(orgId);
-  for (let i = memberships.length - 1; i >= 0; i--) if (memberships[i]!.orgId === orgId) memberships.splice(i, 1);
-}
-
 export function resetFakeClerk(): void {
   users.clear();
-  orgsById.clear();
   memberships.length = 0;
   clerkCalls = 0;
 }
@@ -165,27 +147,6 @@ vi.mock("@clerk/nextjs/server", () => ({
             }),
           { limit, offset },
         );
-      },
-      // For `lib/org-sync.ts`: an org exists in the fake if any membership
-      // names it, or it was registered with `setFakeOrg`. Anything else is a
-      // 404, the way the real API answers for a deleted org.
-      getOrganization: async ({ organizationId }: { organizationId: string }) => {
-        countCall();
-        const org = orgsById.get(organizationId);
-        if (!org && !memberships.some((m) => m.orgId === organizationId)) {
-          throw Object.assign(new Error("Not Found"), { status: 404 });
-        }
-        return {
-          id: organizationId,
-          name: org?.name ?? `org-${organizationId}`,
-          createdBy: org?.createdBy ?? null,
-          privateMetadata: org?.personal ? { personal: true } : {},
-        };
-      },
-      getOrganizationList: async ({ limit, offset }: Paging) => {
-        countCall();
-        const ids = [...new Set([...orgsById.keys(), ...memberships.map((m) => m.orgId)])];
-        return page(ids.map((id) => ({ id })), { limit, offset });
       },
       createOrganization: async () => {
         throw new Error(

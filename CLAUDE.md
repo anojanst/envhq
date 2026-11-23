@@ -8,13 +8,13 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
 
 - `apps/web` — the product: Next.js app (UI + API routes + DB), package `@envhq/web`.
   - `openapi.yaml` — hand-written OpenAPI 3.1 spec, the source-of-truth contract for every route under `src/app/api` (ADR-010); lint with `pnpm --filter @envhq/web lint:openapi`
-  - `src/app/(app)/` — authenticated app pages: `dashboard`, `projects` (incl. `[id]/access` and `[id]/deploy-keys`), `teams`, `settings`, `cli`, `ops` (staff-only, linked from nowhere, 404 to everyone else)
+  - `src/app/(app)/` — authenticated app pages: `dashboard`, `projects` (incl. `[id]/access` and `[id]/deploy-keys`), `teams`, `settings`, `cli`, `ops` (staff-only, linked from nowhere, 404 to everyone else), `teams` (EnvHQ's own team management), `invite/[token]` (where an invite link lands)
   - `src/instrumentation.ts` — Next's `onRequestError` hook; every uncaught error in any route or page reaches `lib/observability.ts` through here, so a new route can't forget to report
-  - `src/app/api/` — Next.js route handlers: `orgs`, `projects` (incl. `[id]/deploy-keys`), `environments`, `vars`, `groups`, `tokens`, `users`, `cli`, `me`, `health` (the uptime endpoint — unauthenticated), `ops` (staff-only metrics and issue muting), `webhooks/clerk` (inbound Clerk user sync — Svix-signature authenticated, the one route that doesn't call `getUserId`)
+  - `src/app/api/` — Next.js route handlers: `orgs`, `projects` (incl. `[id]/deploy-keys`), `environments`, `vars`, `groups`, `tokens`, `users`, `cli`, `me`, `health` (the uptime endpoint — unauthenticated), `ops` (staff-only metrics and issue muting), `invites` (accepting a team invite link), `webhooks/clerk` (inbound Clerk user sync — Svix-signature authenticated, the one route that doesn't call `getUserId`)
   - `src/app/sign-in`, `src/app/sign-up` — Clerk-hosted auth pages
   - `src/app/docs/` — public docs site (`getting-started`, `cli`, `ci`, `security`, `limitations`, `web-app`) — distinct from the internal `docs/` at repo root
   - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client, `pool.ts` (connection-pool sizing and prepared-statement settings — pure, so it is testable; see `docs/OPERATIONS.md`)
-  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` / `deploy-keys.ts` (key management; `deploy-key-client.ts` is its browser half — it generates the keypair and seals, and is a separate module so a test can assert the private key never reaches the wire), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts` (org roles — read live from Postgres) / `org-store.ts` (its SQL) / `org-sync.ts` (Clerk → Postgres copy of team orgs, until self-hosting phase 4), `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/Clerk measurement — counts and durations only, never SQL or parameters), `observability.ts` (error grouping, scrubbing and alert-once — same counts-only invariant, and the only place a message is allowed to reach storage), `ops-metrics.ts` (EnvHQ's own numbers, and the `ENVHQ_STAFF_USER_IDS` gate), `user-profiles.ts` (the local `user_profiles` mirror of Clerk display names — decorative only, never an authorization input), `identity/` (who is signed in, and user lookups — the only place that asks Clerk who someone is; `clerk.ts` is today's adapter, OIDC replaces it in self-hosting phase 3. Never orgs or roles)
+  - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` / `deploy-keys.ts` (key management; `deploy-key-client.ts` is its browser half — it generates the keypair and seals, and is a separate module so a test can assert the private key never reaches the wire), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` / `cli-auth.ts`, `orgs.ts` (org roles — read live from Postgres) / `org-store.ts` (its SQL) / `org-admin.ts` (every team mutation and its invariants: one admin minimum, personal orgs are single-member, removal takes grants/groups/key wraps with it) / `org-routes.ts` (the `api/orgs/[id]/…` gate), `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/Clerk measurement — counts and durations only, never SQL or parameters), `observability.ts` (error grouping, scrubbing and alert-once — same counts-only invariant, and the only place a message is allowed to reach storage), `ops-metrics.ts` (EnvHQ's own numbers, and the `ENVHQ_STAFF_USER_IDS` gate), `user-profiles.ts` (the local `user_profiles` mirror of Clerk display names — decorative only, never an authorization input), `identity/` (who is signed in, and user lookups — the only place that asks Clerk who someone is; `clerk.ts` is today's adapter, OIDC replaces it in self-hosting phase 3. Never orgs or roles)
   - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `mock-clerk.setup.ts`, `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db`, `orgs-db` and `contract` vitest projects (`orgs-db` runs the real `lib/orgs.ts` over real `org_members` rows, with only Clerk faked — `*.orgs-db.test.ts`); `contract/` holds the openapi.yaml-vs-live-routes contract suite; `perf/` holds the RM-5 baseline harness and RM-8's connection load test (its own `perf` vitest project, excluded from `pnpm test`); `ui.setup.ts` backs the `ui` project — happy-dom component tests named `*.render.test.tsx`, which is where render cost and re-render behaviour are pinned (RM-9)
   - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
@@ -104,14 +104,15 @@ display names cost no Clerk call per render. It is refreshed by the
   admin staying admin for the length of a TTL is a real access consequence.
   The per-org fan-out was removed by passing the already-fetched role down, not
   by caching it longer.
-- **`orgs` / `org_members` are authorization inputs** (self-hosting phase 2).
-  Org admins get admin on every project in the org, so a wrong row is a
-  cross-org leak. Personal orgs are created there directly; team orgs are
-  still made on Clerk's `/teams` screen until phase 4 and copied in by the
-  Clerk webhook via `lib/org-sync.ts`, which re-reads the org from Clerk
-  rather than applying the payload (deliveries can arrive out of order).
-  The `orgs-db` vitest project replays the access matrix against real
-  `org_members` rows — a change to role resolution must pass it.
+- **Orgs live only in Postgres and change only through EnvHQ.** `orgs`,
+  `org_members` and `org_invites` are authorization inputs — org admins get
+  admin on every project in the org, so a wrong row is a cross-org leak. The
+  identity provider says *who someone is* and nothing else: never sync org
+  membership or roles from it (OIDC has no standard for it, and every
+  provider differs). Teams change only via `lib/org-admin.ts` behind the
+  `/teams` page and `api/orgs/[id]/…`. The `orgs-db` vitest project replays
+  the access matrix against real `org_members` rows — a change to role
+  resolution must pass it.
 
 ### Public pages are static; authenticated responses are never cached
 

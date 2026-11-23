@@ -4,19 +4,15 @@ import { db } from "@/db";
 import { reportError } from "@/lib/observability";
 import { webhookEvents } from "@/db/schema";
 import { deleteUserProfile, upsertUserProfile } from "@/lib/user-profiles";
-import { deleteMembershipsOfUser } from "@/lib/org-store";
-import { syncOrgFromClerk } from "@/lib/org-sync";
 
 /**
- * Clerk → EnvHQ sync. Two jobs:
- *   - users (RM-6): keeps `user_profiles` fresh so display names are served
- *     locally instead of costing a Clerk call per id per render.
- *   - orgs (self-hosting phase 2): on any `organization.*` or
- *     `organizationMembership.*` event, re-reads that org from Clerk and
- *     replaces its `orgs`/`org_members` rows (`lib/org-sync.ts`). The payload
- *     only says *which* org changed; it is never applied directly, so
- *     out-of-order or repeated deliveries converge on Clerk's current state.
- *     These events must be subscribed on the Clerk webhook endpoint.
+ * Clerk → EnvHQ user sync (RM-6). Keeps `user_profiles` fresh so display
+ * names are served locally instead of costing a Clerk call per id per render.
+ *
+ * Users only. Orgs and memberships live in Postgres and change only through
+ * EnvHQ's own team pages (`lib/org-admin.ts`) — never because an identity
+ * provider sent an event. Self-hosting phase 3 replaces this route with a
+ * profile refresh at every sign-in.
  *
  * AUTHENTICATION IS THE SIGNATURE, NOT A SESSION. This is the one route under
  * `src/app/api` that does not call `getUserId` — there is no user on a
@@ -29,10 +25,9 @@ import { syncOrgFromClerk } from "@/lib/org-sync";
  * dashboard's webhook endpoint. Absent, the route refuses every delivery
  * rather than trusting unsigned input.
  *
- * The user half is not an authorization input — see the note on
- * `userProfiles` in `db/schema.ts`. The org half IS (it writes `org_members`,
- * which `lib/orgs.ts` answers every role check from), which is why it trusts
- * nothing in the payload but an org id, and asks Clerk itself for the rest.
+ * Nothing here is an authorization input — see the note on `userProfiles` in
+ * `db/schema.ts`. The worst a forged-but-somehow-verified payload could do is
+ * mislabel a name in a history view.
  */
 
 /** Svix headers on every delivery. */
@@ -44,8 +39,6 @@ interface ClerkUserEvent {
   type: string;
   data: {
     id: string;
-    /** On `organizationMembership.*` events: the org the membership belongs to. */
-    organization?: { id: string };
     first_name?: string | null;
     username?: string | null;
     image_url?: string | null;
@@ -145,18 +138,8 @@ export async function POST(req: Request): Promise<Response> {
 
 async function handle(event: ClerkUserEvent): Promise<void> {
   const { type, data } = event;
-  if (type.startsWith("organization.")) {
-    await syncOrgFromClerk(data.id);
-    return;
-  }
-  if (type.startsWith("organizationMembership.")) {
-    if (data.organization?.id) await syncOrgFromClerk(data.organization.id);
-    return;
-  }
   if (type === "user.deleted") {
     await deleteUserProfile(data.id);
-    // Clerk sends a membership event per org too; this covers a missed one.
-    await deleteMembershipsOfUser(data.id);
     return;
   }
   if (type !== "user.created" && type !== "user.updated") return; // Not ours; acknowledged above.

@@ -69,10 +69,10 @@ export const personalOrgs = pgTable("personal_orgs", {
  * every project in the org (`lib/access.ts`), so a wrong `org_members` row is
  * a cross-org leak. Unlike `user_profiles`, nothing here is decorative.
  *
- * This is the only source of org roles (`lib/orgs.ts`). Personal orgs are
- * created here with a generated `org_…` id. Team orgs are still created on
- * Clerk's `/teams` screen until phase 4, keep Clerk's `org_…` id, and are
- * copied in by `lib/org-sync.ts` on every Clerk org webhook.
+ * This is the only source of org roles (`lib/orgs.ts`), and it is written
+ * only by EnvHQ (`lib/orgs.ts` for personal orgs, `lib/org-admin.ts` for
+ * teams) — never synced from an identity provider, which only says who a
+ * person is. Ids are generated `org_…` strings.
  */
 export const orgs = pgTable("orgs", {
   id: text("id").primaryKey(),
@@ -99,6 +99,33 @@ export const orgMembers = pgTable(
     unique("org_members_org_id_user_id_uq").on(t.orgId, t.userId),
     index("org_members_user_id_idx").on(t.userId),
     check("org_members_role_ck", sql`${t.role} in ('admin', 'member')`),
+  ],
+);
+
+/**
+ * A single-use invite link into an org (self-hosting phase 4). Works with any
+ * identity provider: whoever signs in and opens the link joins with `role`.
+ * Only the SHA-256 of the token is stored (`lib/crypto.ts`), like API tokens;
+ * the link itself is shown to the admin once.
+ */
+export const orgInvites = pgTable(
+  "org_invites",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    role: text("role").$type<"admin" | "member">().notNull(),
+    createdByUserId: text("created_by_user_id").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedByUserId: text("accepted_by_user_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("org_invites_org_id_idx").on(t.orgId),
+    check("org_invites_role_ck", sql`${t.role} in ('admin', 'member')`),
   ],
 );
 

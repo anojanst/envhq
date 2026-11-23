@@ -19,7 +19,13 @@ import { DELETE as deleteGroup } from "@/app/api/groups/[id]/route";
 import { GET as listGroups, POST as createGroup } from "@/app/api/groups/route";
 import { GET as getMe } from "@/app/api/me/route";
 import { GET as listOrgMembers } from "@/app/api/orgs/members/route";
-import { GET as listMyOrgs } from "@/app/api/orgs/route";
+import { GET as listMyOrgs, POST as createTeam } from "@/app/api/orgs/route";
+import { PATCH as renameOrg, DELETE as deleteOrg } from "@/app/api/orgs/[id]/route";
+import { GET as listTeamMembers } from "@/app/api/orgs/[id]/members/route";
+import { PATCH as setTeamMemberRole, DELETE as removeTeamMember } from "@/app/api/orgs/[id]/members/[userId]/route";
+import { GET as listTeamInvites, POST as createTeamInvite } from "@/app/api/orgs/[id]/invites/route";
+import { DELETE as revokeTeamInvite } from "@/app/api/orgs/[id]/invites/[inviteId]/route";
+import { POST as acceptTeamInvite } from "@/app/api/invites/accept/route";
 import { DELETE as deleteAccessGrant } from "@/app/api/projects/[id]/access/[grantId]/route";
 import { GET as listAccessGroupOptions } from "@/app/api/projects/[id]/access/groups/route";
 import { GET as listAccessMemberOptions } from "@/app/api/projects/[id]/access/members/route";
@@ -118,6 +124,36 @@ unauthed("POST /api/groups", "POST", "/api/groups", createGroup);
 unauthed("GET /api/me", "GET", "/api/me", getMe);
 unauthed("GET /api/orgs/members", "GET", "/api/orgs/members", listOrgMembers);
 unauthed("GET /api/orgs", "GET", "/api/orgs", listMyOrgs);
+const teamId = "org_sweep";
+const inviteId = id();
+unauthed("POST /api/orgs", "POST", "/api/orgs", createTeam);
+unauthed("PATCH /api/orgs/{id}", "PATCH", `/api/orgs/${teamId}`, renameOrg, { id: teamId });
+unauthed("DELETE /api/orgs/{id}", "DELETE", `/api/orgs/${teamId}`, deleteOrg, { id: teamId });
+unauthed("GET /api/orgs/{id}/members", "GET", `/api/orgs/${teamId}/members`, listTeamMembers, { id: teamId });
+unauthed(
+  "PATCH /api/orgs/{id}/members/{userId}",
+  "PATCH",
+  `/api/orgs/${teamId}/members/${memberUserId}`,
+  setTeamMemberRole,
+  { id: teamId, userId: memberUserId },
+);
+unauthed(
+  "DELETE /api/orgs/{id}/members/{userId}",
+  "DELETE",
+  `/api/orgs/${teamId}/members/${memberUserId}`,
+  removeTeamMember,
+  { id: teamId, userId: memberUserId },
+);
+unauthed("GET /api/orgs/{id}/invites", "GET", `/api/orgs/${teamId}/invites`, listTeamInvites, { id: teamId });
+unauthed("POST /api/orgs/{id}/invites", "POST", `/api/orgs/${teamId}/invites`, createTeamInvite, { id: teamId });
+unauthed(
+  "DELETE /api/orgs/{id}/invites/{inviteId}",
+  "DELETE",
+  `/api/orgs/${teamId}/invites/${inviteId}`,
+  revokeTeamInvite,
+  { id: teamId, inviteId },
+);
+unauthed("POST /api/invites/accept", "POST", "/api/invites/accept", acceptTeamInvite);
 unauthed(
   "DELETE /api/projects/{id}/access/{grantId}",
   "DELETE",

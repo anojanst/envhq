@@ -4,8 +4,8 @@ import { orgMembers, orgs } from "@/db/schema";
 
 /**
  * Orgs and memberships in Postgres (self-hosting phase 2). Server-only, and
- * nothing but SQL: no Clerk, no caching. `lib/orgs.ts` is the public face;
- * `lib/org-sync.ts` writes here from Clerk webhooks until phase 4.
+ * nothing but SQL: no Clerk, no caching. `lib/orgs.ts` is the read side;
+ * `lib/org-admin.ts` holds the mutations with their invariants.
  *
  * These rows are authorization inputs — see the note on `orgs` in
  * `db/schema.ts`. Every read here is a live query; `lib/orgs.ts` wraps the
@@ -80,12 +80,12 @@ export async function replaceOrg(snapshot: OrgSnapshot): Promise<void> {
   });
 }
 
-/** Removes an org and, by cascade, every membership in it. A no-op if it isn't there. */
-export async function deleteOrg(orgId: string): Promise<void> {
-  await db.delete(orgs).where(eq(orgs.id, orgId));
-}
-
-/** Removes a user from every org — for a deleted account. */
-export async function deleteMembershipsOfUser(userId: string): Promise<void> {
-  await db.delete(orgMembers).where(eq(orgMembers.userId, userId));
+/** One org's own fields, or null. */
+export async function readOrg(orgId: string): Promise<{ id: string; name: string; personal: boolean } | null> {
+  const [org] = await db
+    .select({ id: orgs.id, name: orgs.name, personal: orgs.personal })
+    .from(orgs)
+    .where(eq(orgs.id, orgId))
+    .limit(1);
+  return org ?? null;
 }

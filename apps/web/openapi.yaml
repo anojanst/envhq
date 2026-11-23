@@ -72,6 +72,13 @@ components:
       schema:
         type: string
         format: uuid
+    orgIdPathParam:
+      name: id
+      in: path
+      required: true
+      description: An org id (`org_…`), not a UUID.
+      schema:
+        type: string
     orgIdQueryParam:
       name: orgId
       in: query
@@ -107,6 +114,28 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
           example:
             error: This token is read-only.
+    TeamError:
+      description: >-
+        A team rule refused the request — e.g. it would leave a team with no
+        admin, delete a team that still owns projects, or invite into a
+        personal workspace — or the token can't manage teams. `error` says
+        which, in words fit to show the user.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error: A team needs at least one admin. Make someone else admin first.
+    TeamNotFound:
+      description: >-
+        The team doesn't exist, or the caller isn't a member of it — the same
+        answer either way, so a stranger can't confirm a team exists.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error: Team not found
   schemas:
     ErrorEnvelope:
       type: object
@@ -316,6 +345,30 @@ components:
           type: string
         imageUrl:
           type: string
+    OrgMemberWithRole:
+      allOf:
+        - $ref: '#/components/schemas/OrgMember'
+        - type: object
+          required: [role]
+          properties:
+            role:
+              enum: [admin, member]
+    OrgInvite:
+      type: object
+      description: A pending invite link. The token itself is only ever returned once, as `url`, when the invite is created.
+      required: [id, role, createdAt, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          enum: [admin, member]
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
     Org:
       type: object
       required: [id, name, role]
@@ -1624,6 +1677,329 @@ paths:
                       $ref: '#/components/schemas/Org'
         "401":
           $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Orgs]
+      operationId: createTeam
+      summary: Create a team
+      description: The caller becomes its only admin. Needs a web session or a full, unscoped write token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [org]
+                properties:
+                  org:
+                    $ref: '#/components/schemas/Org'
+        "400":
+          $ref: '#/components/responses/TeamError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/TeamError'
+  /api/orgs/{id}:
+    patch:
+      tags: [Orgs]
+      operationId: renameOrg
+      summary: Rename a team or personal workspace
+      description: Team admins only. Needs a web session or a full, unscoped write token.
+      parameters:
+        - $ref: '#/components/parameters/orgIdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+      responses:
+        "200":
+          description: Renamed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "400":
+          $ref: '#/components/responses/TeamError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/TeamError'
+        "404":
+          $ref: '#/components/responses/TeamNotFound'
+    delete:
+      tags: [Orgs]
+      operationId: deleteOrg
+      summary: Delete a team
+      description: >-
+        Team admins only. Refused (409) for a personal workspace and for a
+        team that still owns projects. Removes the team's groups, members
+        and invites.
+      parameters:
+        - $ref: '#/components/parameters/orgIdPathParam'
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/TeamError'
+        "404":
+          $ref: '#/components/responses/TeamNotFound'
+        "409":
+          $ref: '#/components/responses/TeamError'
+  /api/orgs/{id}/members:
+    get:
+      tags: [Orgs]
+      operationId: listTeamMembers
+      summary: List a team's members and their roles
+      description: Any member may list; only admins may change.
+      parameters:
+        - $ref: '#/components/parameters/orgIdPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrgMemberWithRole'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/TeamNotFound'
+  /api/orgs/{id}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/orgIdPathParam'
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      tags: [Orgs]
+      operationId: setTeamMemberRole
+      summary: Change a member's role
+      description: Team admins only. A team always keeps at least one admin (409 otherwise).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  enum: [admin, member]
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "400":
+          $ref: '#/components/responses/TeamError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/TeamError'
+        "404":
+          $ref: '#/components/responses/TeamNotFound'
+        "409":
+          $ref: '#/components/responses/TeamError'
+    delete:
+      tags: [Orgs]
+      operationId: removeTeamMember
+      summary: Remove a member, or leave a team
+      description: >-
+        An admin may remove anyone; any member may remove themselves (leave).
+        Also removes the member's direct grants, group memberships and key
+        wraps in the team's projects, and marks those projects for key
+        rotation. A team always keeps at least one admin (409 otherwise).
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/TeamError'
+        "404":
+          $ref: '#/components/responses/TeamNotFound'
+        "409":
+          $ref: '#/components/responses/TeamError'
+  /api/orgs/{id}/invites:
+    get:
+      tags: [Orgs]
+      operationId: listTeamInvites
+      summary: List pending invite links
+      description: Team admins only. Never returns tokens.
+      parameters:
+        - $ref: '#/components/parameters/orgIdPathParam'
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invites]
+                properties:
+                  invites:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrgInvite'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/TeamError'
+        "404":
+          $ref: '#/components/responses/TeamNotFound'
+    post:
+      tags: [Orgs]
+      operationId: createTeamInvite
+      summary: Create a single-use invite link
+      description: >-
+        Team admins only. The link (`url`) is in this response and nowhere
+        else — only a hash of its token is stored. Expires after 7 days.
+        Refused (409) for a personal workspace.
+      parameters:
+        - $ref: '#/components/parameters/orgIdPathParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  enum: [admin, member]
+                  default: member
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invite, url]
+                properties:
+                  invite:
+                    $ref: '#/components/schemas/OrgInvite'
+                  url:
+                    type: string
+                    format: uri
+        "400":
+          $ref: '#/components/responses/TeamError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/TeamError'
+        "404":
+          $ref: '#/components/responses/TeamNotFound'
+        "409":
+          $ref: '#/components/responses/TeamError'
+  /api/orgs/{id}/invites/{inviteId}:
+    delete:
+      tags: [Orgs]
+      operationId: revokeTeamInvite
+      summary: Revoke a pending invite link
+      parameters:
+        - $ref: '#/components/parameters/orgIdPathParam'
+        - name: inviteId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/TeamError'
+        "404":
+          description: Team not found, or no such pending invite.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/invites/accept:
+    post:
+      tags: [Orgs]
+      operationId: acceptTeamInvite
+      summary: Join a team with an invite link's token
+      description: >-
+        Single use. Someone already in the team keeps their current role.
+        Needs a web session or a full, unscoped write token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Joined.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orgId]
+                properties:
+                  orgId:
+                    type: string
+        "400":
+          $ref: '#/components/responses/TeamError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/TeamError'
+        "404":
+          description: The link is invalid, expired or already used.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /api/webhooks/clerk:
     post:
       tags: [Webhooks]
