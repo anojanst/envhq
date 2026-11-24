@@ -66,10 +66,12 @@ describe("sign-out", () => {
     expect(marker?.secure).toBe(true);
   });
 
-  test("still goes through the provider's own sign-out when it has one", async () => {
+  test("stays on EnvHQ even when the provider has a sign-out endpoint", async () => {
+    // Okta refuses it without an id_token_hint, Entra/Keycloak need the URL
+    // registered; the fresh-login prompt covers every provider instead.
     endSession = "https://idp.example.com/logout";
     const res = await signOut(new Request(`${ORIGIN}/auth/sign-out`, { method: "POST" }));
-    expect(res.headers.get("location")).toBe("https://idp.example.com/logout");
+    expect(res.headers.get("location")).toBe(`${ORIGIN}/`);
     expect(res.cookies.get("envhq_signed_out")?.value).toBe("1");
   });
 });
@@ -79,6 +81,17 @@ describe("sign-in", () => {
     jar.set("envhq_signed_out", "1");
     const res = await signIn(new Request(`${ORIGIN}/auth/sign-in`));
     expect(new URL(res.headers.get("location")!).searchParams.get("prompt")).toBe("login");
+  });
+
+  test("the prompt is configurable — Google offers select_account, not login", async () => {
+    jar.set("envhq_signed_out", "1");
+    process.env.OIDC_SIGN_OUT_PROMPT = "select_account";
+    try {
+      const res = await signIn(new Request(`${ORIGIN}/auth/sign-in`));
+      expect(new URL(res.headers.get("location")!).searchParams.get("prompt")).toBe("select_account");
+    } finally {
+      delete process.env.OIDC_SIGN_OUT_PROMPT;
+    }
   });
 
   test("an ordinary sign-in sends no prompt", async () => {
@@ -96,10 +109,10 @@ describe("sign-in", () => {
 });
 
 describe("callback", () => {
-  async function returnFromProvider() {
+  async function returnFromProvider(query = "code=abc&state=state") {
     jar.set("envhq_signed_out", "1");
     jar.set("envhq_oidc", await sealFlow({ state: "state", nonce: "nonce", verifier: "verifier", returnTo: "/dashboard" }));
-    return callback(new Request(`${ORIGIN}/auth/callback?code=abc&state=state`));
+    return callback(new Request(`${ORIGIN}/auth/callback?${query}`));
   }
 
   test("a successful sign-in clears the signed-out marker", async () => {
@@ -112,6 +125,18 @@ describe("callback", () => {
   test("a failed sign-in keeps it, so the retry still asks for a fresh login", async () => {
     grantFails = true;
     const res = await returnFromProvider();
+    expect(res.headers.get("location")).toBe(`${ORIGIN}/sign-in?error=callback`);
+    expect(res.cookies.get("envhq_signed_out")).toBeUndefined();
+  });
+
+  test("a provider that rejects the prompt doesn't lock people out for 30 days", async () => {
+    const res = await returnFromProvider("error=invalid_request&state=state");
+    expect(res.headers.get("location")).toBe(`${ORIGIN}/sign-in?error=callback`);
+    expect(res.cookies.get("envhq_signed_out")?.value).toBe("");
+  });
+
+  test("cancelling at the provider keeps the marker", async () => {
+    const res = await returnFromProvider("error=access_denied&state=state");
     expect(res.headers.get("location")).toBe(`${ORIGIN}/sign-in?error=callback`);
     expect(res.cookies.get("envhq_signed_out")).toBeUndefined();
   });

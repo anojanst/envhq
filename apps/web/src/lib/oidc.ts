@@ -16,6 +16,8 @@ import { publicOrigin } from "@/lib/public-url";
  *   OIDC_SCOPES                 default "openid email profile"
  *   OIDC_ALLOWED_EMAIL_DOMAINS  optional, comma-separated: only verified emails
  *                               in these domains may sign in
+ *   OIDC_SIGN_OUT_PROMPT        prompt for the first sign-in after a sign-out
+ *                               (default "login"; "select_account" for Google)
  *   ENVHQ_PUBLIC_URL            the URL people reach EnvHQ at, when that isn't
  *                               the URL the server sees (behind a proxy)
  *

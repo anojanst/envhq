@@ -99,7 +99,9 @@ rm -rf "$home"
 [[ "$orgs" == *"Smoke Team"* ]] || fail "the CLI doesn't see the team: $orgs"
 echo "✔ envhq@$CLI_VERSION, pointed at this instance with ENVHQ_URL, sees the team"
 
-out=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -X POST $APP/auth/sign-out)
-[[ "$out" == "303" ]] || fail "sign-out returned $out"
-echo "✔ signed out"
+out=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$JAR" -c "$JAR" -X POST $APP/auth/sign-out)
+[[ "$out" == "303 $APP/" ]] || fail "sign-out returned $out (expected a 303 back to EnvHQ, not to the provider)"
+out=$(curl -s -o /dev/null -w '%{redirect_url}' -b "$JAR" $APP/auth/sign-in)
+[[ "$out" == *"prompt=login"* ]] || fail "the sign-in after a sign-out didn't ask the provider for a fresh login: $out"
+echo "✔ signed out, and the next sign-in asks the provider to log in again"
 echo "All self-hosting checks passed."

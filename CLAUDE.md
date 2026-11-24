@@ -109,10 +109,13 @@ self-hosted. Which provider is configuration (`OIDC_*`), never code.
   the Docker image and behind a proxy `req.url` is the bind address
   (`0.0.0.0:3000`). The smoke test caught exactly this.
 - Sign-out is POST-only, so a link or `<img>` can't log someone out.
-- Sign-out must really sign out, even where the provider has no
-  `end_session_endpoint` (Clerk doesn't): it leaves `envhq_signed_out`, the
-  next sign-in sends `prompt=login`, and only a successful callback clears
-  it. Without that, "Continue" silently signs the last person back in.
+- Sign-out must really sign out on every provider, and never depends on the
+  provider's `end_session_endpoint` (Okta needs an ID token we don't keep,
+  Entra/Keycloak need registration, Clerk and Google have none). It leaves
+  `envhq_signed_out`; the next sign-in sends `OIDC_SIGN_OUT_PROMPT`
+  (default `login`; Google ignores that, so `select_account` there). Only a
+  successful callback clears it — or a provider error other than a cancel,
+  so a provider that rejects the prompt can't lock people out.
 
 ### Cached identity is decorative; roles are not
 

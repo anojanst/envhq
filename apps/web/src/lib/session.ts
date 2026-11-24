@@ -32,17 +32,36 @@ export const FLOW_TTL_S = 10 * 60;
 export const SIGNED_OUT_TTL_S = 30 * 24 * 60 * 60;
 
 /**
- * The OIDC `prompt` for the next sign-in. After a sign-out it is `"login"`,
- * so the provider asks for credentials even if its own session is still
- * alive. Not every provider has a sign-out endpoint we can send people
- * through (Clerk doesn't); without this, "Sign out" followed by "Continue"
- * would sign the same person straight back in, which on a shared machine
- * means the next person at the keyboard. A normal sign-in, such as after the
- * session expired, sends no prompt and stays password-free while the
+ * The OIDC `prompt` for the next sign-in. After a sign-out it is
+ * `OIDC_SIGN_OUT_PROMPT` (default `"login"`), so the provider asks again even
+ * if its own session is still alive. Without it, "Sign out" followed by
+ * "Continue" would sign the same person straight back in — on a shared
+ * machine, the next person at the keyboard. A normal sign-in, such as after
+ * the session expired, sends no prompt and stays password-free while the
  * provider still knows them.
+ *
+ * Configurable because providers differ: Google ignores `login` and offers
+ * `select_account` at best. Set it empty to send nothing. Edge-safe: plain
+ * env read, no Node APIs.
  */
-export function signInPrompt(signedOutCookie: string | undefined): "login" | undefined {
-  return signedOutCookie ? "login" : undefined;
+export function signInPrompt(
+  signedOutCookie: string | undefined,
+  configured: string | undefined = process.env.OIDC_SIGN_OUT_PROMPT,
+): string | undefined {
+  if (!signedOutCookie) return undefined;
+  const prompt = (configured ?? "login").trim();
+  return prompt || undefined;
+}
+
+/**
+ * Whether a provider's error reply should end the forced re-login. Some
+ * providers answer a `prompt` they don't support with an error instead of
+ * ignoring it; if the marker survived that, every retry would send the same
+ * prompt and fail again for the next 30 days. A person cancelling at the
+ * provider (`access_denied`) is not that, and keeps the marker.
+ */
+export function promptRejected(providerError: string | null): boolean {
+  return providerError !== null && providerError !== "access_denied";
 }
 
 let cachedKey: { secret: string; key: Uint8Array } | null = null;

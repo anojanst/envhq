@@ -55,12 +55,6 @@ export default function SelfHostingPage() {
               <Code>openid email profile</Code>
             </Td>
           </tr>
-          <tr>
-            <Td>Post-logout redirect (optional)</Td>
-            <Td>
-              <Code>https://envhq.example.com/</Code>
-            </Td>
-          </tr>
         </tbody>
       </Table>
       <P>
@@ -106,6 +100,16 @@ docker compose -f deploy/docker-compose.yml up -d`}</CodeBlock>
           </tr>
           <tr>
             <Td>
+              <Code>OIDC_SIGN_OUT_PROMPT</Code>
+            </Td>
+            <Td>
+              Optional. After someone signs out, the next sign-in asks your provider to log them in
+              again with this prompt. The default, <Code>login</Code>, works with Entra ID, Okta and
+              Keycloak. Google ignores it, so set <Code>select_account</Code> for Google.
+            </Td>
+          </tr>
+          <tr>
+            <Td>
               <Code>SESSION_SECRET</Code>
             </Td>
             <Td>
@@ -144,6 +148,10 @@ docker compose -f deploy/docker-compose.yml up -d`}</CodeBlock>
           time, as on envhq.dev.
         </li>
       </OL>
+      <P>
+        Signing out of EnvHQ ends the EnvHQ session only. It doesn&rsquo;t sign anyone out of your
+        provider or other apps, but the next sign-in to EnvHQ asks the provider to log them in again.
+      </P>
       <P>
         Teams and roles live in EnvHQ&rsquo;s database, not in your provider. Removing someone from
         your provider stops them signing in; remove them from the team in EnvHQ too, which also revokes

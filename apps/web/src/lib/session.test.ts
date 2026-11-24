@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { EncryptJWT } from "jose";
-import { cookieOptions, openFlow, openSession, safeReturnTo, sealFlow, sealSession, signInPrompt } from "./session";
+import { cookieOptions, openFlow, openSession, safeReturnTo, promptRejected, sealFlow, sealSession, signInPrompt } from "./session";
 
 const SECRET = "x".repeat(40);
 
@@ -115,7 +115,20 @@ describe("signInPrompt — a sign-out forces a fresh login", () => {
   });
 
   test("an ordinary sign-in sends no prompt", () => {
-    expect(signInPrompt(undefined)).toBeUndefined();
-    expect(signInPrompt("")).toBeUndefined();
+    expect(signInPrompt(undefined, "login")).toBeUndefined();
+    expect(signInPrompt("", "login")).toBeUndefined();
+  });
+
+  test("OIDC_SIGN_OUT_PROMPT picks the prompt; empty sends none", () => {
+    expect(signInPrompt("1", undefined)).toBe("login");
+    expect(signInPrompt("1", "select_account")).toBe("select_account");
+    expect(signInPrompt("1", "  ")).toBeUndefined();
+  });
+
+  test("a provider error ends the forced re-login, except a cancel", () => {
+    expect(promptRejected("invalid_request")).toBe(true);
+    expect(promptRejected("login_required")).toBe(true);
+    expect(promptRejected("access_denied")).toBe(false);
+    expect(promptRejected(null)).toBe(false);
   });
 });

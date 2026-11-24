@@ -8,6 +8,7 @@ import {
   SIGNED_OUT_COOKIE,
   cookieOptions,
   openFlow,
+  promptRejected,
   sealSession,
 } from "@/lib/session";
 import { upsertUserProfile } from "@/lib/user-profiles";
@@ -32,6 +33,20 @@ export async function GET(req: Request) {
     return res;
   };
   if (!flow) return fail("expired");
+
+  const providerError = new URL(req.url).searchParams.get("error");
+  if (providerError) {
+    const res = fail("callback");
+    if (promptRejected(providerError)) res.cookies.delete(SIGNED_OUT_COOKIE);
+    // The code is from the query string, so anyone can type anything: keep
+    // only a short OAuth-style code, so it can't flood error grouping.
+    const code = /^[a-z_]{1,40}$/.test(providerError) ? providerError : "unrecognised";
+    await reportError(new Error(`Identity provider returned ${code}`), {
+      route: "auth/callback",
+      kind: "SignInProviderError",
+    });
+    return res;
+  }
 
   try {
     const config = await oidcConfig();
