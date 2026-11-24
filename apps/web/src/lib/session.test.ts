@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { EncryptJWT } from "jose";
-import { cookieOptions, openFlow, openSession, safeReturnTo, sealFlow, sealSession } from "./session";
+import { cookieOptions, openFlow, openSession, safeReturnTo, sealFlow, sealSession, signInPrompt } from "./session";
 
 const SECRET = "x".repeat(40);
 
@@ -106,5 +106,16 @@ describe("behind a proxy or in the Docker image", () => {
   test("without it, the request's own origin is used", async () => {
     const { publicUrl } = await import("./public-url");
     expect(publicUrl("/teams", "http://localhost:3000/x").toString()).toBe("http://localhost:3000/teams");
+  });
+});
+
+describe("signInPrompt — a sign-out forces a fresh login", () => {
+  test("after a sign-out the provider is asked to log the person in again", () => {
+    expect(signInPrompt("1")).toBe("login");
+  });
+
+  test("an ordinary sign-in sends no prompt", () => {
+    expect(signInPrompt(undefined)).toBeUndefined();
+    expect(signInPrompt("")).toBeUndefined();
   });
 });

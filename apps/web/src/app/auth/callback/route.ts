@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { callbackUrl, client, oidcConfig, oidcSettings, SignInRefused, toSignedInUser } from "@/lib/oidc";
-import { FLOW_COOKIE, SESSION_COOKIE, SESSION_TTL_S, cookieOptions, openFlow, sealSession } from "@/lib/session";
+import {
+  FLOW_COOKIE,
+  SESSION_COOKIE,
+  SESSION_TTL_S,
+  SIGNED_OUT_COOKIE,
+  cookieOptions,
+  openFlow,
+  sealSession,
+} from "@/lib/session";
 import { upsertUserProfile } from "@/lib/user-profiles";
 import { reportError } from "@/lib/observability";
 import { publicUrl } from "@/lib/public-url";
@@ -54,6 +62,9 @@ export async function GET(req: Request) {
     const res = NextResponse.redirect(publicUrl(flow.returnTo, req.url));
     res.cookies.set(SESSION_COOKIE, await sealSession(user.userId), cookieOptions(req.url, SESSION_TTL_S));
     res.cookies.delete(FLOW_COOKIE);
+    // Signed in again: the next sign-in needn't force a fresh login. Only on
+    // success — a failed attempt after a sign-out must still prompt on retry.
+    res.cookies.delete(SIGNED_OUT_COOKIE);
     res.headers.set("Cache-Control", "private, no-store");
     return res;
   } catch (error) {

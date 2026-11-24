@@ -109,6 +109,10 @@ self-hosted. Which provider is configuration (`OIDC_*`), never code.
   the Docker image and behind a proxy `req.url` is the bind address
   (`0.0.0.0:3000`). The smoke test caught exactly this.
 - Sign-out is POST-only, so a link or `<img>` can't log someone out.
+- Sign-out must really sign out, even where the provider has no
+  `end_session_endpoint` (Clerk doesn't): it leaves `envhq_signed_out`, the
+  next sign-in sends `prompt=login`, and only a successful callback clears
+  it. Without that, "Continue" silently signs the last person back in.
 
 ### Cached identity is decorative; roles are not
 

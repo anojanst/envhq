@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { client, oidcConfig } from "@/lib/oidc";
 import { publicOrigin } from "@/lib/public-url";
-import { SESSION_COOKIE } from "@/lib/session";
+import { SESSION_COOKIE, SIGNED_OUT_COOKIE, SIGNED_OUT_TTL_S, cookieOptions } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
  * Ends EnvHQ's session, then — if the provider offers one — its own, so the
- * next "Continue" asks for credentials again. POST only: a sign-out that a
- * link or an <img> could trigger would let any page log you out.
+ * next "Continue" asks for credentials again. Providers without a sign-out
+ * endpoint (Clerk) are covered by `envhq_signed_out`: the next sign-in asks
+ * them for `prompt=login` (`signInPrompt` in lib/session.ts). POST only: a
+ * sign-out that a link or an <img> could trigger would let any page log you
+ * out.
  */
 export async function POST(req: Request) {
   const home = `${publicOrigin(req.url)}/`;
@@ -26,6 +29,7 @@ export async function POST(req: Request) {
   }
   const res = NextResponse.redirect(target, 303);
   res.cookies.delete(SESSION_COOKIE);
+  res.cookies.set(SIGNED_OUT_COOKIE, "1", cookieOptions(req.url, SIGNED_OUT_TTL_S));
   res.headers.set("Cache-Control", "private, no-store");
   return res;
 }

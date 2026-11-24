@@ -11,20 +11,39 @@ import { publicOrigin } from "./public-url";
  * derived from `SESSION_SECRET`), so its contents can't be read or forged
  * without the secret. It carries only the user id — the OIDC `sub`.
  *
- * Two cookies, both HTTP-only, `SameSite=Lax`, `Secure` outside localhost:
+ * Three cookies, all HTTP-only, `SameSite=Lax`, `Secure` outside localhost:
  *   - `envhq_session` — who you are, for `SESSION_TTL`.
  *   - `envhq_oidc` — a sign-in in flight (state, nonce, PKCE verifier,
  *     where to return), for 10 minutes. Cleared on callback.
+ *   - `envhq_signed_out` — this browser signed out and hasn't signed in
+ *     since. Carries no identity; see `signInPrompt`.
  */
 
 export const SESSION_COOKIE = "envhq_session";
 export const FLOW_COOKIE = "envhq_oidc";
+export const SIGNED_OUT_COOKIE = "envhq_signed_out";
 
 /** How long a sign-in lasts. */
 export const SESSION_TTL_S = 7 * 24 * 60 * 60;
 /** Re-issue the cookie once it's this old, so active users aren't signed out mid-week. */
 export const SESSION_REFRESH_AFTER_S = 24 * 60 * 60;
 export const FLOW_TTL_S = 10 * 60;
+/** How long a sign-out keeps forcing a fresh login. Longer than any provider session worth worrying about. */
+export const SIGNED_OUT_TTL_S = 30 * 24 * 60 * 60;
+
+/**
+ * The OIDC `prompt` for the next sign-in. After a sign-out it is `"login"`,
+ * so the provider asks for credentials even if its own session is still
+ * alive. Not every provider has a sign-out endpoint we can send people
+ * through (Clerk doesn't); without this, "Sign out" followed by "Continue"
+ * would sign the same person straight back in, which on a shared machine
+ * means the next person at the keyboard. A normal sign-in, such as after the
+ * session expired, sends no prompt and stays password-free while the
+ * provider still knows them.
+ */
+export function signInPrompt(signedOutCookie: string | undefined): "login" | undefined {
+  return signedOutCookie ? "login" : undefined;
+}
 
 let cachedKey: { secret: string; key: Uint8Array } | null = null;
 
