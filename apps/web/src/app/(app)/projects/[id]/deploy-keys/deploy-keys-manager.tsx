@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Copy, KeyRound, Lock, Plus, ShieldAlert, Trash2 } from "lucide-react";
+import { Check, Copy, KeyRound, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,13 +16,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { api } from "@/lib/client";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn, formatRelativeTime, nativeSelectClass } from "@/lib/utils";
 import { issueDeployKey } from "@/lib/deploy-key-client";
-import { useProjectDek } from "@/hooks/use-project-dek";
+import { ProjectKeyGate } from "@/components/encryption/project-key-gate";
 
 export interface DeployKeyRow {
   id: string;
@@ -36,42 +36,65 @@ export interface DeployKeyRow {
 }
 
 interface Issued {
+  /** Shown in the ready-to-paste workflow step. */
+  environmentName: string | null;
   deployKeySecret: string;
   token: string;
 }
 
-export function DeployKeysManager({
-  projectId,
-  initialKeys,
-  environments,
-}: {
+export function DeployKeysManager(props: {
   projectId: string;
+  projectName: string;
   initialKeys: DeployKeyRow[];
   environments: { id: string; name: string }[];
 }) {
-  const { status: dekStatus, dek } = useProjectDek(projectId);
+  // Issuing a key means sealing the project's encryption key to it, in this
+  // browser — so the whole page needs the key in hand first.
+  return (
+    <ProjectKeyGate projectId={props.projectId} purpose="to issue a deploy key">
+      {(dek) => <DeployKeysReady {...props} dek={dek} />}
+    </ProjectKeyGate>
+  );
+}
+
+function DeployKeysReady({
+  projectId,
+  projectName,
+  initialKeys,
+  environments,
+  dek,
+}: {
+  projectId: string;
+  projectName: string;
+  initialKeys: DeployKeyRow[];
+  environments: { id: string; name: string }[];
+  dek: Uint8Array;
+}) {
+  const router = useRouter();
   const [keys, setKeys] = useState(initialKeys);
+  // The server resolves creator ids to names; take its list whenever the
+  // page re-renders rather than patching names in on the client (a key you
+  // just made isn't in the old list, so it used to show as "by" and nothing).
+  const [prevInitialKeys, setPrevInitialKeys] = useState(initialKeys);
+  if (initialKeys !== prevInitialKeys) {
+    setPrevInitialKeys(initialKeys);
+    setKeys(initialKeys);
+  }
   const [createOpen, setCreateOpen] = useState(false);
   const [label, setLabel] = useState("");
   const [environmentId, setEnvironmentId] = useState("");
   const [busy, setBusy] = useState(false);
   const [issued, setIssued] = useState<Issued | null>(null);
   const [savedConfirmed, setSavedConfirmed] = useState(false);
-  const [copied, setCopied] = useState<"key" | "token" | null>(null);
+  const [copied, setCopied] = useState<"key" | "token" | "yaml" | null>(null);
   const [revoking, setRevoking] = useState<DeployKeyRow | null>(null);
 
-  async function reload() {
-    const data = await api<{ deployKeys: DeployKeyRow[] }>(`/api/projects/${projectId}/deploy-keys`);
-    // The API returns creator ids; the page resolved them to names on the
-    // server. Keep the names we already have rather than showing raw ids
-    // after a reload.
-    const byId = new Map(keys.map((k) => [k.id, k.createdBy]));
-    setKeys(data.deployKeys.map((k) => ({ ...k, createdBy: byId.get(k.id) ?? k.createdBy })));
+  function reload() {
+    router.refresh();
   }
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
-    if (!dek) return;
     setBusy(true);
     try {
       const result = await issueDeployKey({
@@ -80,12 +103,16 @@ export function DeployKeysManager({
         environmentId: environmentId || null,
         dek,
       });
-      setIssued({ deployKeySecret: result.deployKeySecret, token: result.token });
+      setIssued({
+        deployKeySecret: result.deployKeySecret,
+        token: result.token,
+        environmentName: environments.find((env) => env.id === environmentId)?.name ?? null,
+      });
       setSavedConfirmed(false);
       setLabel("");
       setEnvironmentId("");
       setCreateOpen(false);
-      await reload();
+      reload();
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -93,7 +120,7 @@ export function DeployKeysManager({
     }
   }
 
-  async function copy(what: "key" | "token", text: string) {
+  async function copy(what: "key" | "token" | "yaml", text: string) {
     await navigator.clipboard.writeText(text);
     setCopied(what);
     setTimeout(() => setCopied((c) => (c === what ? null : c)), 1500);
@@ -102,62 +129,54 @@ export function DeployKeysManager({
   async function revoke(row: DeployKeyRow) {
     await api(`/api/projects/${projectId}/deploy-keys/${row.id}`, { method: "DELETE" });
     toast.success(`Revoked "${row.label}"`);
-    await reload();
+    reload();
   }
 
-  if (dekStatus === "locked") {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lock className="size-4 text-brand" /> Unlock encryption to issue a deploy key
-          </CardTitle>
-          <CardDescription>
-            Issuing a key means sealing this project&rsquo;s encryption key to it, which happens in
-            your browser. Unlock with your passphrase first.
-          </CardDescription>
-        </CardHeader>
-        <div className="px-(--card-spacing) pb-(--card-spacing)">
-          <Button render={<a href="/settings/security" />}>Go to Security settings</Button>
-        </div>
-      </Card>
-    );
-  }
+  const workflowStep = issued
+    ? [
+        "- uses: envhq/envhq-action@v1",
+        "  with:",
+        "    token: ${{ secrets.ENVHQ_TOKEN }}",
+        "    key: ${{ secrets.ENVHQ_DEPLOY_KEY }}",
+        `    project: ${projectName}`,
+        `    environment: ${issued.environmentName ?? environments[0]?.name ?? "staging"}`,
+      ].join("\n")
+    : "";
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end">
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger render={<Button disabled={!dek} />}>
+          <DialogTrigger render={<Button />}>
             <Plus className="size-4" /> New deploy key
           </DialogTrigger>
           <DialogContent>
-            <form onSubmit={create}>
+            <form onSubmit={create} className="contents">
               <DialogHeader>
                 <DialogTitle>New deploy key</DialogTitle>
                 <DialogDescription>
                   Generated in this browser. The private half is shown once and cannot be recovered.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
+              <div className="grid gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="dk-label">What is it for?</Label>
                   <Input
                     id="dk-label"
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
-                    placeholder="GitHub Actions — deploy"
+                    placeholder="GitHub Actions · deploy to staging"
                     autoFocus
                   />
                   <p className="text-xs text-muted-foreground">
-                    A key nobody can attribute is a key nobody dares to revoke.
+                    Name the pipeline. It&rsquo;s how you&rsquo;ll know which key is safe to revoke.
                   </p>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="dk-env">Restrict to an environment</Label>
                   <select
                     id="dk-env"
-                    className="h-9 rounded-md border bg-transparent px-3 text-sm"
+                    className={cn(nativeSelectClass, "w-full")}
                     value={environmentId}
                     onChange={(e) => setEnvironmentId(e.target.value)}
                   >
@@ -181,7 +200,10 @@ export function DeployKeysManager({
                 </div>
               </div>
               <DialogFooter>
-                <Button type="submit" disabled={busy || !label.trim() || !dek}>
+                <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={busy || !label.trim()}>
                   {busy ? "Generating…" : "Generate key"}
                 </Button>
               </DialogFooter>
@@ -201,7 +223,7 @@ export function DeployKeysManager({
           if (!open && savedConfirmed) setIssued(null);
         }}
       >
-        <DialogContent>
+        <DialogContent className="sm:max-w-xl" showCloseButton={savedConfirmed}>
           <DialogHeader>
             <DialogTitle>Save both secrets now</DialogTitle>
             <DialogDescription>
@@ -216,7 +238,7 @@ export function DeployKeysManager({
                 <code>ENVHQ_DEPLOY_KEY</code> — decrypts the values
               </Label>
               <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded bg-muted px-3 py-2 font-mono text-xs">
+                <code className="min-w-0 flex-1 rounded-md bg-muted px-3 py-2 font-mono text-xs break-all">
                   {issued?.deployKeySecret}
                 </code>
                 <Button
@@ -225,7 +247,7 @@ export function DeployKeysManager({
                   aria-label="Copy deploy key"
                   onClick={() => issued && copy("key", issued.deployKeySecret)}
                 >
-                  {copied === "key" ? <Check className="size-4 text-green-600" /> : <Copy className="size-4" />}
+                  {copied === "key" ? <Check className="size-4 text-brand" /> : <Copy className="size-4" />}
                 </Button>
               </div>
             </div>
@@ -235,7 +257,7 @@ export function DeployKeysManager({
                 <code>ENVHQ_TOKEN</code> — fetches the ciphertext
               </Label>
               <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded bg-muted px-3 py-2 font-mono text-xs">
+                <code className="min-w-0 flex-1 rounded-md bg-muted px-3 py-2 font-mono text-xs break-all">
                   {issued?.token}
                 </code>
                 <Button
@@ -244,20 +266,37 @@ export function DeployKeysManager({
                   aria-label="Copy token"
                   onClick={() => issued && copy("token", issued.token)}
                 >
-                  {copied === "token" ? <Check className="size-4 text-green-600" /> : <Copy className="size-4" />}
+                  {copied === "token" ? <Check className="size-4 text-brand" /> : <Copy className="size-4" />}
                 </Button>
               </div>
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              A pipeline needs both. The token alone fetches ciphertext and variable names but
-              decrypts nothing; the key alone has nothing to decrypt.{" "}
-              {/* A new tab: navigating here would close this show-once dialog before the secrets are saved. */}
-              <a href="/docs/ci" target="_blank" rel="noreferrer" className="underline underline-offset-2">
-                Use them in GitHub Actions or another CI
-              </a>
-              .
-            </p>
+            <div className="grid gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-xs">Then add this step to your GitHub Actions workflow</Label>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => copy("yaml", workflowStep)}
+                  aria-label="Copy workflow step"
+                >
+                  {copied === "yaml" ? <Check className="text-brand" /> : <Copy />}
+                  {copied === "yaml" ? "Copied" : "Copy"}
+                </Button>
+              </div>
+              <pre className="overflow-x-auto rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">
+                {workflowStep}
+              </pre>
+              <p className="text-xs text-muted-foreground">
+                The token alone fetches ciphertext and names but decrypts nothing; the key alone has
+                nothing to decrypt. Other CI systems:{" "}
+                {/* A new tab: navigating here would close this show-once dialog before the secrets are saved. */}
+                <a href="/docs/ci" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                  CI guide
+                </a>
+                .
+              </p>
+            </div>
 
             <label className="flex items-start gap-2 rounded-md bg-muted/50 p-3 text-sm">
               <input
@@ -266,7 +305,10 @@ export function DeployKeysManager({
                 checked={savedConfirmed}
                 onChange={(e) => setSavedConfirmed(e.target.checked)}
               />
-              <span>I&rsquo;ve stored both as CI secrets. I understand they can&rsquo;t be shown again.</span>
+              <span>
+                I&rsquo;ve stored both as CI secrets (<code>ENVHQ_TOKEN</code>, <code>ENVHQ_DEPLOY_KEY</code>).
+                I understand they can&rsquo;t be shown again.
+              </span>
             </label>
           </div>
 
@@ -282,6 +324,7 @@ export function DeployKeysManager({
         open={!!revoking}
         onOpenChange={(open) => !open && setRevoking(null)}
         title={`Revoke "${revoking?.label ?? ""}"`}
+        confirmLabel="Revoke"
         description={
           <div className="flex flex-col gap-2">
             <p>
@@ -295,7 +338,7 @@ export function DeployKeysManager({
               It stops future fetches, but it cannot un-learn an encryption key the holder already
               has. If this key may have leaked, you must also{" "}
               <strong className="font-medium text-foreground">rotate this project&rsquo;s key</strong>{" "}
-              (on Manage access) and then{" "}
+              (on the Access tab) and then{" "}
               <strong className="font-medium text-foreground">
                 rotate the underlying credentials themselves
               </strong>{" "}

@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -78,16 +79,21 @@ export function NewTeamButton() {
         <Plus className="size-4" /> New team
       </DialogTrigger>
       <DialogContent>
-        <form onSubmit={create}>
+        <form onSubmit={create} className="contents">
           <DialogHeader>
-            <DialogTitle>Create a team</DialogTitle>
+            <DialogTitle>New team</DialogTitle>
+            <DialogDescription>
+              Projects created in a team are shared with it. You&rsquo;ll be its admin.
+            </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2 py-4">
+          <div className="grid gap-2">
             <Label htmlFor="team-name">Name</Label>
             <Input id="team-name" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} autoFocus />
-            <p className="text-xs text-muted-foreground">You&rsquo;ll be its admin. Invite people once it exists.</p>
           </div>
           <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
             <Button type="submit" disabled={busy || !name.trim()}>
               {busy ? "Creating…" : "Create team"}
             </Button>
@@ -210,10 +216,10 @@ export function TeamManager({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{org.name}</CardTitle>
+          <CardTitle>Personal</CardTitle>
           <CardDescription>
-            Your personal workspace — just you. To work with other people, create a team and invite them; projects
-            you create in a team are shared with it.
+            Just you. Projects here can&rsquo;t be shared. To work with other people, create a team
+            and invite them; projects you create in a team are shared with it.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -366,7 +372,7 @@ export function TeamManager({
       ) : null}
 
       {isAdmin ? (
-        <Card className="ring-destructive/30">
+        <Card>
           <CardHeader>
             <CardTitle>Team settings</CardTitle>
           </CardHeader>
@@ -386,7 +392,7 @@ export function TeamManager({
                 Save
               </Button>
             </form>
-            <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-medium">Delete this team</p>
                 <p className="text-xs text-muted-foreground">Only possible once it has no projects.</p>
@@ -425,7 +431,7 @@ export function TeamManager({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={busy} onClick={confirmAction}>
+            <AlertDialogAction variant="destructive" disabled={busy} onClick={confirmAction}>
               {confirm?.kind === "remove" ? "Remove" : confirm?.kind === "leave" ? "Leave team" : "Delete team"}
             </AlertDialogAction>
           </AlertDialogFooter>

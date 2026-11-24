@@ -62,8 +62,12 @@ vi.mock("@/hooks/use-project-dek", () => ({
 vi.mock("@/hooks/use-project-key-reconciliation", () => ({
   useProjectKeyReconciliation: () => {},
 }));
+// One instance, like Next's own: `useRouter()` returns the same router on
+// every render, and the editor's handlers depend on it. A fresh object per
+// render would hand every row a "new" handler and defeat the row memo.
+const router = vi.hoisted(() => ({ push: () => {}, refresh: () => {} }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: () => {}, refresh: () => {} }),
+  useRouter: () => router,
 }));
 vi.mock("sonner", () => ({
   toast: Object.assign(() => {}, { success: () => {}, error: () => {}, info: () => {} }),
@@ -104,7 +108,7 @@ async function keystrokeCost(n: number, chars = "VAR") {
   const mountCost = commits.reduce((a, b) => a + b, 0);
   const mountCommits = [...commits];
 
-  const search = screen.getByPlaceholderText("Search keys");
+  const search = screen.getByLabelText("Filter keys");
   const perKeystroke: number[] = [];
   let typed = "";
   for (const ch of chars) {
@@ -242,7 +246,7 @@ describe("revealing and editing pull values on demand", () => {
   test("reveal all decrypts every row", async () => {
     await mountEditor(4);
     await act(async () => {
-      fireEvent.click(screen.getByText("Reveal all"));
+      fireEvent.click(screen.getByText("Reveal values"));
     });
     expect(screen.queryAllByText("••••••••••••")).toHaveLength(0);
     expect(screen.getByText(`value-3-${"x".repeat(40)}`)).toBeTruthy();

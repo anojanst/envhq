@@ -5,9 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/** Shared styling for plain `<select>` elements (role/env pickers, org filters) — no dedicated Select component in use for these. */
+/**
+ * Shared styling for plain `<select>` elements (role/env pickers, org
+ * filters). Native on purpose — platform keyboard handling, screen-reader
+ * semantics and the mobile picker for free. Matches `Input`'s height, radius
+ * and focus ring; the arrow comes from the base `select` rule in globals.css.
+ */
 export const nativeSelectClass =
-  "h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+  "h-8 min-w-0 rounded-lg border border-input bg-transparent pl-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30";
 
 /** "3m ago" / "2h ago" / "5d ago", falling back to a locale date past ~30 days. */
 export function formatRelativeTime(iso: string): string {

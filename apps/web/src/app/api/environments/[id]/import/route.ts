@@ -39,7 +39,7 @@ export async function POST(req: Request, { params }: Params) {
     id,
     owned.env.version,
     userId,
-    `Pasted ${pairs.length} variable(s) via web`,
+    `Imported ${pairs.length} variable${pairs.length === 1 ? "" : "s"} via web`,
     () => upsertMany(id, pairs),
   );
   if (outcome.conflict) return versionConflict();

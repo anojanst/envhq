@@ -171,6 +171,19 @@ describe("Project key management", () => {
     expectStatus(second.res, 409);
   });
 
+  test("POST /api/projects/{id}/keys 409 when someone else already holds the project's key", async () => {
+    // A second self-registered key would be a different DEK — values written
+    // under it would be unreadable to the first holder. Only the first key
+    // may be self-registered; later members get theirs wrapped for them.
+    const { orgId, project, token } = await setup();
+    const firstHolder = `user-${crypto.randomUUID()}`;
+    await grantOrgRole(firstHolder, orgId, "admin");
+    await createProjectKey(project.id, firstHolder);
+    const path = `/api/projects/${project.id}/keys`;
+    const { res } = await call(registerProjectKey, path, { id: project.id }, { method: "POST", token, json: { wrappedDek: "a-different-dek" } });
+    expectStatus(res, 409);
+  });
+
   test("POST /api/projects/{id}/keys 403 for a read-only token — the fixed isReadOnly gate", async () => {
     const { project, readOnlyToken } = await setup();
     const path = `/api/projects/${project.id}/keys`;

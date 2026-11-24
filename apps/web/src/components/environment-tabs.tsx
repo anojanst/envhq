@@ -32,7 +32,7 @@ export function EnvironmentTabs({
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <nav aria-label="Environments" className="flex max-w-full flex-wrap gap-1 rounded-lg border bg-muted/40 p-1">
       {environments.map((env) => {
         const prod = isProdEnv(env.name);
         const active = env.id === activeEnvId;
@@ -41,29 +41,29 @@ export function EnvironmentTabs({
           <Link
             key={env.id}
             href={`/projects/${projectId}/environments/${env.id}`}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center gap-2 rounded-lg border py-1.5 px-3 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              prod
-                ? active
-                  ? "border-amber-500 bg-amber-500/10 text-foreground"
-                  : "border-amber-500/30 bg-amber-500/5 text-foreground hover:border-amber-500/50"
-                : active
-                  ? "border-brand bg-brand/10 text-foreground"
-                  : "border-border bg-muted/30 text-muted-foreground hover:text-foreground",
+              "flex items-center gap-2 rounded-md px-3 py-1 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active
+                ? "bg-background text-foreground shadow-xs ring-1 ring-border"
+                : "text-muted-foreground hover:text-foreground",
+              active && prod && "ring-amber-500/50",
             )}
           >
             <span
               className={cn(
                 "size-1.5 shrink-0 rounded-full",
-                prod ? "bg-amber-500" : "bg-muted-foreground/40",
+                prod ? "bg-amber-500" : active ? "bg-brand" : "bg-muted-foreground/40",
               )}
               aria-hidden
             />
-            <span className="font-medium">{env.name}</span>
-            <span className="text-xs text-muted-foreground tabular-nums">{env.varCount}</span>
+            <span className="font-mono font-medium">{env.name}</span>
+            <span className="text-xs text-muted-foreground tabular-nums" aria-label={`${env.varCount} variables`}>
+              {env.varCount}
+            </span>
           </Link>
         );
       })}
-    </div>
+    </nav>
   );
 }

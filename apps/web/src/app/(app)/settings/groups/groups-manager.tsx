@@ -17,9 +17,10 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { cn, nativeSelectClass as selectClass } from "@/lib/utils";
@@ -166,11 +167,14 @@ export function GroupsManager({
             <Plus className="size-4" /> New group
           </DialogTrigger>
           <DialogContent>
-            <form onSubmit={create}>
+            <form onSubmit={create} className="contents">
               <DialogHeader>
-                <DialogTitle>Create group</DialogTitle>
+                <DialogTitle>New group</DialogTitle>
+                <DialogDescription>
+                  A named set of team members, so one grant on a project covers all of them.
+                </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-2 py-4">
+              <div className="grid gap-2">
                 <Label htmlFor="group-name">Name</Label>
                 <Input
                   id="group-name"
@@ -180,8 +184,11 @@ export function GroupsManager({
                 />
               </div>
               <DialogFooter>
+                <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>
+                  Cancel
+                </Button>
                 <Button type="submit" disabled={busy || !name.trim()}>
-                  {busy ? "Creating…" : "Create"}
+                  {busy ? "Creating…" : "Create group"}
                 </Button>
               </DialogFooter>
             </form>

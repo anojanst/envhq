@@ -7,19 +7,20 @@ import { Button } from "@/components/ui/button";
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
-  // resolvedTheme is undefined on the server and until next-themes mounts on
-  // the client, so this already renders the light icon during that window —
-  // no separate "mounted" state/effect needed.
-  const isDark = resolvedTheme === "dark";
 
+  // Both icons render and CSS picks one from the `.dark` class next-themes
+  // sets before first paint. Choosing in JS from `resolvedTheme` can't match
+  // the server (it can't know the theme), which with the system theme as
+  // default made every app page fail hydration and re-render on the client.
   return (
     <Button
       variant="ghost"
       size="icon"
-      aria-label="Toggle theme"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
+      aria-label="Toggle light or dark theme"
+      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
     >
-      {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+      <Sun className="hidden size-4 dark:block" aria-hidden />
+      <Moon className="size-4 dark:hidden" aria-hidden />
     </Button>
   );
 }

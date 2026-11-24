@@ -30,7 +30,7 @@ export function OrgPicker({
       className={nativeSelectClass}
       value={value}
       onChange={(e) => router.push(`${pathname}?${paramName}=${encodeURIComponent(e.target.value)}`)}
-      aria-label="Organization"
+      aria-label="Team"
     >
       {orgs.map((o) => (
         <option key={o.id} value={o.id}>

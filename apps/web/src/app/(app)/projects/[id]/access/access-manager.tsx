@@ -358,10 +358,28 @@ export function AccessManager({
         </Table>
       </div>
 
-      <div className="rounded-lg border p-4">
+      <div className="rounded-xl border bg-card p-4">
         <h2 className="mb-3 text-sm font-medium">Add access</h2>
         {pickersLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : pickableMembers.length === 0 && pickableGroups.length === 0 ? (
+          // An empty picker with no explanation was a dead end. Either this
+          // is a personal project (nobody else to add) or everyone in the
+          // team already has a role here.
+          <p className="text-sm text-muted-foreground">
+            {(members ?? []).length <= 1 ? (
+              <>
+                Nobody else is in this project&rsquo;s team. Projects in your personal workspace
+                stay private; to share, create a project in a team from{" "}
+                <a href="/teams" className="underline underline-offset-2 hover:text-foreground">
+                  Teams
+                </a>
+                .
+              </>
+            ) : (
+              "Everyone in this team already has a role here."
+            )}
+          </p>
         ) : (
           <form onSubmit={addGrant} className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <select

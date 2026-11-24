@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Layers, SearchX, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import {
   Pagination,
@@ -17,7 +16,6 @@ import {
 } from "@/components/ui/pagination";
 import { ProjectAvatar, EnvBadge } from "@/components/project-visuals";
 import { nativeSelectClass } from "@/lib/utils";
-import { CreateProjectDialog } from "./create-project-dialog";
 
 export interface OrgOption {
   id: string;
@@ -52,13 +50,9 @@ const ALL_ORGS = "";
 export function ProjectsBrowser({
   projects,
   orgs,
-  defaultOrgId,
-  callerUserId,
 }: {
   projects: ProjectListItem[];
   orgs: OrgOption[];
-  defaultOrgId: string;
-  callerUserId: string;
 }) {
   const [query, setQuery] = useState("");
   const [orgFilter, setOrgFilter] = useState(ALL_ORGS);
@@ -93,57 +87,38 @@ export function ProjectsBrowser({
     setPage(1);
   }
 
-  // Filtering is live (onChange), so submit is a no-op beyond giving keyboard
-  // users an explicit Enter/click affordance inside a role="search" form.
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setPage(1);
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <form
-          role="search"
-          onSubmit={handleSubmit}
-          className="flex w-full flex-1 items-center"
-        >
-          <div className="relative flex-1">
-            <Input
-              value={query}
-              onChange={(e) => onSearch(e.target.value)}
-              placeholder="Search projects or environments…"
-              className="rounded-r-none pr-8"
-              aria-label="Search projects"
-              enterKeyHint="search"
-            />
-            {query ? (
-              <button
-                type="button"
-                onClick={() => onSearch("")}
-                aria-label="Clear search"
-                className="absolute top-1/2 right-1.5 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <X className="size-3.5" />
-              </button>
-            ) : null}
-          </div>
-          <Button
-            type="submit"
-            variant="outline"
-            className="gap-1.5 rounded-l-none border-l-0"
-          >
-            <Search className="size-4" /> Search
-          </Button>
-        </form>
+        <div role="search" className="relative w-full flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Filter projects and environments"
+            className="pr-8 pl-8"
+            aria-label="Filter projects"
+            enterKeyHint="search"
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => onSearch("")}
+              aria-label="Clear filter"
+              className="absolute top-1/2 right-1.5 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
         {multiOrg ? (
           <select
             className={nativeSelectClass}
             value={orgFilter}
             onChange={(e) => onOrgFilterChange(e.target.value)}
-            aria-label="Filter by organization"
+            aria-label="Filter by team"
           >
-            <option value={ALL_ORGS}>All orgs</option>
+            <option value={ALL_ORGS}>All teams</option>
             {orgs.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.name}
@@ -151,7 +126,6 @@ export function ProjectsBrowser({
             ))}
           </select>
         ) : null}
-        <CreateProjectDialog orgs={orgs} defaultOrgId={defaultOrgId} callerUserId={callerUserId} />
       </div>
 
       {filtered.length === 0 ? (
@@ -167,7 +141,7 @@ export function ProjectsBrowser({
               <>
                 No projects in{" "}
                 <span className="font-medium text-foreground">
-                  {orgs.find((o) => o.id === orgFilter)?.name ?? "this org"}
+                  {orgs.find((o) => o.id === orgFilter)?.name ?? "this team"}
                 </span>
                 .
               </>

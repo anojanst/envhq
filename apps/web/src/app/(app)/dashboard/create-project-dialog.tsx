@@ -170,9 +170,11 @@ export function CreateProjectDialog({
         }
       }
 
-      toast.success(`Project "${trimmed}" created`);
+      toast.success(`Created ${trimmed}`);
       handleOpenChange(false);
-      router.refresh();
+      // Straight into the new project: its first environment is where the
+      // next step (setting up encryption, pasting a .env) happens.
+      router.push(`/projects/${project.id}`);
     } catch (err) {
       // Stays inline (not just a toast) since the dialog remains open on
       // failure and the user shouldn't lose their place to find out why.
@@ -196,17 +198,16 @@ export function CreateProjectDialog({
         <Plus className="size-4" /> New project
       </DialogTrigger>
       <DialogContent>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="contents">
           <DialogHeader>
-            <DialogTitle>Create project</DialogTitle>
+            <DialogTitle>New project</DialogTitle>
             <DialogDescription>
-              Projects group the environments that hold your variables. We&rsquo;ll
-              add a <span className="font-medium text-foreground">dev</span>{" "}
-              environment to start you off.
+              One per app or service. It starts with a{" "}
+              <span className="font-medium text-foreground">dev</span> environment; add more any time.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col gap-4 py-4">
+          <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
               <ProjectAvatar name={previewName} />
               <div className="min-w-0 flex-1">
@@ -247,7 +248,7 @@ export function CreateProjectDialog({
 
             {orgs.length > 1 ? (
               <div className="grid gap-2">
-                <Label htmlFor="project-org">Organization</Label>
+                <Label htmlFor="project-org">Team</Label>
                 <select
                   id="project-org"
                   className={nativeSelectClass}

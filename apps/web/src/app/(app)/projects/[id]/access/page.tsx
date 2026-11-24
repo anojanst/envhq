@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { requireSessionUserId } from "@/lib/identity";
+import { ProjectHeader } from "@/components/project-header";
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
 import { getAccessibleProject } from "@/lib/access";
@@ -24,29 +24,18 @@ export default async function AccessPage({
     db
       .select({ id: environments.id, name: environments.name })
       .from(environments)
-      .where(eq(environments.projectId, id)),
+      .where(eq(environments.projectId, id))
+      .orderBy(asc(environments.createdAt)),
   ]);
+  const firstEnvId = envs[0]?.id ?? null;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Link href="/dashboard" className="hover:text-foreground">
-            Projects
-          </Link>
-          <span>/</span>
-          <Link href={`/projects/${id}`} className="hover:text-foreground">
-            {owned.project.name}
-          </Link>
-          <span>/</span>
-          <span className="text-foreground">Access</span>
-        </nav>
-        <h1 className="text-2xl font-semibold tracking-tight">Manage access</h1>
-        <p className="text-sm text-muted-foreground">
-          Grant org members or groups a role on this project, with optional per-environment
-          restrictions.
-        </p>
-      </div>
+      <ProjectHeader project={{ id, name: owned.project.name }} section="access" isAdmin firstEnvironmentId={firstEnvId} />
+      <p className="max-w-2xl text-sm text-muted-foreground">
+        Give team members or groups a role on this project. A role can be limited per environment,
+        for example read-only in <code>prod</code>.
+      </p>
 
       <AccessManager
         projectId={id}

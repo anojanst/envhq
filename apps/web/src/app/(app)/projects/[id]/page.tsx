@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { requireSessionUserId } from "@/lib/identity";
 import { redirect, notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
@@ -7,9 +6,8 @@ import { db } from "@/db";
 import { environments } from "@/db/schema";
 import { getAccessibleProject } from "@/lib/access";
 import { withPerf } from "@/lib/perf";
-import { ProjectAvatar } from "@/components/project-visuals";
+import { ProjectHeader } from "@/components/project-header";
 import { CreateEnvironmentDialog } from "./create-environment-dialog";
-import { ProjectActions } from "./project-actions";
 
 export default async function ProjectPage(props: { params: Promise<{ id: string }> }) {
   return withPerf("projects/[id]", () => renderProject(props));
@@ -44,36 +42,23 @@ async function renderProject({
   // redirect to, so show the project header + a create prompt.
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <Link
-          href="/dashboard"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Projects
-        </Link>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <ProjectAvatar name={project.name} />
-            <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <CreateEnvironmentDialog projectId={project.id} />
-            <ProjectActions
-              project={{ id: project.id, name: project.name }}
-              environmentCount={0}
-              variableCount={0}
-              hasProdEnv={false}
-            />
-          </div>
+      <ProjectHeader
+        project={{ id: project.id, name: project.name }}
+        section="variables"
+        isAdmin={owned.role === "admin"}
+        stats={{ environmentCount: 0, variableCount: 0, hasProdEnv: false }}
+      />
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center">
+        <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <Layers className="size-5" />
+        </span>
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-medium">No environments</p>
+          <p className="text-sm text-muted-foreground">
+            Values live in environments, like <code>dev</code> or <code>prod</code>.
+          </p>
         </div>
-      </div>
-
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
-        <Layers className="size-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          No environments yet. Add one like <code>dev</code> or <code>prod</code>.
-        </p>
-        <CreateEnvironmentDialog projectId={project.id} />
+        <CreateEnvironmentDialog projectId={project.id} prominent />
       </div>
     </div>
   );

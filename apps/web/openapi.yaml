@@ -2770,7 +2770,11 @@ paths:
               example:
                 error: Project not found
         "409":
-          description: A key is already registered for that user on this project.
+          description: >-
+            A key is already registered for that user on this project, or the
+            caller is self-registering while someone else already holds the
+            project's key (only a project's first key may be self-registered;
+            later members get theirs wrapped for them).
           content:
             application/json:
               schema:

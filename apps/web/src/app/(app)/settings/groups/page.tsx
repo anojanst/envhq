@@ -1,5 +1,5 @@
 import { requireSessionUserId } from "@/lib/identity";
-import { resolveRequestedOrgId, listMyOrgs } from "@/lib/orgs";
+import { getOrCreatePersonalOrg, resolveRequestedOrgId, listMyOrgs } from "@/lib/orgs";
 import { listGroups } from "@/lib/groups";
 import { OrgPicker } from "@/components/org-picker";
 import { GroupsManager } from "./groups-manager";
@@ -12,7 +12,8 @@ export default async function GroupsPage({
   const userId = await requireSessionUserId();
 
   const { org: requestedOrgId } = await searchParams;
-  const orgs = await listMyOrgs(userId);
+  const personalOrgId = await getOrCreatePersonalOrg(userId);
+  const orgs = (await listMyOrgs(userId)).map((o) => (o.id === personalOrgId ? { ...o, name: "Personal" } : o));
   // Falls back to the personal org if `?org=` is absent or names an org the
   // caller doesn't belong to — no session-level "active org" to prefer
   // anymore (the sidebar's org switcher is gone).
@@ -21,14 +22,11 @@ export default async function GroupsPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Groups</h1>
-          <p className="text-sm text-muted-foreground">
-            Named sets of org members — a foundation for granting several people access at
-            once (not wired into project sharing yet).
-          </p>
-        </div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          A group is a named set of people in a team. Give a group a role on a project (its Access
+          tab) and everyone in it gets that role.
+        </p>
         {orgId ? <OrgPicker orgs={orgs} value={orgId} /> : null}
       </div>
       <GroupsManager

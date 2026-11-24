@@ -12,13 +12,8 @@ import {
   Pencil,
   Plus,
   ClipboardPaste,
-  Download,
   Search,
   AlertTriangle,
-  Lock,
-  KeyRound,
-  ShieldAlert,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,15 +36,13 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { parseEnv, serializeEnv } from "@envhq/parser";
-import { encryptValue, decryptValue, generateDek, sealToPublicKey, encodeBase64 } from "@envhq/crypto";
+import { encryptValue, decryptValue } from "@envhq/crypto";
 import { api } from "@/lib/client";
 import { formatRelativeTime } from "@/lib/utils";
 import { isProdEnv } from "@/components/project-visuals";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
-import { useCryptoSession } from "@/components/crypto-session-provider";
-import { useProjectDek } from "@/hooks/use-project-dek";
+import { ProjectKeyGate } from "@/components/encryption/project-key-gate";
 import { useProjectKeyReconciliation } from "@/hooks/use-project-key-reconciliation";
 
 /** A row as the server returns it — ciphertext only; decrypted client-side. */
@@ -106,138 +99,18 @@ export function EnvEditor({
   initialVars: Row[];
   envName: string;
 }) {
-  const { publicKey } = useCryptoSession();
-  const { status: dekStatus, dek, refetch } = useProjectDek(projectId);
-
-  if (dekStatus === "checking") {
-    return <p className="text-sm text-muted-foreground">Checking your encryption status…</p>;
-  }
-  if (dekStatus === "locked") {
-    return (
-      <GateCard
-        icon={Lock}
-        title="Unlock encryption to view this environment"
-        description="Your values are end-to-end encrypted. Unlock with your passphrase to view or edit them in this browser session."
-        href="/settings/security"
-        cta="Go to Security settings"
-      />
-    );
-  }
-  if (dekStatus === "uninitialized") {
-    return <UninitializeCard projectId={projectId} publicKey={publicKey} onDone={refetch} />;
-  }
-  if (dekStatus === "no-key") {
-    return (
-      <GateCard
-        icon={KeyRound}
-        title="Waiting for access to this project's key"
-        description="You're authorized for this project, but no one has shared its encryption key with you yet. Ask an admin to open this project so it can be granted to you."
-      />
-    );
-  }
-  if (dekStatus === "error" || !dek) {
-    return (
-      <GateCard
-        icon={ShieldAlert}
-        title="Couldn't load this project's encryption key"
-        description="Something went wrong fetching or unlocking this project's key. Try reloading the page."
-      />
-    );
-  }
-
   return (
-    <EnvEditorReady
-      environmentId={environmentId}
-      projectId={projectId}
-      initialVars={initialVars}
-      envName={envName}
-      dek={dek}
-    />
-  );
-}
-
-function GateCard({
-  icon: Icon,
-  title,
-  description,
-  href,
-  cta,
-}: {
-  icon: typeof Lock;
-  title: string;
-  description: string;
-  href?: string;
-  cta?: string;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon className="size-4 text-brand" /> {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      {href && cta ? (
-        <div className="px-(--card-spacing) pb-(--card-spacing)">
-          <Button render={<a href={href} />}>{cta}</Button>
-        </div>
-      ) : null}
-    </Card>
-  );
-}
-
-/**
- * A project with zero `project_keys` rows for *anyone* — its creator's
- * session wasn't unlocked at creation time (create-project-dialog's DEK
- * registration is best-effort). Since `env_vars` can't hold anything
- * without a DEK to encrypt under, this state provably means the project is
- * still empty, so any authorized, unlocked visitor can safely generate the
- * first DEK themselves rather than waiting on reconciliation, which has
- * nothing to redistribute yet.
- */
-function UninitializeCard({
-  projectId,
-  publicKey,
-  onDone,
-}: {
-  projectId: string;
-  publicKey: string | null;
-  onDone: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-
-  async function generate() {
-    if (!publicKey) return;
-    setBusy(true);
-    try {
-      const dek = await generateDek();
-      const wrappedDek = await sealToPublicKey(encodeBase64(dek), publicKey);
-      await api(`/api/projects/${projectId}/keys`, { method: "POST", body: { wrappedDek } });
-      onDone();
-    } catch (err) {
-      toast.error((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Sparkles className="size-4 text-brand" /> This project doesn&apos;t have an encryption key yet
-        </CardTitle>
-        <CardDescription>
-          It looks like this project was created before encryption was set up. Generate its key now
-          to start adding values — this only needs to happen once.
-        </CardDescription>
-      </CardHeader>
-      <CardFooter>
-        <Button onClick={generate} disabled={busy}>
-          {busy ? "Generating…" : "Generate encryption key"}
-        </Button>
-      </CardFooter>
-    </Card>
+    <ProjectKeyGate projectId={projectId} purpose="to see and edit these values">
+      {(dek) => (
+        <EnvEditorReady
+          environmentId={environmentId}
+          projectId={projectId}
+          initialVars={initialVars}
+          envName={envName}
+          dek={dek}
+        />
+      )}
+    </ProjectKeyGate>
   );
 }
 
@@ -343,8 +216,8 @@ function EnvEditorReady({
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
   const isProd = isProdEnv(envName);
+  const existingKeys = new Set(vars.map((v) => v.key));
   const filtered = query
     ? vars.filter((v) => v.key.toLowerCase().includes(query.toLowerCase()))
     : vars;
@@ -362,13 +235,11 @@ function EnvEditorReady({
   const reload = useCallback(async () => {
     const data = await api<{ vars: Row[] }>(`/api/environments/${environmentId}`);
     setVars(data.vars);
-  }, [environmentId]);
+    // The environment switcher's counts and the version bar are rendered on
+    // the server; without this they stay at whatever they were on load.
+    router.refresh();
+  }, [environmentId, router]);
 
-  async function deleteEnvironment() {
-    await api(`/api/environments/${environmentId}`, { method: "DELETE" });
-    toast.success(`Deleted "${envName}"`);
-    router.push(`/projects/${projectId}`);
-  }
 
   function isRevealed(id: string) {
     return revealAll || revealed.has(id);
@@ -443,43 +314,25 @@ function EnvEditorReady({
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-40 flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search keys"
+            placeholder={vars.length ? `Filter ${vars.length} key${vars.length === 1 ? "" : "s"}` : "Filter keys"}
+            aria-label="Filter keys"
             className="w-full pl-8"
           />
         </div>
-        <Button variant="outline" size="sm" onClick={revealAllToggle}>
-          {revealAll ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-          {revealAll ? "Hide all" : "Reveal all"}
+        <Button variant="outline" onClick={revealAllToggle} disabled={vars.length === 0}>
+          {revealAll ? <EyeOff /> : <Eye />}
+          {revealAll ? "Hide values" : "Reveal values"}
         </Button>
-        <Button variant="outline" size="sm" onClick={copyAll}>
-          <Download className="size-4" /> Copy all as .env
+        <Button variant="outline" onClick={copyAll} disabled={vars.length === 0}>
+          <Copy /> Copy as .env
         </Button>
-        <PasteDialog environmentId={environmentId} dek={dek} onDone={reload} />
-        <Button variant="destructive" size="sm" onClick={() => setDeleteEnvOpen(true)}>
-          <Trash2 className="size-4" /> Delete environment
-        </Button>
+        <PasteDialog environmentId={environmentId} dek={dek} existingKeys={existingKeys} onDone={reload} />
       </div>
 
-      <ConfirmDeleteDialog
-        open={deleteEnvOpen}
-        onOpenChange={setDeleteEnvOpen}
-        title={`Delete environment "${envName}"`}
-        description={
-          <>
-            This permanently deletes{" "}
-            <span className="font-medium text-foreground">
-              {vars.length} variable{vars.length === 1 ? "" : "s"}
-            </span>
-            . This can&rsquo;t be undone.
-          </>
-        }
-        confirmationText={isProd ? envName : undefined}
-        onConfirm={deleteEnvironment}
-      />
 
       <div className="rounded-lg border">
         <Table>
@@ -524,7 +377,7 @@ function EnvEditorReady({
         </Table>
       </div>
       <p className="text-xs text-muted-foreground">
-        Environment <code>{envName}</code> · values are end-to-end encrypted — EnvHQ cannot read them.
+        Values are encrypted in your browser. EnvHQ stores only ciphertext.
       </p>
     </div>
   );
@@ -569,6 +422,7 @@ const VarRow = memo(function VarRow({
   const [key, setKey] = useState(row.key);
   const [editValue, setEditValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // The plaintext is pulled when editing starts rather than held as a prop:
   // an unrevealed row is never decrypted, so there is nothing to seed from.
@@ -599,14 +453,9 @@ const VarRow = memo(function VarRow({
   }
 
   async function remove() {
-    if (!confirm(`Delete "${row.key}"?`)) return;
-    try {
-      await api(`/api/vars/${row.id}`, { method: "DELETE" });
-      toast.success(`Deleted "${row.key}"`);
-      await onChanged();
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
+    await api(`/api/vars/${row.id}`, { method: "DELETE" });
+    toast.success(`Deleted ${row.key}`);
+    await onChanged();
   }
 
   if (editing) {
@@ -693,11 +542,18 @@ const VarRow = memo(function VarRow({
             size="icon"
             className="size-7"
             aria-label={`Delete ${row.key}`}
-            onClick={remove}
+            onClick={() => setConfirmDelete(true)}
           >
             <Trash2 className="size-4" />
           </Button>
         </div>
+        <ConfirmDeleteDialog
+          open={confirmDelete}
+          onOpenChange={setConfirmDelete}
+          title={`Delete ${row.key}?`}
+          description="It's removed from this environment now. The previous version stays in history, so you can roll back."
+          onConfirm={remove}
+        />
       </TableCell>
     </TableRow>
   );
@@ -766,24 +622,32 @@ function AddRow({
 function PasteDialog({
   environmentId,
   dek,
+  existingKeys,
   onDone,
 }: {
   environmentId: string;
   dek: Uint8Array;
+  existingKeys: Set<string>;
   onDone: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [content, setContent] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Parsed as you type, so the dialog can say exactly what an import will
+  // do before it does it: an import only ever adds or updates.
+  const parsed = content.trim() ? parseEnv(content) : [];
+  const added = parsed.filter((p) => !existingKeys.has(p.key));
+  const updated = parsed.filter((p) => existingKeys.has(p.key));
+
+  async function readFile(file: File | undefined) {
+    if (file) setContent(await file.text());
+  }
+
   async function submit() {
+    if (parsed.length === 0) return;
     setBusy(true);
     try {
-      const parsed = parseEnv(content);
-      if (parsed.length === 0) {
-        toast.error("No valid KEY=value lines found in the pasted content");
-        return;
-      }
       const pairs = await Promise.all(
         parsed.map(async (p) => ({ key: p.key, ...(await encryptField(dek, p.value)) })),
       );
@@ -791,7 +655,9 @@ function PasteDialog({
         `/api/environments/${environmentId}/import`,
         { method: "POST", body: { pairs } },
       );
-      toast.success(`Imported ${res.total}: ${res.created} new, ${res.updated} updated`);
+      toast.success(
+        `Imported ${res.total} key${res.total === 1 ? "" : "s"}: ${res.created} new, ${res.updated} updated`,
+      );
       setContent("");
       setOpen(false);
       await onDone();
@@ -804,31 +670,63 @@ function PasteDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" />}>
-        <ClipboardPaste className="size-4" /> Paste .env
+      <DialogTrigger render={<Button variant="outline" />}>
+        <ClipboardPaste /> Paste .env
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Paste .env</DialogTitle>
+          <DialogTitle>Import a .env</DialogTitle>
           <DialogDescription>
-            Paste a whole <code>.env</code> file. Existing keys are updated, new keys added
-            (merge). Comments and quotes are handled.
+            Adds new keys and updates existing ones. Nothing is removed. Values are encrypted in
+            this browser before they&rsquo;re sent.
           </DialogDescription>
         </DialogHeader>
         <Label htmlFor="paste" className="sr-only">
-          Env content
+          .env content
         </Label>
         <Textarea
           id="paste"
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder={"DATABASE_URL=postgres://…\nAPI_KEY=sk-…\n# comments ok"}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            void readFile(e.dataTransfer.files[0]);
+          }}
+          spellCheck={false}
+          placeholder={"Paste here, or drop a .env file\n\nDATABASE_URL=postgres://…\nAPI_KEY=sk-…\n# comments are fine"}
           className="min-h-56 font-mono text-sm"
           autoFocus
         />
+        <div className="flex min-h-6 flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          {content.trim() && parsed.length === 0 ? (
+            <span className="text-destructive">No KEY=value lines found yet.</span>
+          ) : parsed.length > 0 ? (
+            <>
+              <span className="text-brand">+ {added.length} new</span>
+              <span className="text-amber-600 dark:text-amber-400">~ {updated.length} updated</span>
+              <span className="min-w-0 truncate text-muted-foreground">
+                {updated.length > 0 && `Overwrites ${updated.map((p) => p.key).join(", ")}`}
+              </span>
+            </>
+          ) : (
+            <label className="cursor-pointer text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+              or choose a file…
+              <input
+                type="file"
+                accept=".env,text/plain"
+                className="sr-only"
+                onChange={(e) => void readFile(e.target.files?.[0])}
+              />
+            </label>
+          )}
+        </div>
         <DialogFooter>
-          <Button onClick={submit} disabled={busy || !content.trim()}>
-            {busy ? "Importing…" : "Import"}
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={busy || parsed.length === 0}>
+            {busy ? "Importing…" : parsed.length ? `Import ${parsed.length} key${parsed.length === 1 ? "" : "s"}` : "Import"}
           </Button>
         </DialogFooter>
       </DialogContent>

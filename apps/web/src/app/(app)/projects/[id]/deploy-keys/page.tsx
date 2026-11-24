@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { requireSessionUserId } from "@/lib/identity";
+import { ProjectHeader } from "@/components/project-header";
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { environments } from "@/db/schema";
 import { getAccessibleProject } from "@/lib/access";
@@ -30,34 +31,26 @@ export default async function DeployKeysPage({ params }: { params: Promise<{ id:
     db
       .select({ id: environments.id, name: environments.name })
       .from(environments)
-      .where(eq(environments.projectId, id)),
+      .where(eq(environments.projectId, id))
+      .orderBy(asc(environments.createdAt)),
   ]);
+  const firstEnvId = envs[0]?.id ?? null;
   const names = await getDisplayNames([...new Set(keys.map((k) => k.createdByUserId))]);
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Link href="/dashboard" className="hover:text-foreground">
-            Projects
-          </Link>
-          <span>/</span>
-          <Link href={`/projects/${id}`} className="hover:text-foreground">
-            {owned.project.name}
-          </Link>
-          <span>/</span>
-          <span className="text-foreground">Deploy keys</span>
-        </nav>
-        <h1 className="text-2xl font-semibold tracking-tight">Deploy keys</h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          A deploy key lets a CI pipeline decrypt this project&rsquo;s values without a person
-          present. Each one is generated in your browser — EnvHQ never receives the private half
-          and cannot show it to you twice.
-        </p>
-      </div>
+      <ProjectHeader project={{ id, name: owned.project.name }} section="deploy-keys" isAdmin firstEnvironmentId={firstEnvId} />
+      <p className="max-w-2xl text-sm text-muted-foreground">
+        A deploy key lets a CI pipeline decrypt this project without a person present. It&rsquo;s
+        generated in your browser: EnvHQ never receives the private half, so it&rsquo;s shown once.{" "}
+        <Link href="/docs/ci" className="underline underline-offset-2 hover:text-foreground">
+          How pipelines use it
+        </Link>
+      </p>
 
       <DeployKeysManager
         projectId={id}
+        projectName={owned.project.name}
         initialKeys={keys.map((k) => ({
           id: k.id,
           label: k.label,

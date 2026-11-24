@@ -1,5 +1,5 @@
 import { requireSessionUserId } from "@/lib/identity";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { apiTokens, projects } from "@/db/schema";
 import { listAccessibleProjectsWithEnvsAcrossOrgs } from "@/lib/access";
@@ -30,7 +30,10 @@ export default async function TokensPage() {
       })
       .from(apiTokens)
       .leftJoin(projects, eq(apiTokens.projectId, projects.id))
-      .where(eq(apiTokens.userId, userId))
+      // A deploy key's token belongs to the deploy key: revoking it here would
+      // break a pipeline while leaving the key listed as active. It's managed
+      // (and revoked, together) on the project's Deploy keys tab.
+      .where(and(eq(apiTokens.userId, userId), ne(apiTokens.kind, "deploy")))
       .orderBy(desc(apiTokens.createdAt)),
     listAccessibleProjectsWithEnvsAcrossOrgs(userId),
   ]);
@@ -42,13 +45,11 @@ export default async function TokensPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">CLI Tokens</h1>
-        <p className="text-sm text-muted-foreground">
-          Personal access tokens let the <code>envhq</code> CLI authenticate — scope one to a
-          single project and to read-only for CI. A token is shown only once when created.
-        </p>
-      </div>
+      <p className="max-w-2xl text-sm text-muted-foreground">
+        Tokens let the <code>envhq</code> CLI act as you from scripts. Each is shown once. CI
+        pipelines should use a project&rsquo;s deploy key instead: it&rsquo;s the only credential that
+        can decrypt without you there.
+      </p>
       <TokensManager
         projects={projectRows}
         initialTokens={tokens.map((t) => ({

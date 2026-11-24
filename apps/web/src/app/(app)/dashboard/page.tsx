@@ -5,6 +5,7 @@ import { withPerf } from "@/lib/perf";
 import { getOrCreatePersonalOrg, listMyOrgs } from "@/lib/orgs";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ProjectsBrowser, type ProjectListItem } from "./projects-browser";
+import { PageHeader } from "@/components/page-header";
 
 export default async function DashboardPage() {
   return withPerf("dashboard", renderDashboard);
@@ -19,7 +20,9 @@ async function renderDashboard() {
   // would otherwise trigger its creation. Also doubles as the "New project"
   // dialog's default org selection.
   const personalOrgId = await getOrCreatePersonalOrg(userId);
-  const orgs = await listMyOrgs(userId);
+  // A personal workspace is named after its owner in the database, which
+  // reads as someone else's team in a picker. Call it what it is.
+  const orgs = (await listMyOrgs(userId)).map((o) => (o.id === personalOrgId ? { ...o, name: "Personal" } : o));
 
   // One pass across every org the user belongs to: projects (newest first)
   // with their environment names (oldest first). The org filter (in
@@ -39,7 +42,7 @@ async function renderDashboard() {
         createdLabel: timeAgo(r.createdAt),
         envs: [],
         orgId: r.orgId,
-        orgName: r.orgName,
+        orgName: r.orgId === personalOrgId ? "Personal" : r.orgName,
       };
       byId.set(r.id, p);
     }
@@ -49,41 +52,32 @@ async function renderDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="space-y-1">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-          {projectList.length > 0 ? (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground tabular-nums">
-              {projectList.length}
-            </span>
-          ) : null}
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Each project groups its own set of environments.
-        </p>
-      </div>
+      <PageHeader
+        title="Projects"
+        description="A project holds environments, and each environment holds its own values and history."
+        actions={
+          projectList.length > 0 && (
+            <CreateProjectDialog orgs={orgs} defaultOrgId={personalOrgId} callerUserId={userId} />
+          )
+        }
+      />
 
       {projectList.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed py-16 text-center">
+        <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed px-6 py-16 text-center">
           <div className="flex size-12 items-center justify-center rounded-full bg-brand/10 text-brand">
             <FolderTree className="size-6" />
           </div>
           <div className="space-y-1">
-            <p className="font-medium">No projects yet</p>
+            <p className="font-medium">Create your first project</p>
             <p className="mx-auto max-w-sm text-sm text-muted-foreground text-pretty">
-              Create your first project to start grouping and syncing environment
-              variables across dev, staging, and prod.
+              One per app or service. Paste its <code>.env</code>, then pull it on any machine with{" "}
+              <code>envhq pull</code>.
             </p>
           </div>
           <CreateProjectDialog orgs={orgs} defaultOrgId={personalOrgId} callerUserId={userId} />
         </div>
       ) : (
-        <ProjectsBrowser
-          projects={projectList}
-          orgs={orgs}
-          defaultOrgId={personalOrgId}
-          callerUserId={userId}
-        />
+        <ProjectsBrowser projects={projectList} orgs={orgs} />
       )}
     </div>
   );

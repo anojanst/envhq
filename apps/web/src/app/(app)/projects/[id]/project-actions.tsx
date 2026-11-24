@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { KeyRound, MoreVertical, Pencil, Trash2, Users } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -67,18 +68,12 @@ export function ProjectActions({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="icon" />}>
-          <MoreVertical className="size-4" />
+        <DropdownMenuTrigger render={<Button variant="outline" size="icon" aria-label={`Project actions for ${project.name}`} />}>
+          <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="min-w-48">
           <DropdownMenuItem onClick={() => setRenameOpen(true)}>
-            <Pencil className="size-4" /> Rename
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push(`/projects/${project.id}/access`)}>
-            <Users className="size-4" /> Manage access
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push(`/projects/${project.id}/deploy-keys`)}>
-            <KeyRound className="size-4" /> Deploy keys
+            <Pencil className="size-4" /> Rename project
           </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="size-4" /> Delete project
@@ -88,22 +83,24 @@ export function ProjectActions({
 
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent>
-          <form onSubmit={rename}>
+          <form onSubmit={rename} className="contents">
             <DialogHeader>
               <DialogTitle>Rename project</DialogTitle>
+              <DialogDescription>
+                The CLI finds projects by name, so scripts that use <code className="whitespace-nowrap">--project {project.name}</code>{" "}
+                will need the new one.
+              </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-2 py-4">
+            <div className="grid gap-2">
               <Label htmlFor="rename">Name</Label>
-              <Input
-                id="rename"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoFocus
-              />
+              <Input id="rename" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
             </div>
             <DialogFooter>
-              <Button type="submit" disabled={saving || !name.trim()}>
-                {saving ? "Saving…" : "Save"}
+              <Button type="button" variant="ghost" onClick={() => setRenameOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving || !name.trim() || name.trim() === project.name}>
+                {saving ? "Saving…" : "Rename"}
               </Button>
             </DialogFooter>
           </form>

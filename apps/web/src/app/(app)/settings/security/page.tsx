@@ -6,13 +6,10 @@ export default async function SecurityPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Security</h1>
-        <p className="text-sm text-muted-foreground">
-          Your end-to-end encryption identity. Everything below happens in your browser — your
-          passphrase and private key are never sent to EnvHQ.
-        </p>
-      </div>
+      <p className="max-w-2xl text-sm text-muted-foreground">
+        Your encryption key. It&rsquo;s created and unlocked in this browser; your passphrase and
+        private key never reach EnvHQ.
+      </p>
       <SecurityManager />
     </div>
   );

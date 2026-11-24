@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { requireSessionUserId } from "@/lib/identity";
 import { notFound } from "next/navigation";
 import { and, asc, eq, count, isNull } from "drizzle-orm";
@@ -7,12 +6,13 @@ import { environments, envVars } from "@/db/schema";
 import { getAccessibleEnvironment } from "@/lib/access";
 import { withPerf } from "@/lib/perf";
 import { listVarRows } from "@/lib/env-store";
-import { ProjectAvatar, isProdEnv } from "@/components/project-visuals";
+import { isProdEnv } from "@/components/project-visuals";
+import { ProjectHeader } from "@/components/project-header";
 import { EnvironmentTabs } from "@/components/environment-tabs";
 import { CreateEnvironmentDialog } from "../../create-environment-dialog";
-import { ProjectActions } from "../../project-actions";
 import { EnvEditor } from "./env-editor";
 import { EnvironmentHistory } from "./environment-history";
+import { EnvironmentActions } from "./environment-actions";
 
 export default async function EnvironmentPage(props: {
   params: Promise<{ id: string; envId: string }>;
@@ -51,41 +51,35 @@ async function renderEnvironment({
 
   const totalVars = siblingEnvs.reduce((sum, e) => sum + e.varCount, 0);
   const hasProdEnv = siblingEnvs.some((e) => isProdEnv(e.name));
+  // Changes whenever a value is added, edited or removed, so the version bar
+  // (a client component that fetches its own data) knows to refetch after
+  // the editor asks the page to refresh.
+  const revision = `${vars.length}:${vars.reduce((m, v) => Math.max(m, v.updatedAt.getTime()), 0)}`;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <Link
-          href="/dashboard"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Projects
-        </Link>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <ProjectAvatar name={owned.project.name} />
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {owned.project.name}
-            </h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <EnvironmentTabs
-              projectId={projectId}
-              environments={siblingEnvs}
-              activeEnvId={envId}
-            />
-            <CreateEnvironmentDialog projectId={projectId} />
-            <ProjectActions
-              project={{ id: projectId, name: owned.project.name }}
-              environmentCount={siblingEnvs.length}
-              variableCount={totalVars}
-              hasProdEnv={hasProdEnv}
-            />
-          </div>
+      <ProjectHeader
+        project={{ id: projectId, name: owned.project.name }}
+        section="variables"
+        isAdmin={owned.role === "admin"}
+        firstEnvironmentId={siblingEnvs[0]?.id}
+        stats={{ environmentCount: siblingEnvs.length, variableCount: totalVars, hasProdEnv }}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <EnvironmentTabs projectId={projectId} environments={siblingEnvs} activeEnvId={envId} />
+        <div className="flex items-center gap-1">
+          <CreateEnvironmentDialog projectId={projectId} existingNames={siblingEnvs.map((e) => e.name)} />
+          <EnvironmentActions
+            projectId={projectId}
+            environmentId={envId}
+            envName={owned.env.name}
+            variableCount={vars.length}
+          />
         </div>
       </div>
 
-      <EnvironmentHistory environmentId={envId} />
+      <EnvironmentHistory environmentId={envId} revision={revision} />
 
       <EnvEditor
         environmentId={envId}

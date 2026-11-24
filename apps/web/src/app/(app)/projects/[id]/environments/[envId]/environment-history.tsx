@@ -34,7 +34,14 @@ interface VersionEntry {
   createdAt: string;
 }
 
-export function EnvironmentHistory({ environmentId }: { environmentId: string }) {
+export function EnvironmentHistory({
+  environmentId,
+  revision,
+}: {
+  environmentId: string;
+  /** Changes when the environment's values do — refetch then. */
+  revision?: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [versions, setVersions] = useState<VersionEntry[] | null>(null);
@@ -75,7 +82,7 @@ export function EnvironmentHistory({ environmentId }: { environmentId: string })
     return () => {
       ignore = true;
     };
-  }, [environmentId]);
+  }, [environmentId, revision]);
 
   async function rollback(version: number) {
     // Use the newest entry from the versions list we just loaded when the
@@ -106,8 +113,9 @@ export function EnvironmentHistory({ environmentId }: { environmentId: string })
 
   return (
     <>
-      <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
-        <span className="text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <span className="flex items-center gap-2 text-muted-foreground">
+          <HistoryIcon className="size-3.5" aria-hidden />
           {latest ? (
             <>
               <span className="font-medium text-foreground">v{latest.version}</span>
@@ -129,8 +137,8 @@ export function EnvironmentHistory({ environmentId }: { environmentId: string })
             if (next) load();
           }}
         >
-          <SheetTrigger render={<Button variant="outline" size="sm" />}>
-            <HistoryIcon className="size-4" /> History
+          <SheetTrigger render={<Button variant="ghost" size="sm" disabled={!latest} />}>
+            View history
           </SheetTrigger>
           <SheetContent>
             <SheetHeader>
@@ -145,15 +153,15 @@ export function EnvironmentHistory({ environmentId }: { environmentId: string })
               {versions?.map((v, i) => (
                 <div
                   key={v.version}
-                  className="flex items-center justify-between gap-2 rounded-md border p-3"
+                  className="flex items-center justify-between gap-2 rounded-lg border bg-card p-3"
                 >
                   <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="text-sm font-medium">
                       v{v.version}
                       {v.message ? ` · ${v.message}` : ""}
                     </span>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(v.createdAt).toLocaleString()}
+                    <span className="text-xs text-muted-foreground" title={new Date(v.createdAt).toLocaleString()}>
+                      {v.createdByName} · {formatRelativeTime(v.createdAt)}
                     </span>
                   </div>
                   {i !== 0 && (
@@ -180,8 +188,9 @@ export function EnvironmentHistory({ environmentId }: { environmentId: string })
           <AlertDialogHeader>
             <AlertDialogTitle>Roll back to v{rollbackTarget}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This restores the environment to its state at v{rollbackTarget}. It creates a new
-              version — nothing is lost, and you can roll forward again from history afterward.
+              Every key goes back to how it was at v{rollbackTarget}: keys added since are removed,
+              changed values are restored. It&rsquo;s saved as a new version, so you can undo it from
+              history.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

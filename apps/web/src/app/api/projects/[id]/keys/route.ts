@@ -1,6 +1,6 @@
 import { getUserId } from "@/lib/auth";
 import { getAccessibleProject, isReadOnly } from "@/lib/access";
-import { getProjectKeyForUser, createProjectKey } from "@/lib/project-keys";
+import { getProjectKeyForUser, createProjectKey, projectHasAnyKey } from "@/lib/project-keys";
 import { json, badRequest, unauthorized, tokenExpired, notFound, forbidden, conflict } from "@/lib/api";
 import { isUniqueViolation } from "@/lib/db-errors";
 
@@ -45,6 +45,18 @@ export async function POST(req: Request, { params }: Params) {
 
   if (await getProjectKeyForUser(id, subjectUserId)) {
     return conflict("A key is already registered for that user on this project");
+  }
+
+  // A fresh key for yourself is only legitimate as a project's *first* key.
+  // Once anyone holds one, a second self-registered key would be a different
+  // DEK: values written under it would be unreadable to everyone else. A
+  // member without a copy gets one wrapped *for* them by someone who has it
+  // (reconciliation, `subjectUserId` set) — never by generating their own.
+  // The web app generates the first key automatically when an empty project
+  // is opened, so this is also what keeps two people opening a brand-new
+  // project at the same moment from ending up on different keys.
+  if (subjectUserId === userId && (await projectHasAnyKey(id))) {
+    return conflict("This project already has an encryption key. A member who holds it shares it with you.");
   }
 
   try {

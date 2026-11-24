@@ -23,7 +23,7 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, nativeSelectClass as selectClass } from "@/lib/utils";
 import { api } from "@/lib/client";
 
 interface TokenMeta {
@@ -51,8 +51,6 @@ const EXPIRY_OPTIONS = [
   { label: "Never", value: "0" },
 ];
 
-const selectClass =
-  "h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 function isExpired(t: TokenMeta): boolean {
   return !!t.expiresAt && new Date(t.expiresAt).getTime() <= Date.now();
@@ -92,7 +90,9 @@ export function TokensManager({
 
   async function reload() {
     const data = await api<{ tokens: TokenMeta[] }>("/api/tokens");
-    setTokens(data.tokens);
+    // Same rule as the page's first load: a deploy key's token is managed on
+    // the project's Deploy keys tab, where revoking it takes the key too.
+    setTokens(data.tokens.filter((t) => t.kind !== "deploy"));
   }
 
   async function create(e: React.FormEvent) {
@@ -145,14 +145,16 @@ export function TokensManager({
             <Plus className="size-4" /> New token
           </DialogTrigger>
           <DialogContent>
-            <form onSubmit={create}>
+            <form onSubmit={create} className="contents">
               <DialogHeader>
-                <DialogTitle>Create CLI token</DialogTitle>
+                <DialogTitle>New CLI token</DialogTitle>
                 <DialogDescription>
-                  Scope it to a project and access level, and pick when it expires.
+                  For scripts that run the <code>envhq</code> CLI as you. A token alone can&rsquo;t
+                  decrypt values: pipelines should use a deploy key (a project&rsquo;s Deploy keys
+                  tab).
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
+              <div className="grid gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="token-name">Token name</Label>
                   <Input
@@ -210,8 +212,11 @@ export function TokensManager({
                 </div>
               </div>
               <DialogFooter>
+                <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>
+                  Cancel
+                </Button>
                 <Button type="submit" disabled={busy || !name.trim()}>
-                  {busy ? "Creating…" : "Create"}
+                  {busy ? "Creating…" : "Create token"}
                 </Button>
               </DialogFooter>
             </form>
@@ -229,15 +234,15 @@ export function TokensManager({
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded bg-muted px-3 py-2 font-mono text-sm">
+            <code className="min-w-0 flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">
               {newToken}
             </code>
-            <Button size="icon" variant="outline" onClick={copyToken}>
-              {copied ? <Check className="size-4 text-green-600" /> : <Copy className="size-4" />}
+            <Button size="icon" variant="outline" onClick={copyToken} aria-label="Copy token">
+              {copied ? <Check className="size-4 text-brand" /> : <Copy className="size-4" />}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Use it in CI with: <code>ENVHQ_TOKEN=&lt;token&gt;</code>
+            The CLI reads it from <code>ENVHQ_TOKEN</code>.
           </p>
           <DialogFooter>
             <Button onClick={() => setNewToken(null)}>Done</Button>

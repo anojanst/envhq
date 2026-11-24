@@ -4,6 +4,7 @@ import { readOrg } from "@/lib/org-store";
 import { listPendingInvites } from "@/lib/org-admin";
 import { describeMembers } from "@/lib/user-profiles";
 import { OrgPicker } from "@/components/org-picker";
+import { PageHeader } from "@/components/page-header";
 import { NewTeamButton, TeamManager } from "./team-manager";
 
 /**
@@ -29,22 +30,20 @@ export default async function TeamsPage({ searchParams }: { searchParams: Promis
   const described = await describeMembers(members);
   const invites = org && isAdmin && !org.personal ? await listPendingInvites(org.id) : [];
 
-  const pickerOrgs = memberships.map((m) => ({ id: m.id, name: m.id === personalOrgId ? `${m.name} (personal)` : m.name }));
+  const pickerOrgs = memberships.map((m) => ({ id: m.id, name: m.id === personalOrgId ? "Personal" : m.name }));
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Teams</h1>
-          <p className="text-sm text-muted-foreground">
-            Who you share projects with. Team admins can manage every project in the team.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {selected ? <OrgPicker orgs={pickerOrgs} value={selected.id} /> : null}
-          <NewTeamButton />
-        </div>
-      </div>
+      <PageHeader
+        title="Teams"
+        description="Who you share projects with. Team admins can manage every project in the team."
+        actions={
+          <>
+            {selected ? <OrgPicker orgs={pickerOrgs} value={selected.id} /> : null}
+            <NewTeamButton />
+          </>
+        }
+      />
 
       {org && selected ? (
         <TeamManager

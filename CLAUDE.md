@@ -17,7 +17,7 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
   - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client, `pool.ts` (connection-pool sizing and prepared-statement settings — pure, so it is testable; see `docs/OPERATIONS.md`)
   - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` / `deploy-keys.ts` (key management; `deploy-key-client.ts` is its browser half — it generates the keypair and seals, and is a separate module so a test can assert the private key never reaches the wire), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` (bearer token or `envhq_session` cookie — the one way a route learns who's calling) / `cli-auth.ts`, `oidc.ts` (OpenID Connect sign-in: discovery, PKCE, claims → profile, email-domain allow-list) / `session.ts` (EnvHQ's own encrypted session cookie — edge-safe; `SESSION_SECRET`), `public-url.ts` (the origin people use — `ENVHQ_PUBLIC_URL` behind a proxy or in Docker; every redirect, invite link and cookie `Secure` decision goes through it), `orgs.ts` (org roles — read live from Postgres) / `org-store.ts` (its SQL) / `org-admin.ts` (every team mutation and its invariants: one admin minimum, personal orgs are single-member, removal takes grants/groups/key wraps with it) / `org-routes.ts` (the `api/orgs/[id]/…` gate), `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/provider-call measurement — counts and durations only, never SQL or parameters), `observability.ts` (error grouping, scrubbing and alert-once — same counts-only invariant, and the only place a message is allowed to reach storage), `ops-metrics.ts` (EnvHQ's own numbers, and the `ENVHQ_STAFF_USER_IDS` gate), `user-profiles.ts` (display names as the OIDC provider gave them at sign-in — decorative only, never an authorization input), `identity/` (who is signed in, and display details as of their last sign-in; `oidc.ts` is the adapter. Never orgs or roles)
   - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `profiles.ts` (seed `user_profiles`), `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db`, `orgs-db` and `contract` vitest projects (`orgs-db` runs the real `lib/orgs.ts` over real `org_members` rows — `*.orgs-db.test.ts`); `contract/` holds the openapi.yaml-vs-live-routes contract suite; `perf/` holds the RM-5 baseline harness and RM-8's connection load test (its own `perf` vitest project, excluded from `pnpm test`); `ui.setup.ts` backs the `ui` project — happy-dom component tests named `*.render.test.tsx`, which is where render cost and re-render behaviour are pinned (RM-9)
-  - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`
+  - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`; `page-header.tsx` (the one page-header shape, plus `HeaderTabs`) and `project-header.tsx` (every project page: Variables / Access / Deploy keys tabs); `encryption/` — `project-key-gate.tsx` (everything between signed-in and holding a project's key, handled inline: first-time setup, unlock, auto-creating an empty project's first key) and `encryption-flows.tsx` (the setup/unlock forms it shares with Settings → Encryption)
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
   - `src/index.ts` — wiring only: it registers each command, in the order `--help` lists them
   - `src/commands/` — one module per command, each exporting `register(program)`; `projects` and `env` carry their own subcommands
@@ -73,6 +73,15 @@ an implementation detail:
   generation and SHA-256 hashing. Only the hash is ever persisted.
 - Variable **names** are stored unencrypted and are readable by anyone with database
   access. That is a known, accepted gap (ADR-012), not an oversight to "fix" casually.
+- A project has **one** DEK. Someone may self-register a freshly generated DEK only as
+  the project's *first* key (`api/projects/[id]/keys` refuses it once anyone holds one);
+  later members get the existing DEK wrapped *for* them (reconciliation). The web app
+  creates the first key automatically when an empty project is opened, so this server
+  check is what stops two people doing that at once from splitting the project
+  across two keys.
+- The recovery phrase is shown exactly once, during setup. `setup()` unlocks the
+  session before the recovery steps run, so anything rendering the setup wizard must
+  keep it open across that change (see `project-key-gate.render.test.tsx`).
 
 ### Access control: `undefined` means 404, whichever reason
 

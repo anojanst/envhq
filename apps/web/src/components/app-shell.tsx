@@ -42,13 +42,13 @@ const NAV_ITEMS: NavItem[] = [
     icon: Folder,
     matchPrefixes: ["/dashboard", "/projects"],
   },
+  { label: "Teams", href: "/teams", icon: Users, matchPrefixes: ["/teams"] },
   {
     label: "Settings",
-    href: "/settings/tokens",
+    href: "/settings/security",
     icon: Settings,
     matchPrefixes: ["/settings"],
   },
-  { label: "Teams", href: "/teams", icon: Users, matchPrefixes: ["/teams"] },
 ];
 
 function isActive(pathname: string, prefixes: string[]): boolean {
@@ -82,7 +82,9 @@ export function AppShell({
                 </span>
               </Link>
             </header>
-            <div className="w-full flex-1 px-6 py-8">{children}</div>
+            {/* A readable measure: tables and forms stretched across a 1900px
+                window are harder to scan, not easier. */}
+            <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-8 sm:py-10">{children}</div>
           </SidebarInset>
         </SidebarProvider>
       </TooltipProvider>
