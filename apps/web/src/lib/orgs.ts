@@ -1,8 +1,8 @@
 import { cache } from "react";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { personalOrgs } from "@/db/schema";
+import { orgMembers, orgs, personalOrgs } from "@/db/schema";
 import { getDirectoryUser } from "@/lib/identity";
 import { readMemberships, readOrgMembers, replaceOrg, type OrgRole, type StoredMember } from "@/lib/org-store";
 
@@ -31,20 +31,23 @@ import { readMemberships, readOrgMembers, replaceOrg, type OrgRole, type StoredM
  * nothing.
  */
 export async function getOrCreatePersonalOrg(userId: string): Promise<string> {
-  const existing = await db
-    .select({ orgId: personalOrgs.orgId })
+  const [existing] = await db
+    .select({
+      orgId: personalOrgs.orgId,
+      orgPersonal: orgs.personal,
+      ownerIsMember: orgMembers.userId,
+    })
     .from(personalOrgs)
+    .leftJoin(orgs, eq(orgs.id, personalOrgs.orgId))
+    .leftJoin(orgMembers, and(eq(orgMembers.orgId, personalOrgs.orgId), eq(orgMembers.userId, personalOrgs.userId)))
     .where(eq(personalOrgs.userId, userId))
     .limit(1);
-  if (existing[0]) return existing[0].orgId;
+  if (existing) {
+    if (!existing.ownerIsMember) await restorePersonalOrg(userId, existing.orgId, existing.orgPersonal);
+    return existing.orgId;
+  }
 
-  const user = await getDirectoryUser(userId);
-  // Falls back through to the email as a last resort specifically so this
-  // name is unique per user — a bare "Personal" literal collides across
-  // every account that has neither a first name nor a username set (common
-  // for freshly-signed-up test accounts), making every such user's org
-  // indistinguishable from anyone else's in an org picker.
-  const name = user.name || user.email || "Personal";
+  const name = await personalOrgName(userId);
   const orgId = `org_${randomUUID().replaceAll("-", "")}`;
 
   const inserted = await db
@@ -64,6 +67,43 @@ export async function getOrCreatePersonalOrg(userId: string): Promise<string> {
     .where(eq(personalOrgs.userId, userId))
     .limit(1);
   return winner[0]!.orgId;
+}
+
+/**
+ * Puts back a personal org's own row and its owner's admin membership when
+ * the `personal_orgs` pointer outlived them. `personal_orgs` predates the
+ * `orgs` / `org_members` tables (migration 0016 created those empty), so an
+ * account from before then had a personal org id that no table said it
+ * belonged to — every request in it answered "not a member", and the
+ * projects already in it were invisible.
+ *
+ * Safe to grant because `personal_orgs` is EnvHQ's own record of whose
+ * personal org this is (written only above, keyed by the user). It never
+ * touches a team: if the id now names a non-personal org, it does nothing.
+ */
+async function restorePersonalOrg(userId: string, orgId: string, orgPersonal: boolean | null): Promise<void> {
+  if (orgPersonal === null) {
+    await replaceOrg({
+      id: orgId,
+      name: await personalOrgName(userId),
+      personal: true,
+      createdByUserId: userId,
+      members: [{ userId, role: "admin" }],
+    });
+    return;
+  }
+  if (!orgPersonal) return;
+  await db.insert(orgMembers).values({ orgId, userId, role: "admin" }).onConflictDoNothing();
+}
+
+async function personalOrgName(userId: string): Promise<string> {
+  const user = await getDirectoryUser(userId);
+  // Falls back through to the email as a last resort specifically so this
+  // name is unique per user — a bare "Personal" literal collides across
+  // every account that has neither a first name nor a username set (common
+  // for freshly-signed-up test accounts), making every such user's org
+  // indistinguishable from anyone else's in an org picker.
+  return user.name || user.email || "Personal";
 }
 
 /** Alias — the org used for account-level actions (create/list projects) when no explicit org is chosen. */
