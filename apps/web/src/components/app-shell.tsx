@@ -7,156 +7,139 @@ import { BrandMark } from "@/components/brand";
 import { AccountMenu, type AccountUser } from "@/components/account-menu";
 import { CryptoSessionProvider } from "@/components/crypto-session-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Badge } from "@/components/ui/badge";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarRail,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 interface NavItem {
   label: string;
-  href?: string;
+  href: string;
   icon: LucideIcon;
   matchPrefixes: string[];
-  soon?: boolean;
 }
 
-// Single source of truth for top-level sections. Add a section = add an entry
-// (+ its page). Flip `soon` off and give an `href` when it ships.
+// Single source of truth for top-level sections: the desktop rail and the
+// mobile tab bar both render this list. Add a section = add an entry (+ its page).
 const NAV_ITEMS: NavItem[] = [
-  {
-    label: "Projects",
-    href: "/dashboard",
-    icon: Folder,
-    matchPrefixes: ["/dashboard", "/projects"],
-  },
+  { label: "Projects", href: "/dashboard", icon: Folder, matchPrefixes: ["/dashboard", "/projects"] },
   { label: "Teams", href: "/teams", icon: Users, matchPrefixes: ["/teams"] },
-  {
-    label: "Settings",
-    href: "/settings/security",
-    icon: Settings,
-    matchPrefixes: ["/settings"],
-  },
+  { label: "Settings", href: "/settings/security", icon: Settings, matchPrefixes: ["/settings"] },
 ];
 
 function isActive(pathname: string, prefixes: string[]): boolean {
   return prefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
-export function AppShell({
-  defaultOpen,
-  user,
-  children,
-}: {
-  defaultOpen: boolean;
-  user: AccountUser;
-  children: React.ReactNode;
-}) {
+/**
+ * The signed-in frame: a slim icon rail on a warm canvas, and the page in one
+ * floating panel beside it. Three sections don't need a sidebar's width or a
+ * collapse control, so the rail is all there is. On phones the rail becomes a
+ * bottom tab bar, where a thumb reaches it.
+ */
+export function AppShell({ user, children }: { user: AccountUser; children: React.ReactNode }) {
+  const pathname = usePathname();
+
   return (
     <CryptoSessionProvider>
       <TooltipProvider>
-        <SidebarProvider defaultOpen={defaultOpen}>
-          <AppSidebar user={user} />
-          <SidebarInset>
-            {/* Sidebar is off-canvas on mobile (closed by default), so it needs
-                an entry point outside itself there. Desktop collapses the
-                sidebar in place instead, so its trigger lives in the sidebar
-                header — no bar needed. */}
-            <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur md:hidden">
-              <SidebarTrigger />
-              <Link href="/dashboard" aria-label="EnvHQ home">
+        <div data-app-shell className="flex min-h-dvh bg-canvas">
+          <nav
+            aria-label="Main"
+            className="sticky top-0 hidden h-dvh w-[76px] shrink-0 flex-col items-center gap-6 py-5 md:flex"
+          >
+            <Link href="/dashboard" aria-label="EnvHQ home" className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <BrandMark className="size-10 rounded-xl" />
+            </Link>
+            <ul className="flex flex-1 flex-col items-center gap-2 pt-4">
+              {NAV_ITEMS.map((item) => (
+                <li key={item.href}>
+                  <RailLink item={item} active={isActive(pathname, item.matchPrefixes)} />
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-col items-center gap-3">
+              <ThemeToggle />
+              <AccountMenu user={user} side="right" align="end" />
+            </div>
+          </nav>
+
+          <div className="flex min-w-0 flex-1 flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:py-3 md:pr-3 md:pb-3">
+            <header className="flex h-14 items-center justify-between gap-2 px-4 md:hidden">
+              <Link href="/dashboard" aria-label="EnvHQ home" className="flex items-center gap-2">
+                <BrandMark className="size-8 rounded-lg" />
                 <span className="font-semibold tracking-tight">
                   env<span className="text-brand">HQ</span>
                 </span>
               </Link>
+              <div className="flex items-center gap-1">
+                <ThemeToggle />
+                <AccountMenu user={user} side="bottom" align="end" />
+              </div>
             </header>
-            {/* A readable measure: tables and forms stretched across a 1900px
-                window are harder to scan, not easier. */}
-            <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-8 sm:py-10">{children}</div>
-          </SidebarInset>
-        </SidebarProvider>
+            <main className="flex-1 bg-background ring-foreground/[0.05] max-md:rounded-t-[28px] max-md:shadow-soft md:rounded-[28px] md:shadow-soft md:ring-1">
+              <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 sm:py-9 lg:px-10">{children}</div>
+            </main>
+          </div>
+
+          <nav
+            aria-label="Main"
+            className="translucent-chrome fixed inset-x-0 bottom-0 z-30 flex justify-around border-t bg-background/85 px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur md:hidden"
+          >
+            {NAV_ITEMS.map((item) => {
+              const active = isActive(pathname, item.matchPrefixes);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "flex min-w-20 flex-col items-center gap-1 rounded-xl px-3 py-1.5 text-[11px] font-medium transition-colors",
+                    active ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-7 w-12 items-center justify-center rounded-full transition-colors",
+                      active && "bg-foreground text-background",
+                    )}
+                  >
+                    <Icon className="size-4" />
+                  </span>
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
       </TooltipProvider>
     </CryptoSessionProvider>
   );
 }
 
-function AppSidebar({ user }: { user: AccountUser }) {
-  const pathname = usePathname();
-
+function RailLink({ item, active }: { item: NavItem; active: boolean }) {
+  const Icon = item.icon;
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <div className="flex items-center justify-between gap-2 px-1 py-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-2">
-          <Link href="/dashboard" aria-label="EnvHQ home" className="flex min-w-0 items-center gap-2">
-            <BrandMark className="size-7 shrink-0" />
-            <span className="truncate font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-              env<span className="text-brand">HQ</span>
-            </span>
-          </Link>
-          <SidebarTrigger className="shrink-0" />
-        </div>
-      </SidebarHeader>
-
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarMenu>
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-
-              if (item.soon || !item.href) {
-                return (
-                  <SidebarMenuItem key={item.label}>
-                    <SidebarMenuButton
-                      aria-disabled
-                      tooltip={`${item.label} (soon)`}
-                    >
-                      <Icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                    <SidebarMenuBadge>
-                      <Badge variant="secondary">Soon</Badge>
-                    </SidebarMenuBadge>
-                  </SidebarMenuItem>
-                );
-              }
-
-              return (
-                <SidebarMenuItem key={item.label}>
-                  <SidebarMenuButton
-                    isActive={isActive(pathname, item.matchPrefixes)}
-                    tooltip={item.label}
-                    render={<Link href={item.href} />}
-                  >
-                    <Icon />
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-            })}
-          </SidebarMenu>
-        </SidebarGroup>
-      </SidebarContent>
-
-      <SidebarFooter>
-        <div className="flex items-center justify-between gap-2 px-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-2">
-          <AccountMenu user={user} />
-          <ThemeToggle />
-        </div>
-      </SidebarFooter>
-
-      <SidebarRail />
-    </Sidebar>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            href={item.href}
+            aria-label={item.label}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "flex size-11 items-center justify-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+              active
+                ? "bg-foreground text-background shadow-soft"
+                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            )}
+          />
+        }
+      >
+        <Icon className="size-[18px]" />
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {item.label}
+      </TooltipContent>
+    </Tooltip>
   );
 }

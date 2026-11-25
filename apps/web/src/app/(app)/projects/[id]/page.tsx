@@ -48,7 +48,7 @@ async function renderProject({
         isAdmin={owned.role === "admin"}
         stats={{ environmentCount: 0, variableCount: 0, hasProdEnv: false }}
       />
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center">
+      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card/50 px-6 py-16 text-center">
         <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <Layers className="size-5" />
         </span>

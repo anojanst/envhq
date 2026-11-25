@@ -44,7 +44,7 @@ export function OpsIssues({ initialIssues }: { initialIssues: OpsIssue[] }) {
   }
 
   return (
-    <div className="rounded-lg border">
+    <div className="surface">
       <Table>
         <TableHeader>
           <TableRow>

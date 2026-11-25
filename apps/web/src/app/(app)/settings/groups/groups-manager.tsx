@@ -196,7 +196,7 @@ export function GroupsManager({
         </Dialog>
       </div>
 
-      <div className="rounded-lg border">
+      <div className="surface">
         <Table>
           <TableHeader>
             <TableRow>

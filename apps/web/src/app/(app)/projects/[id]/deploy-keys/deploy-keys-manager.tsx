@@ -352,7 +352,7 @@ function DeployKeysReady({
         }}
       />
 
-      <div className="rounded-lg border">
+      <div className="surface">
         <Table>
           <TableHeader>
             <TableRow>

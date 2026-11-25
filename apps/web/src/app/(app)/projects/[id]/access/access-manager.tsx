@@ -240,7 +240,7 @@ export function AccessManager({
         onRotate={rotateKey}
       />
 
-      <div className="rounded-lg border">
+      <div className="surface">
         <Table>
           <TableHeader>
             <TableRow>
@@ -358,7 +358,7 @@ export function AccessManager({
         </Table>
       </div>
 
-      <div className="rounded-xl border bg-card p-4">
+      <div className="surface p-4">
         <h2 className="mb-3 text-sm font-medium">Add access</h2>
         {pickersLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
@@ -456,7 +456,7 @@ function EncryptionSection({
   const running = phase !== "idle" && phase !== "done" && phase !== "error";
 
   return (
-    <div className="rounded-lg border p-4">
+    <div className="surface p-4">
       <div className="mb-3 flex items-center gap-1.5">
         <KeyRound className="size-3.5 text-muted-foreground" />
         <h2 className="text-sm font-medium">Encryption</h2>

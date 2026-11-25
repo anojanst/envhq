@@ -1,5 +1,8 @@
 import { requireSessionUserId } from "@/lib/identity";
 import { FolderTree } from "lucide-react";
+import { and, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { environments, environmentVersions, envVars } from "@/db/schema";
 import { listAccessibleProjectsWithEnvsAcrossOrgs } from "@/lib/access";
 import { withPerf } from "@/lib/perf";
 import { getOrCreatePersonalOrg, listMyOrgs } from "@/lib/orgs";
@@ -41,6 +44,9 @@ async function renderDashboard() {
         name: r.name,
         createdLabel: timeAgo(r.createdAt),
         envs: [],
+        variableCount: 0,
+        updatedLabel: null,
+        activity: [],
         orgId: r.orgId,
         orgName: r.orgId === personalOrgId ? "Personal" : r.orgName,
       };
@@ -49,6 +55,7 @@ async function renderDashboard() {
     if (r.envName) p.envs.push(r.envName);
   }
   const projectList = [...byId.values()];
+  await addActivity(byId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -63,7 +70,7 @@ async function renderDashboard() {
       />
 
       {projectList.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed px-6 py-16 text-center">
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed bg-card/50 px-6 py-16 text-center">
           <div className="flex size-12 items-center justify-center rounded-full bg-brand/10 text-brand">
             <FolderTree className="size-6" />
           </div>
@@ -81,6 +88,60 @@ async function renderDashboard() {
       )}
     </div>
   );
+}
+
+const ACTIVITY_DAYS = 14;
+
+/**
+ * What each card shows beyond its name: how many variables it holds, when it
+ * last changed, and a daily count of changes over the last two weeks. Two
+ * grouped queries for the whole page, never one per project. Counts and
+ * timestamps only — nothing here reads a value or a name of a variable.
+ */
+async function addActivity(byId: Map<string, ProjectListItem>) {
+  const ids = [...byId.keys()];
+  if (ids.length === 0) return;
+  const since = new Date(Date.now() - ACTIVITY_DAYS * 86_400_000);
+  const day = sql<string>`to_char(${environmentVersions.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`;
+
+  const [varCounts, changes] = await Promise.all([
+    db
+      .select({ projectId: environments.projectId, n: sql<number>`count(${envVars.id})::int` })
+      .from(environments)
+      .innerJoin(envVars, and(eq(envVars.environmentId, environments.id), isNull(envVars.deletedAt)))
+      .where(inArray(environments.projectId, ids))
+      .groupBy(environments.projectId),
+    db
+      .select({
+        projectId: environments.projectId,
+        day,
+        n: sql<number>`count(*)::int`,
+        last: sql<Date>`max(${environmentVersions.createdAt})`,
+      })
+      .from(environmentVersions)
+      .innerJoin(environments, eq(environments.id, environmentVersions.environmentId))
+      .where(and(inArray(environments.projectId, ids), gte(environmentVersions.createdAt, since)))
+      .groupBy(environments.projectId, day),
+  ]);
+
+  for (const r of varCounts) byId.get(r.projectId)!.variableCount = r.n;
+
+  const days = Array.from({ length: ACTIVITY_DAYS }, (_, i) =>
+    new Date(Date.now() - (ACTIVITY_DAYS - 1 - i) * 86_400_000).toISOString().slice(0, 10),
+  );
+  const perProject = new Map<string, { byDay: Map<string, number>; last: Date }>();
+  for (const r of changes) {
+    const last = new Date(r.last);
+    const entry = perProject.get(r.projectId) ?? { byDay: new Map(), last };
+    entry.byDay.set(r.day, r.n);
+    if (last > entry.last) entry.last = last;
+    perProject.set(r.projectId, entry);
+  }
+  for (const [id, p] of byId) {
+    const entry = perProject.get(id);
+    p.activity = days.map((d) => entry?.byDay.get(d) ?? 0);
+    p.updatedLabel = entry ? timeAgo(entry.last) : null;
+  }
 }
 
 function timeAgo(date: Date): string {

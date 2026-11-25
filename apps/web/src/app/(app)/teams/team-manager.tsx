@@ -239,7 +239,7 @@ export function TeamManager({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ul className="divide-y rounded-lg border">
+          <ul className="divide-y surface">
             {members.map((m) => {
               const isSelf = m.userId === currentUserId;
               const lastAdmin = m.role === "admin" && adminCount <= 1;
@@ -347,7 +347,7 @@ export function TeamManager({
             {invites.length > 0 ? (
               <div className="flex flex-col gap-2">
                 <p className="text-sm font-medium">Pending links</p>
-                <ul className="divide-y rounded-lg border">
+                <ul className="divide-y surface">
                   {invites.map((i) => (
                     <li key={i.id} className="flex items-center gap-3 px-3 py-2 text-sm">
                       <Badge variant="secondary">{i.role === "admin" ? "Admin" : "Member"}</Badge>

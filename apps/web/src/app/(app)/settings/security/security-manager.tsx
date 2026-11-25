@@ -25,7 +25,7 @@ export function SecurityManager() {
   }
 
   return (
-    <section className="flex max-w-2xl flex-col gap-5 rounded-xl border bg-card p-6 shadow-xs">
+    <section className="flex max-w-2xl flex-col gap-5 surface p-6">
       {status === "checking" ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Checking your encryption key…

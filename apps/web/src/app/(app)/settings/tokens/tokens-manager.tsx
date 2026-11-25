@@ -250,7 +250,7 @@ export function TokensManager({
         </DialogContent>
       </Dialog>
 
-      <div className="rounded-lg border">
+      <div className="surface">
         <Table>
           <TableHeader>
             <TableRow>

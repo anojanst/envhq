@@ -36,7 +36,15 @@ function initials(user: AccountUser): string {
  * The signed-in person, and the way out. Sign-out is a POST (a GET would let
  * any page log you out with an <img>), so the menu item submits a real form.
  */
-export function AccountMenu({ user }: { user: AccountUser }) {
+export function AccountMenu({
+  user,
+  side = "top",
+  align = "start",
+}: {
+  user: AccountUser;
+  side?: "top" | "right" | "bottom";
+  align?: "start" | "end";
+}) {
   const signOut = useRef<HTMLFormElement>(null);
   return (
     <>
@@ -45,12 +53,12 @@ export function AccountMenu({ user }: { user: AccountUser }) {
           className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           aria-label="Account"
         >
-          <Avatar className="size-7">
+          <Avatar className="size-9">
             {user.imageUrl ? <AvatarImage src={user.imageUrl} alt="" /> : null}
             <AvatarFallback className="text-xs">{initials(user)}</AvatarFallback>
           </Avatar>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="top" className="w-60">
+        <DropdownMenuContent align={align} side={side} sideOffset={8} className="w-60">
           <DropdownMenuGroup>
             <DropdownMenuLabel className="flex flex-col gap-0.5">
               <span className="truncate text-sm font-medium text-foreground">{user.name || "Signed in"}</span>

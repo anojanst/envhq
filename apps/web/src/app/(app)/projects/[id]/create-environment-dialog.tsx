@@ -110,7 +110,7 @@ export function CreateEnvironmentDialog({
                       onClick={() => setName(s)}
                       className={cn(
                         "rounded-md border px-2 py-0.5 font-mono text-xs transition-colors hover:bg-accent",
-                        isProdEnv(s) && "border-amber-500/40 text-amber-700 dark:text-amber-400",
+                        isProdEnv(s) && "border-rose-400/50 text-rose-700 dark:text-rose-300",
                         name === s && "border-brand bg-brand/10",
                       )}
                     >

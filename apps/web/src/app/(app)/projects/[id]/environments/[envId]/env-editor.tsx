@@ -306,7 +306,7 @@ function EnvEditorReady({
   return (
     <div className="flex flex-col gap-4">
       {isProd && (
-        <div className="flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400">
+        <div className="flex items-center gap-2 rounded-xl bg-rose-100/70 px-3.5 py-2.5 text-sm text-rose-800 dark:bg-rose-400/12 dark:text-rose-300">
           <AlertTriangle className="size-4 shrink-0" />
           Editing <code>{envName}</code> — changes take effect immediately.
         </div>
@@ -334,7 +334,7 @@ function EnvEditorReady({
       </div>
 
 
-      <div className="rounded-lg border">
+      <div className="surface">
         <Table>
           <TableHeader>
             <TableRow>

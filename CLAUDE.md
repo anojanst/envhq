@@ -17,7 +17,7 @@ pnpm monorepo: `apps/*` + `packages/*` (see `pnpm-workspace.yaml`).
   - `src/db/` — Drizzle: `schema.ts`, `migrations/`, `index.ts` client, `pool.ts` (connection-pool sizing and prepared-statement settings — pure, so it is testable; see `docs/OPERATIONS.md`)
   - `src/lib/` — core domain logic: `access.ts` / `grants.ts` (authz), `crypto.ts` / `project-keys.ts` / `user-keys.ts` / `deploy-keys.ts` (key management; `deploy-key-client.ts` is its browser half — it generates the keypair and seals, and is a separate module so a test can assert the private key never reaches the wire), `env-store.ts` / `version-store.ts` (secret storage), `auth.ts` (bearer token or `envhq_session` cookie — the one way a route learns who's calling) / `cli-auth.ts`, `oidc.ts` (OpenID Connect sign-in: discovery, PKCE, claims → profile, email-domain allow-list) / `session.ts` (EnvHQ's own encrypted session cookie — edge-safe; `SESSION_SECRET`), `public-url.ts` (the origin people use — `ENVHQ_PUBLIC_URL` behind a proxy or in Docker; every redirect, invite link and cookie `Secure` decision goes through it), `orgs.ts` (org roles — read live from Postgres) / `org-store.ts` (its SQL) / `org-admin.ts` (every team mutation and its invariants: one admin minimum, personal orgs are single-member, removal takes grants/groups/key wraps with it) / `org-routes.ts` (the `api/orgs/[id]/…` gate), `groups.ts`, `api.ts` / `client.ts`, `db-errors.ts` (driver-agnostic Postgres error checks, e.g. unique-violation), `perf.ts` (request-scoped query/provider-call measurement — counts and durations only, never SQL or parameters), `observability.ts` (error grouping, scrubbing and alert-once — same counts-only invariant, and the only place a message is allowed to reach storage), `ops-metrics.ts` (EnvHQ's own numbers, and the `ENVHQ_STAFF_USER_IDS` gate), `user-profiles.ts` (display names as the OIDC provider gave them at sign-in — decorative only, never an authorization input), `identity/` (who is signed in, and display details as of their last sign-in; `oidc.ts` is the adapter. Never orgs or roles)
   - `src/test-support/` — real-Postgres test infra (`db.ts`, `mock-db.setup.ts`, `mock-orgs.ts`, `profiles.ts` (seed `user_profiles`), `migrate.global-setup.ts`) plus fixture/seed helpers for the `authz-db`, `orgs-db` and `contract` vitest projects (`orgs-db` runs the real `lib/orgs.ts` over real `org_members` rows — `*.orgs-db.test.ts`); `contract/` holds the openapi.yaml-vs-live-routes contract suite; `perf/` holds the RM-5 baseline harness and RM-8's connection load test (its own `perf` vitest project, excluded from `pnpm test`); `ui.setup.ts` backs the `ui` project — happy-dom component tests named `*.render.test.tsx`, which is where render cost and re-render behaviour are pinned (RM-9)
-  - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`; `page-header.tsx` (the one page-header shape, plus `HeaderTabs`) and `project-header.tsx` (every project page: Variables / Access / Deploy keys tabs); `encryption/` — `project-key-gate.tsx` (everything between signed-in and holding a project's key, handled inline: first-time setup, unlock, auto-creating an empty project's first key) and `encryption-flows.tsx` (the setup/unlock forms it shares with Settings → Encryption)
+  - `src/components/` — shared UI, incl. `components/ui` (primitives) and `components/landing`; `page-header.tsx` (the one page-header shape, plus `HeaderTabs`) and `project-header.tsx` (every project page: Variables / Access / Deploy keys tabs); `app-shell.tsx` (the signed-in frame: an icon rail on the warm `canvas`, the page in one floating panel, a bottom tab bar on phones — there is no sidebar); `encryption/` — `project-key-gate.tsx` (everything between signed-in and holding a project's key, handled inline: first-time setup, unlock, auto-creating an empty project's first key) and `encryption-flows.tsx` (the setup/unlock forms it shares with Settings → Encryption)
 - `packages/cli` — published `envhq` CLI (push/pull secrets from a terminal)
   - `src/index.ts` — wiring only: it registers each command, in the order `--help` lists them
   - `src/commands/` — one module per command, each exporting `register(program)`; `projects` and `env` carry their own subcommands
@@ -208,18 +208,25 @@ an implementer — the goal is a genuinely polished, modern experience, not the
 first layout that technically works.
 
 - Prefer removing chrome over adding it. A control should live where it acts
-  (e.g. the sidebar's collapse toggle belongs in the sidebar, not a top bar
-  that exists only to hold it) — don't keep a persistent bar around once its
+  (e.g. the theme toggle and account menu live on the nav rail, not a top
+  bar that exists only to hold them) — don't keep a persistent bar around once its
   one job moves elsewhere.
 - Complex, expandable, or multi-section content (per-row detail panels,
   multi-field forms, anything that can grow) belongs on its own page with a
   breadcrumb, not crammed into a `sm:max-w-md` dialog — modals are for quick,
   bounded actions (confirm, rename, single field), not management surfaces.
+- The visual language (warm canvas, soft 16px cards, pastel tints): raised
+  surfaces are `<Card>` or the `surface` utility (`globals.css`), never a bare
+  `rounded-lg border`; project pastels come from `projectTint()` and
+  environment colours from `envTone()` (`project-visuals.tsx`: prod rose,
+  staging peach, dev mint) — pastels mark status and identity, never buttons,
+  which stay emerald. A subtree can be forced dark with the `dark` class (the
+  project page's side panel, `environment-panel.tsx`).
 - Match existing patterns before inventing new ones: check how the same kind
   of thing is already solved elsewhere in `apps/web/src/app/(app)/` (e.g.
   `settings/groups` for a list-with-inline-mutation page,
   `projects/[id]/environments/[envId]/page.tsx` for the breadcrumb-header
   shape) before introducing a new component or convention.
-- Sweat responsive/collapsed states, not just the default one — icon-only
-  sidebar, mobile off-canvas nav, empty states, and loading states are part
-  of "done," not follow-ups.
+- Sweat responsive states, not just the default one — the phone tab bar,
+  the project panel stacking under the editor below `xl`, empty states, and
+  loading states are part of "done," not follow-ups.

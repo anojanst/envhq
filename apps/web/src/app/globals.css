@@ -3,23 +3,24 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Crisper than the shadcn default: this is a tool people scan, not a
-     brochure. */
-  --radius: 0.5rem;
+  /* Soft and rounded: big cards, pill controls, quiet borders. Inputs and
+     buttons sit at lg (10px), surfaces at 2xl (16px+). */
+  --radius: 0.625rem;
 
   /* Ground for the logged-out pages. Declared here rather than only inside
      .public-dark so <body> can use the same value. */
   --public-dark-bg: oklch(0.135 0.018 262);
 
-  /* App palette. Neutrals carry the same cool 262° hue as the landing page
-     instead of flat grey, so the product and the marketing site read as one
-     brand. Light: paper-white canvas, white surfaces, hairline borders. */
-  --background: oklch(0.985 0.002 262);
-  --foreground: oklch(0.2 0.018 262);
+  /* App palette, light: a warm paper canvas behind one floating white
+     panel, the way a well-lit desk reads. Neutrals lean warm (hue ~75)
+     rather than flat grey; the brand stays EnvHQ emerald. */
+  --canvas: oklch(0.948 0.009 78);
+  --background: oklch(0.992 0.003 85);
+  --foreground: oklch(0.21 0.012 60);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.018 262);
+  --card-foreground: oklch(0.21 0.012 60);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.018 262);
+  --popover-foreground: oklch(0.21 0.012 60);
 
   /* Brand: EnvHQ emerald */
   --primary: oklch(0.6 0.135 163);
@@ -27,35 +28,42 @@
   --brand: oklch(0.6 0.135 163);
   --brand-foreground: oklch(0.99 0 0);
 
-  --secondary: oklch(0.96 0.004 262);
-  --secondary-foreground: oklch(0.24 0.018 262);
-  --muted: oklch(0.96 0.004 262);
-  --muted-foreground: oklch(0.52 0.018 262);
-  --accent: oklch(0.955 0.005 262);
-  --accent-foreground: oklch(0.22 0.018 262);
+  --secondary: oklch(0.962 0.006 80);
+  --secondary-foreground: oklch(0.25 0.012 60);
+  --muted: oklch(0.962 0.006 80);
+  --muted-foreground: oklch(0.53 0.014 65);
+  --accent: oklch(0.955 0.008 80);
+  --accent-foreground: oklch(0.22 0.012 60);
   --destructive: oklch(0.577 0.215 27);
   --destructive-foreground: oklch(0.985 0 0);
 
-  --border: oklch(0.915 0.006 262);
-  --input: oklch(0.885 0.008 262);
+  --border: oklch(0.918 0.008 80);
+  --input: oklch(0.888 0.01 80);
   --ring: oklch(0.6 0.135 163);
 
-  --sidebar: oklch(0.97 0.004 262);
-  --sidebar-foreground: oklch(0.3 0.018 262);
-  --sidebar-primary: oklch(0.6 0.135 163);
+  /* The dark side panel on project pages, in either theme. */
+  --side-panel: oklch(0.2 0.016 262);
+
+  /* Soft elevation for cards: a hairline plus a long, faint drop. */
+  --soft-shadow: 0 1px 2px oklch(0.3 0.02 60 / 0.04), 0 8px 24px -12px oklch(0.3 0.02 60 / 0.12);
+
+  --sidebar: var(--canvas);
+  --sidebar-foreground: oklch(0.45 0.014 65);
+  --sidebar-primary: oklch(0.21 0.012 60);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.925 0.008 262);
-  --sidebar-accent-foreground: oklch(0.18 0.018 262);
-  --sidebar-border: oklch(0.915 0.006 262);
+  --sidebar-accent: oklch(0.91 0.01 78);
+  --sidebar-accent-foreground: oklch(0.18 0.012 60);
+  --sidebar-border: oklch(0.918 0.008 80);
   --sidebar-ring: oklch(0.6 0.135 163);
 }
 
 /* Dark is the landing page's palette (`.public-dark`), so signing in doesn't
-   feel like switching products. */
+   feel like switching products. The canvas sits a step below the panel. */
 .dark {
+  --canvas: oklch(0.112 0.016 262);
   --background: var(--public-dark-bg);
   --foreground: oklch(0.93 0.004 262);
-  --card: oklch(0.165 0.017 262);
+  --card: oklch(0.172 0.017 262);
   --card-foreground: oklch(0.93 0.004 262);
   --popover: oklch(0.185 0.017 262);
   --popover-foreground: oklch(0.93 0.004 262);
@@ -78,17 +86,27 @@
   --input: oklch(1 0 0 / 13%);
   --ring: oklch(0.74 0.15 162);
 
-  --sidebar: oklch(0.15 0.018 262);
-  --sidebar-foreground: oklch(0.78 0.015 262);
-  --sidebar-primary: oklch(0.74 0.15 162);
+  --soft-shadow: 0 0 0 1px oklch(1 0 0 / 0.04), 0 10px 28px -14px oklch(0 0 0 / 0.7);
+
+  /* `.dark` also scopes a subtree (the project side panel) inside the light
+     theme. The base hairline rule reads --color-border, which `@theme
+     inline` resolved once on :root, so re-alias it here (see .public-dark). */
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+
+  --sidebar: var(--canvas);
+  --sidebar-foreground: oklch(0.7 0.018 262);
+  --sidebar-primary: oklch(0.93 0.004 262);
   --sidebar-primary-foreground: oklch(0.15 0.01 262);
-  --sidebar-accent: oklch(1 0 0 / 6%);
+  --sidebar-accent: oklch(1 0 0 / 7%);
   --sidebar-accent-foreground: oklch(0.96 0.004 262);
   --sidebar-border: oklch(1 0 0 / 7%);
   --sidebar-ring: oklch(0.74 0.15 162);
 }
 
 @theme inline {
+  --color-canvas: var(--canvas);
+  --color-side-panel: var(--side-panel);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -128,6 +146,8 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-archivo);
+  --font-app: var(--font-jakarta);
+  --shadow-soft: var(--soft-shadow);
 }
 
 /**
@@ -180,6 +200,15 @@
      painting light grey hairlines on this dark surface, so re-alias them. */
   --color-border: var(--border);
   --color-ring: var(--ring);
+}
+
+/* The signed-in app's face: a geometric sans with open, friendly shapes.
+   Set on <body> rather than the shell so dialogs, menus and toasts (portalled
+   to <body>) share it. Unlayered for the same reason as below. Public pages
+   keep Geist. */
+body:has([data-app-shell]) {
+  font-family: var(--font-jakarta), var(--font-geist-sans), system-ui, sans-serif;
+  background-color: var(--canvas);
 }
 
 /* The dark scope lives on <main>, so overscroll bounce and any strip the main
@@ -312,3 +341,15 @@ body:has(.public-dark) {
   }
 }
 
+
+/* The app's one raised surface — tables, panels, the encryption card. Same
+   material as <Card>: white, 16px corners, a hairline and a soft drop rather
+   than a hard border. */
+@utility surface {
+  overflow: hidden;
+  border-radius: 1rem;
+  background-color: var(--color-card);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-foreground) 6%, transparent),
+    var(--soft-shadow);
+}

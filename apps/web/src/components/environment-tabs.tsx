@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Layers } from "lucide-react";
-import { isProdEnv } from "@/components/project-visuals";
+import { envTone } from "@/components/project-visuals";
 import { cn } from "@/lib/utils";
 
 interface EnvironmentTabItem {
@@ -22,7 +22,7 @@ export function EnvironmentTabs({
 }) {
   if (environments.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
+      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card/50 py-16 text-center">
         <Layers className="size-8 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">
           No environments yet. Add one like <code>dev</code> or <code>prod</code>.
@@ -32,9 +32,9 @@ export function EnvironmentTabs({
   }
 
   return (
-    <nav aria-label="Environments" className="flex max-w-full flex-wrap gap-1 rounded-lg border bg-muted/40 p-1">
+    <nav aria-label="Environments" className="flex max-w-full flex-wrap gap-1 rounded-2xl bg-muted p-1 sm:rounded-full">
       {environments.map((env) => {
-        const prod = isProdEnv(env.name);
+        const tone = envTone(env.name);
         const active = env.id === activeEnvId;
 
         return (
@@ -43,17 +43,17 @@ export function EnvironmentTabs({
             href={`/projects/${projectId}/environments/${env.id}`}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-1 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
               active
-                ? "bg-background text-foreground shadow-xs ring-1 ring-border"
+                ? "bg-card text-foreground shadow-soft ring-1 ring-foreground/[0.06]"
                 : "text-muted-foreground hover:text-foreground",
-              active && prod && "ring-amber-500/50",
+              active && tone === "prod" && "ring-rose-400/50",
             )}
           >
             <span
               className={cn(
                 "size-1.5 shrink-0 rounded-full",
-                prod ? "bg-amber-500" : active ? "bg-brand" : "bg-muted-foreground/40",
+                TONE_DOT[tone],
               )}
               aria-hidden
             />
@@ -67,3 +67,10 @@ export function EnvironmentTabs({
     </nav>
   );
 }
+
+const TONE_DOT = {
+  prod: "bg-rose-500",
+  staging: "bg-orange-400",
+  dev: "bg-teal-500",
+  other: "bg-muted-foreground/50",
+} as const;

@@ -34,6 +34,26 @@ interface VersionEntry {
   createdAt: string;
 }
 
+/** How many versions the panel shows before "See all". */
+const PANEL_ENTRIES = 4;
+
+function VersionLabel({ v, current }: { v: VersionEntry; current?: boolean }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="flex items-center gap-1.5 text-sm font-medium">
+        v{v.version}
+        {current && (
+          <span className="rounded-md bg-brand/15 px-1.5 text-[11px] font-medium text-brand">Current</span>
+        )}
+      </span>
+      {v.message && <span className="truncate text-xs text-foreground/80">{v.message}</span>}
+      <span className="text-xs text-muted-foreground" title={new Date(v.createdAt).toLocaleString()}>
+        {v.createdByName} · {formatRelativeTime(v.createdAt)}
+      </span>
+    </div>
+  );
+}
+
 export function EnvironmentHistory({
   environmentId,
   revision,
@@ -110,75 +130,87 @@ export function EnvironmentHistory({
   }
 
   const latest = versions?.[0];
+  const recent = versions?.slice(0, PANEL_ENTRIES) ?? [];
 
   return (
     <>
-      <div className="flex items-center justify-between gap-2 text-sm">
-        <span className="flex items-center gap-2 text-muted-foreground">
-          <HistoryIcon className="size-3.5" aria-hidden />
-          {latest ? (
-            <>
-              <span className="font-medium text-foreground">v{latest.version}</span>
-              {" · updated "}
-              {formatRelativeTime(latest.createdAt)}
-              {" by "}
-              {latest.createdByName}
-            </>
-          ) : versions ? (
-            "No history yet"
-          ) : (
-            "Loading…"
-          )}
-        </span>
-        <Sheet
-          open={open}
-          onOpenChange={(next) => {
-            setOpen(next);
-            if (next) load();
-          }}
-        >
-          <SheetTrigger render={<Button variant="ghost" size="sm" disabled={!latest} />}>
-            View history
-          </SheetTrigger>
-          <SheetContent>
-            <SheetHeader>
-              <SheetTitle>Version history</SheetTitle>
-              <SheetDescription>Every change to this environment, newest first.</SheetDescription>
-            </SheetHeader>
-            <div className="flex flex-col gap-2 overflow-y-auto px-4 pb-4">
-              {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
-              {!loading && versions?.length === 0 && (
-                <p className="text-sm text-muted-foreground">No history yet.</p>
-              )}
-              {versions?.map((v, i) => (
-                <div
-                  key={v.version}
-                  className="flex items-center justify-between gap-2 rounded-lg border bg-card p-3"
-                >
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <span className="text-sm font-medium">
-                      v{v.version}
-                      {v.message ? ` · ${v.message}` : ""}
-                    </span>
-                    <span className="text-xs text-muted-foreground" title={new Date(v.createdAt).toLocaleString()}>
-                      {v.createdByName} · {formatRelativeTime(v.createdAt)}
-                    </span>
+      <section className="flex flex-col gap-3" aria-labelledby="history-heading">
+        <div className="flex items-center justify-between gap-2">
+          <h2 id="history-heading" className="flex items-center gap-2 text-sm font-semibold">
+            <HistoryIcon className="size-4 text-muted-foreground" aria-hidden />
+            History
+          </h2>
+          <Sheet
+            open={open}
+            onOpenChange={(next) => {
+              setOpen(next);
+              if (next) load();
+            }}
+          >
+            <SheetTrigger render={<Button variant="ghost" size="xs" disabled={!latest} />}>
+              {versions && versions.length > PANEL_ENTRIES ? `See all ${versions.length}` : "Open"}
+            </SheetTrigger>
+            <SheetContent>
+              <SheetHeader>
+                <SheetTitle>Version history</SheetTitle>
+                <SheetDescription>Every change to this environment, newest first.</SheetDescription>
+              </SheetHeader>
+              <div className="flex flex-col gap-2 overflow-y-auto px-4 pb-4">
+                {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+                {!loading && versions?.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No history yet.</p>
+                )}
+                {versions?.map((v, i) => (
+                  <div
+                    key={v.version}
+                    className="flex items-center justify-between gap-2 rounded-xl bg-muted/60 p-3"
+                  >
+                    <VersionLabel v={v} />
+                    {i !== 0 && (
+                      <Button size="sm" variant="outline" onClick={() => setRollbackTarget(v.version)}>
+                        Roll back
+                      </Button>
+                    )}
                   </div>
+                ))}
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+
+        {versions === null ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : versions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No changes yet. Every save becomes a version you can roll back to.
+          </p>
+        ) : (
+          <ol className="flex flex-col">
+            {recent.map((v, i) => (
+              <li key={v.version} className="group/entry relative flex gap-3 pb-4 last:pb-0">
+                {/* the timeline: a dot per version, joined by a hairline */}
+                <span className="relative flex w-2.5 shrink-0 justify-center pt-1.5" aria-hidden>
+                  <span className={i === 0 ? "size-2.5 rounded-full bg-brand ring-4 ring-brand/20" : "size-2 rounded-full bg-muted-foreground/50"} />
+                  {i < recent.length - 1 && <span className="absolute top-4 -bottom-0.5 w-px bg-border" />}
+                </span>
+                <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
+                  <VersionLabel v={v} current={i === 0} />
                   {i !== 0 && (
                     <Button
-                      size="sm"
-                      variant="outline"
+                      size="xs"
+                      variant="ghost"
+                      className="shrink-0 opacity-70 group-hover/entry:opacity-100"
                       onClick={() => setRollbackTarget(v.version)}
                     >
                       Roll back
                     </Button>
                   )}
                 </div>
-              ))}
-            </div>
-          </SheetContent>
-        </Sheet>
-      </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
 
       <AlertDialog
         open={rollbackTarget !== null}
