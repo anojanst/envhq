@@ -221,7 +221,7 @@ components:
           type: string
         iv:
           type: string
-          description: AEAD nonce (legacy column name predates XChaCha20-Poly1305 adoption).
+          description: AES-256-GCM 12-byte IV, base64. The GCM tag is appended to the ciphertext.
     EncryptedVarRow:
       description: "`EncryptedPair` plus its row id and last-write timestamp."
       allOf:
@@ -444,9 +444,8 @@ components:
       required:
         - publicKey
         - kdfSalt
-        - kdfT
-        - kdfM
-        - kdfP
+        - kdfAlg
+        - kdfIterations
         - wrappedPrivateKey
         - wrappedPrivateKeyNonce
         - wrappedPrivateKeyByRecovery
@@ -457,12 +456,13 @@ components:
           type: string
         kdfSalt:
           type: string
-        kdfT:
+        kdfAlg:
+          type: string
+          enum: [pbkdf2-sha256]
+        kdfIterations:
           type: integer
-        kdfM:
-          type: integer
-        kdfP:
-          type: integer
+          minimum: 600000
+          description: PBKDF2-HMAC-SHA256 iterations for the passphrase-derived Master Key.
         wrappedPrivateKey:
           type: string
         wrappedPrivateKeyNonce:
@@ -943,7 +943,7 @@ paths:
           in: header
           required: false
           description: >-
-            Base64 X25519 **public** half of a deploy key on this project. A
+            Base64 raw P-256 **public** point of a deploy key on this project. A
             header rather than a query parameter so it stays out of access
             and proxy logs.
           schema:
@@ -2355,7 +2355,7 @@ paths:
                   description: What this key is for, so nobody is afraid to revoke it.
                 publicKey:
                   type: string
-                  description: Base64 X25519 public half.
+                  description: Base64 raw P-256 public point (65 bytes).
                 wrappedDek:
                   type: string
                   description: The project DEK sealed to `publicKey`, client-side.
@@ -3154,9 +3154,8 @@ paths:
               required:
                 - publicKey
                 - kdfSalt
-                - kdfT
-                - kdfM
-                - kdfP
+                - kdfAlg
+                - kdfIterations
                 - wrappedPrivateKey
                 - wrappedPrivateKeyNonce
                 - wrappedPrivateKeyByRecovery
@@ -3166,12 +3165,13 @@ paths:
                   type: string
                 kdfSalt:
                   type: string
-                kdfT:
+                kdfAlg:
+                  type: string
+                  enum: [pbkdf2-sha256]
+                kdfIterations:
                   type: integer
-                kdfM:
-                  type: integer
-                kdfP:
-                  type: integer
+                  minimum: 600000
+                  description: PBKDF2-HMAC-SHA256 iterations for the passphrase-derived Master Key.
                 wrappedPrivateKey:
                   type: string
                 wrappedPrivateKeyNonce:

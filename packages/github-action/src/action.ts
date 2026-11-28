@@ -16,7 +16,7 @@
  * has to mean one specific decrypt implementation, and a compromised or
  * broken `envhq` publish must not reach every pipeline on its next run.
  */
-export const CLI_VERSION = "0.11.0";
+export const CLI_VERSION = "0.12.0";
 
 const FORMATS = { env: "github-env", outputs: "github-output", dotenv: "dotenv" } as const;
 type Format = keyof typeof FORMATS;

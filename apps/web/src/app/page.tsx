@@ -102,14 +102,14 @@ const SECURITY_GROUPS = [
     label: "Encryption",
     facts: [
       {
-        term: "XChaCha20-Poly1305",
+        term: "AES-256-GCM",
         detail:
-          "Every value is sealed client-side under a key belonging to its project. The server is never handed plaintext to store.",
+          "Every value is sealed client-side under a key belonging to its project, by your browser's or Node's own crypto module. The server is never handed plaintext to store.",
       },
       {
-        term: "Argon2id",
+        term: "PBKDF2 · P-256",
         detail:
-          "Your passphrase derives the key that unwraps your X25519 keypair, and that derivation happens on your device every time.",
+          "Your passphrase derives the key that unwraps your P-256 keypair, and that derivation happens on your device every time.",
       },
     ],
   },

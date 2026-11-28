@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { publicUrl } from "@/lib/public-url";
+import { outdatedClientResponse } from "@/lib/client-version";
 import { SESSION_COOKIE, SESSION_REFRESH_AFTER_S, cookieOptions, openSession, sealSession, SESSION_TTL_S } from "@/lib/session";
 
 /**
@@ -18,8 +19,9 @@ export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
   // API routes authenticate themselves (session cookie OR CLI bearer token)
-  // and answer 401 rather than redirecting.
-  if (pathname.startsWith("/api")) return;
+  // and answer 401 rather than redirecting. A CLI too old for today's
+  // encryption is turned away first (`lib/client-version.ts`).
+  if (pathname.startsWith("/api")) return outdatedClientResponse(pathname, req.headers) ?? undefined;
 
   const session = await openSession(req.cookies.get(SESSION_COOKIE)?.value);
 

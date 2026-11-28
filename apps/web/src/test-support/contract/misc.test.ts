@@ -111,9 +111,8 @@ describe("GET/POST /api/users/me/keys", () => {
     const payload = {
       publicKey: "pub",
       kdfSalt: "salt",
-      kdfT: 3,
-      kdfM: 65536,
-      kdfP: 4,
+      kdfAlg: "pbkdf2-sha256",
+      kdfIterations: 600_000,
       wrappedPrivateKey: "wpk",
       wrappedPrivateKeyNonce: "wpkn",
       wrappedPrivateKeyByRecovery: "wpkr",
@@ -124,10 +123,30 @@ describe("GET/POST /api/users/me/keys", () => {
 
     const after = await call(getMyUserKeys, path, {}, { method: "GET", token });
     expectStatus(after.res, 200);
-    expect((after.body as { publicKey: string }).publicKey).toBe("pub");
+    expect(after.body).toMatchObject({ publicKey: "pub", kdfAlg: "pbkdf2-sha256", kdfIterations: 600_000 });
 
     const again = await call(createMyUserKeys, path, {}, { method: "POST", token, json: payload });
     expectStatus(again.res, 409);
+  });
+
+  test("400 for a retired KDF or a weaker PBKDF2 cost", async () => {
+    const { token } = await createApiToken(`user-${crypto.randomUUID()}`);
+    const base = {
+      publicKey: "pub",
+      kdfSalt: "salt",
+      wrappedPrivateKey: "wpk",
+      wrappedPrivateKeyNonce: "wpkn",
+      wrappedPrivateKeyByRecovery: "wpkr",
+      wrappedPrivateKeyByRecoveryNonce: "wpkrn",
+    };
+    for (const kdf of [
+      { kdfT: 2, kdfM: 19456, kdfP: 1 },
+      { kdfAlg: "argon2id", kdfIterations: 600_000 },
+      { kdfAlg: "pbkdf2-sha256", kdfIterations: 100_000 },
+    ]) {
+      const { res } = await call(createMyUserKeys, "/api/users/me/keys", {}, { method: "POST", token, json: { ...base, ...kdf } });
+      expectStatus(res, 400);
+    }
   });
 });
 

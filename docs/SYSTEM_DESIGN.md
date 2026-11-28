@@ -128,7 +128,7 @@ envhq/                         (git repo root; pnpm workspace)
 │   ├── drizzle.config.ts
 │   ├── .env.example          committed template — every var, required + optional
 │   └── .env.local            (gitignored) — real secrets
-├── packages/crypto/          @envhq/crypto — encryption primitives (noble)
+├── packages/crypto/          @envhq/crypto — encryption primitives (WebCrypto)
 ├── packages/parser/          @envhq/parser — shared .env parse/serialize
 ├── packages/cli/             envhq — the `envhq` command
 ├── docs/                     PLAN.md, ROADMAP.md, SYSTEM_DESIGN.md, RELEASE_POLICY.md
@@ -171,9 +171,9 @@ per user, `user_id` PK; `INSERT ... ON CONFLICT DO NOTHING` is the atomic get-or
 | id | uuid PK | |
 | environment_id | uuid FK → environments | cascade |
 | key | text | **unique(environment_id, key)** where `deleted_at is null` (soft-delete, M3) |
-| value_ciphertext | text | base64 XChaCha20-Poly1305 ciphertext (tag included) |
+| value_ciphertext | text | base64 AES-256-GCM ciphertext (tag appended) |
 | iv | text | base64 AEAD nonce (legacy column name, kept to avoid a rename migration) |
-| auth_tag | text nullable | unused for new writes — XChaCha20-Poly1305's tag lives in `value_ciphertext`, unlike the AES-256-GCM scheme this column was named for pre-M6 |
+| auth_tag | text nullable | unused — the GCM tag lives in `value_ciphertext` |
 | key_version | integer | which DEK generation `value_ciphertext` is encrypted under; default `1`, bumped by a rotation's migrate step |
 | deleted_at | timestamptz nullable | soft-delete (M3) |
 | created_at, updated_at | | index on `environment_id` |
@@ -193,8 +193,8 @@ per user, `user_id` PK; `INSERT ... ON CONFLICT DO NOTHING` is the atomic get-or
 **`user_keys`** — a user's zero-knowledge identity (M6). One row per user, `user_id` PK.
 | col | type | notes |
 |---|---|---|
-| public_key | text | X25519 public key, base64, in the clear |
-| kdf_salt, kdf_t, kdf_m, kdf_p | text/integer | Argon2id salt + cost params for this user's passphrase → Master Key derivation |
+| public_key | text | raw P-256 public point (65 bytes), base64, in the clear |
+| kdf_salt, kdf_iterations | text/integer | PBKDF2 salt + iteration count for this user's passphrase → Master Key derivation (`kdf_t/m/p`: retired Argon2id params, nullable, to be dropped) |
 | wrapped_private_key, wrapped_private_key_nonce | text | private key wrapped under the passphrase-derived Master Key |
 | wrapped_private_key_by_recovery, wrapped_private_key_by_recovery_nonce | text | the same private key, wrapped a second, independent way under the Recovery Key |
 
@@ -231,7 +231,7 @@ Its sealed DEK is an ordinary `project_keys` row under the subject id
 | id | uuid PK | |
 | project_id | uuid FK → projects | cascade |
 | environment_id | uuid FK → environments, null | null = whole project. An **authorization cap, not an isolation boundary** — DEKs are per project, so the key itself opens every environment |
-| public_key | text | base64 X25519 public half |
+| public_key | text | base64 raw P-256 public point |
 | label | text | what it is for; a credential nobody can attribute is one nobody revokes |
 | created_by_user_id | text | |
 | token_id | uuid FK → api_tokens, null | the token issued with it; revoked in the same action |
@@ -278,29 +278,29 @@ people access at once via `access_grants.subject_type = "group"`.
 The server **never holds a key capable of decrypting a value**. All encryption/decryption of
 env-var values happens client-side — in the browser (`apps/web`) or in the CLI process
 (`packages/cli`) — using the shared, source-exported `packages/crypto` package (mirrors
-`packages/parser`'s pattern; built on `@noble/hashes`/`@noble/ciphers`/`@noble/curves`, not
-libsodium — see that package's top-of-file comment for why).
+`packages/parser`'s pattern). Approved algorithms only, all through WebCrypto — the
+platform's own crypto module does the work (`docs/CRYPTO_SUITE.md`).
 
 **Key hierarchy:**
-1. Passphrase → **Argon2id** (`deriveMasterKey`) → 32-byte **Master Key**. Cost params
-   (`t`/`m`/`p`) are persisted per-user in `user_keys` so re-deriving later uses the same work
-   factor. Defaults to OWASP's minimum baseline (19 MiB / 2 passes) — tuned for ~1s in a browser,
-   since this runs on every unlock.
-2. Master Key unwraps (`unwrapPrivateKey`, XChaCha20-Poly1305) a **User Keypair** (X25519),
+1. Passphrase → **PBKDF2-HMAC-SHA256** (`deriveMasterKey`) → 32-byte **Master Key**. The
+   iteration count (600,000, OWASP's 2023 figure) is persisted per-user in
+   `user_keys.kdf_iterations` so re-deriving later uses the same work factor. ~50 ms in a
+   browser's native WebCrypto.
+2. Master Key unwraps (`unwrapPrivateKey`, AES-256-GCM) a **User Keypair** (ECDH P-256),
    generated once at ZK onboarding (`Settings → Security`). A separately generated **Recovery
    Key** wraps the same private key a second, independent way — the mandatory Recovery Kit;
    losing both the passphrase and the recovery phrase means permanently losing access (no
    server-side reset is possible, by design).
 3. Each **project** has a random 32-byte **DEK** (`generateDek`), generated at project creation.
-   The DEK is sealed (`sealToPublicKey`, an X25519-ECDH + HKDF construction analogous to
-   libsodium's `crypto_box_seal`) to the public key of every member with access, one
+   The DEK is sealed (`sealToPublicKey`: ephemeral P-256 ECDH → HKDF-SHA256 bound to both
+   public keys → AES-256-GCM) to the public key of every member with access, one
    `project_keys` row per (project, member) pair — never per environment: `env-store.ts`'s
    `cloneVars` and `version-store.ts`'s `restoreSnapshot` both copy `env_vars` ciphertext
    directly across environments/versions with no decrypt step, which only stays correct if
    every environment in a project shares one DEK.
-4. Values are encrypted under the project DEK with **XChaCha20-Poly1305** (`encryptValue`/
-   `decryptValue`) — the AEAD tag is embedded in the ciphertext, unlike the AES-256-GCM scheme
-   this replaced, so `env_vars.auth_tag` is unused for new writes.
+4. Values are encrypted under the project DEK with **AES-256-GCM** (`encryptValue`/
+   `decryptValue`), a random 12-byte IV each — the GCM tag is appended to the ciphertext, as
+   WebCrypto returns it, so `env_vars.auth_tag` is unused.
 
 **Authorization ≠ decryption capability.** `lib/access.ts`'s Clerk-org-admin bypass (and a
 newly-granted group member) can be *authorized* for a project with no `project_keys` row yet.

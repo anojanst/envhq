@@ -10,7 +10,7 @@
  * It is duplicated rather than shared because the web app is not a dependency
  * of the published CLI; `deploy-key.test.ts` pins the two together.
  */
-const SECRET_PREFIX = "envhq_dk_v1";
+const SECRET_PREFIX = "envhq_dk_v2";
 
 export interface DeployKeypair {
   publicKey: string;
@@ -19,9 +19,14 @@ export interface DeployKeypair {
 
 export function parseDeployKeySecret(secret: string): DeployKeypair {
   const parts = secret.trim().split(".");
+  if (parts[0] === "envhq_dk_v1") {
+    throw new Error(
+      "ENVHQ_DEPLOY_KEY is an older deploy key that EnvHQ's current encryption can't use. " + REISSUE_HINT,
+    );
+  }
   if (parts.length !== 3 || parts[0] !== SECRET_PREFIX || !parts[1] || !parts[2]) {
     throw new Error(
-      "ENVHQ_DEPLOY_KEY doesn't look like an EnvHQ deploy key (expected `envhq_dk_v1.…`). " +
+      "ENVHQ_DEPLOY_KEY doesn't look like an EnvHQ deploy key (expected `envhq_dk_v2.…`). " +
         "Copy it again from the dialog shown when the key was issued, or issue a new one.",
     );
   }

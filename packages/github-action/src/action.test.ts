@@ -11,7 +11,7 @@ import { CLI_VERSION, credentialMasks, plan, readInputs, type Inputs } from "./a
 const here = dirname(fileURLToPath(import.meta.url));
 const inputs = (over: Partial<Inputs> = {}): Inputs => ({
   token: "envhq_tok",
-  key: "envhq_dk_v1.pub.priv",
+  key: "envhq_dk_v2.pub.priv",
   project: "shop",
   environment: "staging",
   format: "env",
@@ -74,9 +74,9 @@ test("secrets and names travel as environment, never on the command line", () =>
   const p = plan(inputs({ project: "a; rm -rf /" }), { PATH: "/bin", ENVHQ_URL: "https://self.example" }, "win32");
   assert.ok(!("errors" in p));
   const argv = p.args.join(" ");
-  for (const v of ["envhq_tok", "envhq_dk_v1.pub.priv", "a; rm -rf /", "staging"]) assert.ok(!argv.includes(v), `${v} not in argv`);
+  for (const v of ["envhq_tok", "envhq_dk_v2.pub.priv", "a; rm -rf /", "staging"]) assert.ok(!argv.includes(v), `${v} not in argv`);
   assert.equal(p.env.ENVHQ_TOKEN, "envhq_tok");
-  assert.equal(p.env.ENVHQ_DEPLOY_KEY, "envhq_dk_v1.pub.priv");
+  assert.equal(p.env.ENVHQ_DEPLOY_KEY, "envhq_dk_v2.pub.priv");
   assert.equal(p.env.ENVHQ_PROJECT, "a; rm -rf /");
   assert.equal(p.env.ENVHQ_URL, "https://self.example", "a job-level ENVHQ_URL reaches the CLI");
   assert.equal(p.command, "npx.cmd");
@@ -96,7 +96,7 @@ test("a dotenv path a shell could act on is refused", () => {
 });
 
 test("the credentials themselves are masked", () => {
-  assert.deepEqual(credentialMasks(inputs()), ["::add-mask::envhq_tok", "::add-mask::envhq_dk_v1.pub.priv"]);
+  assert.deepEqual(credentialMasks(inputs()), ["::add-mask::envhq_tok", "::add-mask::envhq_dk_v2.pub.priv"]);
 });
 
 /**
@@ -118,7 +118,7 @@ process.exit(Number(process.env.FAKE_EXIT || 0));
     const env = {
       PATH: `${dir}:${process.env.PATH}`,
       INPUT_TOKEN: "envhq_tok",
-      INPUT_KEY: "envhq_dk_v1.pub.priv",
+      INPUT_KEY: "envhq_dk_v2.pub.priv",
       INPUT_PROJECT: "shop",
       INPUT_ENVIRONMENT: "staging",
     };
@@ -126,11 +126,11 @@ process.exit(Number(process.env.FAKE_EXIT || 0));
     const bundle = join(here, "../dist/index.cjs");
 
     const { stdout } = await run(process.execPath, [bundle], { env });
-    assert.ok(stdout.startsWith("::add-mask::envhq_tok\n::add-mask::envhq_dk_v1.pub.priv\n"));
+    assert.ok(stdout.startsWith("::add-mask::envhq_tok\n::add-mask::envhq_dk_v2.pub.priv\n"));
     const recorded = JSON.parse(await readFile(record, "utf8"));
     assert.deepEqual(recorded.args, ["--yes", `envhq@${CLI_VERSION}`, "export", "--format", "github-env"]);
     assert.equal(recorded.project, "shop");
-    assert.equal(recorded.key, "envhq_dk_v1.pub.priv");
+    assert.equal(recorded.key, "envhq_dk_v2.pub.priv");
 
     await assert.rejects(
       () => run(process.execPath, [bundle], { env: { ...env, FAKE_EXIT: "1" } }),

@@ -205,7 +205,7 @@ describe("revealing and editing pull values on demand", () => {
       fireEvent.click(screen.getByLabelText(`Reveal ${rows[1].key}`));
     });
 
-    expect(screen.getByText(`value-1-${"x".repeat(40)}`)).toBeTruthy();
+    expect(await screen.findByText(`value-1-${"x".repeat(40)}`)).toBeTruthy();
     // Only the revealed one: the other two were never decrypted.
     expect(screen.getAllByText("••••••••••••")).toHaveLength(2);
   });
@@ -219,7 +219,7 @@ describe("revealing and editing pull values on demand", () => {
       fireEvent.click(screen.getByLabelText(`Edit ${rows[2].key}`));
     });
 
-    const textarea = screen.getByDisplayValue(`value-2-${"x".repeat(40)}`);
+    const textarea = await screen.findByDisplayValue(`value-2-${"x".repeat(40)}`);
     expect(textarea).toBeTruthy();
   });
 
@@ -232,7 +232,7 @@ describe("revealing and editing pull values on demand", () => {
     await act(async () => {
       fireEvent.click(screen.getByLabelText(`Reveal ${rows[0].key}`));
     });
-    expect(screen.getByText(`value-0-${"x".repeat(40)}`)).toBeTruthy();
+    expect(await screen.findByText(`value-0-${"x".repeat(40)}`)).toBeTruthy();
 
     await act(async () => {
       view.rerender(
@@ -240,7 +240,7 @@ describe("revealing and editing pull values on demand", () => {
       );
     });
 
-    expect(screen.getByText(`value-0-${"x".repeat(40)}`)).toBeTruthy();
+    expect(await screen.findByText(`value-0-${"x".repeat(40)}`)).toBeTruthy();
   });
 
   test("reveal all decrypts every row", async () => {
@@ -248,7 +248,7 @@ describe("revealing and editing pull values on demand", () => {
     await act(async () => {
       fireEvent.click(screen.getByText("Reveal values"));
     });
+    expect(await screen.findByText(`value-3-${"x".repeat(40)}`)).toBeTruthy();
     expect(screen.queryAllByText("••••••••••••")).toHaveLength(0);
-    expect(screen.getByText(`value-3-${"x".repeat(40)}`)).toBeTruthy();
   });
 });

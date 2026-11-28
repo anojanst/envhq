@@ -85,7 +85,7 @@ describe("the deploy key secret format", () => {
     });
   });
 
-  test.each(["", "nonsense", "envhq_dk_v2.a.b", "envhq_dk_v1.onlyonepart"])(
+  test.each(["", "nonsense", "envhq_dk_v1.a.b", "envhq_dk_v3.a.b", "envhq_dk_v2.onlyonepart"])(
     "refuses %j with a readable error rather than failing later at decrypt",
     (bad) => {
       expect(() => parseDeployKeySecret(bad)).toThrow(/EnvHQ deploy key/);

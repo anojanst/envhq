@@ -127,7 +127,7 @@ export async function createApiToken(
 
 /**
  * `publicKey` is a placeholder by default — nothing in most suites seals to
- * it. Pass a real X25519 public key where the test actually performs crypto
+ * it. Pass a real P-256 public key where the test actually performs crypto
  * (the deploy-key suite does), or `sealToPublicKey` rejects the placeholder
  * as a malformed curve point.
  */
@@ -136,9 +136,7 @@ export async function createUserKeys(userId: string, publicKey?: string): Promis
     userId,
     publicKey: publicKey ?? `pub-${uniqueSuffix()}`,
     kdfSalt: `salt-${uniqueSuffix()}`,
-    kdfT: 3,
-    kdfM: 65536,
-    kdfP: 4,
+    kdfIterations: 600_000,
     wrappedPrivateKey: `wpk-${uniqueSuffix()}`,
     wrappedPrivateKeyNonce: `wpkn-${uniqueSuffix()}`,
     wrappedPrivateKeyByRecovery: `wpkr-${uniqueSuffix()}`,

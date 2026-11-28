@@ -1,3 +1,4 @@
+import { PBKDF2_ITERATIONS } from "@envhq/crypto";
 import { getUserId } from "@/lib/auth";
 import { getUserKeys, createUserKeys } from "@/lib/user-keys";
 import { json, badRequest, unauthorized, tokenExpired, notFound, conflict } from "@/lib/api";
@@ -32,9 +33,8 @@ export async function GET(req: Request) {
   return json({
     publicKey: keys.publicKey,
     kdfSalt: keys.kdfSalt,
-    kdfT: keys.kdfT,
-    kdfM: keys.kdfM,
-    kdfP: keys.kdfP,
+    kdfAlg: "pbkdf2-sha256",
+    kdfIterations: keys.kdfIterations,
     wrappedPrivateKey: keys.wrappedPrivateKey,
     wrappedPrivateKeyNonce: keys.wrappedPrivateKeyNonce,
     wrappedPrivateKeyByRecovery: keys.wrappedPrivateKeyByRecovery,
@@ -53,9 +53,7 @@ export async function POST(req: Request) {
   const fields = {
     publicKey: body?.publicKey,
     kdfSalt: body?.kdfSalt,
-    kdfT: body?.kdfT,
-    kdfM: body?.kdfM,
-    kdfP: body?.kdfP,
+    kdfIterations: body?.kdfIterations,
     wrappedPrivateKey: body?.wrappedPrivateKey,
     wrappedPrivateKeyNonce: body?.wrappedPrivateKeyNonce,
     wrappedPrivateKeyByRecovery: body?.wrappedPrivateKeyByRecovery,
@@ -65,9 +63,9 @@ export async function POST(req: Request) {
   if (
     !isNonEmptyString(fields.publicKey) ||
     !isNonEmptyString(fields.kdfSalt) ||
-    !isPositiveInt(fields.kdfT) ||
-    !isPositiveInt(fields.kdfM) ||
-    !isPositiveInt(fields.kdfP) ||
+    body?.kdfAlg !== "pbkdf2-sha256" ||
+    !isPositiveInt(fields.kdfIterations) ||
+    fields.kdfIterations < PBKDF2_ITERATIONS ||
     !isNonEmptyString(fields.wrappedPrivateKey) ||
     !isNonEmptyString(fields.wrappedPrivateKeyNonce) ||
     !isNonEmptyString(fields.wrappedPrivateKeyByRecovery) ||

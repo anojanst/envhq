@@ -10,7 +10,7 @@ import {
   unwrapPrivateKey,
   encodeRecoveryPhrase,
   decodeRecoveryPhrase,
-  defaultKdfLimits,
+  defaultKdfParams,
 } from "@envhq/crypto";
 import { api } from "@/lib/client";
 
@@ -27,9 +27,8 @@ type Status = "checking" | "not-set-up" | "locked" | "unlocked";
 interface KeysResponse {
   publicKey: string;
   kdfSalt: string;
-  kdfT: number;
-  kdfM: number;
-  kdfP: number;
+  kdfAlg: "pbkdf2-sha256";
+  kdfIterations: number;
   wrappedPrivateKey: string;
   wrappedPrivateKeyNonce: string;
   wrappedPrivateKeyByRecovery: string;
@@ -72,9 +71,9 @@ export function CryptoSessionProvider({ children }: { children: React.ReactNode 
   }, []);
 
   const setup = useCallback(async (passphrase: string) => {
-    const kdfLimits = await defaultKdfLimits();
+    const kdf = defaultKdfParams();
     const salt = await generateSalt();
-    const masterKey = await deriveMasterKey(passphrase, salt, kdfLimits);
+    const masterKey = await deriveMasterKey(passphrase, salt, kdf);
     const keypair = await generateKeypair();
     const recoveryKey = await generateRecoveryKey();
     const recoveryPhrase = encodeRecoveryPhrase(recoveryKey);
@@ -87,9 +86,8 @@ export function CryptoSessionProvider({ children }: { children: React.ReactNode 
       body: {
         publicKey: keypair.publicKey,
         kdfSalt: salt,
-        kdfT: kdfLimits.t,
-        kdfM: kdfLimits.m,
-        kdfP: kdfLimits.p,
+        kdfAlg: kdf.alg,
+        kdfIterations: kdf.iterations,
         wrappedPrivateKey: wrappedByPassphrase.ciphertext,
         wrappedPrivateKeyNonce: wrappedByPassphrase.nonce,
         wrappedPrivateKeyByRecovery: wrappedByRecovery.ciphertext,
@@ -106,9 +104,8 @@ export function CryptoSessionProvider({ children }: { children: React.ReactNode 
   const unlock = useCallback(async (passphrase: string) => {
     const keys = await api<KeysResponse>("/api/users/me/keys");
     const masterKey = await deriveMasterKey(passphrase, keys.kdfSalt, {
-      t: keys.kdfT,
-      m: keys.kdfM,
-      p: keys.kdfP,
+      alg: keys.kdfAlg,
+      iterations: keys.kdfIterations,
     });
     const unwrapped = await unwrapPrivateKey(
       { ciphertext: keys.wrappedPrivateKey, nonce: keys.wrappedPrivateKeyNonce },

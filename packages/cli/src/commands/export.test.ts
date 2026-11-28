@@ -36,7 +36,7 @@ test("json output is a flat key → value object", () => {
 
 test("run's child gets the values but not the credentials that fetched them", () => {
   const env = childEnv(
-    { PATH: "/bin", ENVHQ_TOKEN: "tok", ENVHQ_DEPLOY_KEY: "envhq_dk_v1.a.b", API_URL: "stale" },
+    { PATH: "/bin", ENVHQ_TOKEN: "tok", ENVHQ_DEPLOY_KEY: "envhq_dk_v2.a.b", API_URL: "stale" },
     [{ key: "API_URL", value: "fresh" }, { key: "NEW", value: "1" }],
   );
   assert.equal(env.ENVHQ_TOKEN, undefined);

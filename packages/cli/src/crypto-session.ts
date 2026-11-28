@@ -58,9 +58,8 @@ export async function unlockInteractive(url: string): Promise<CachedKeypair> {
   } else {
     const passphrase = await promptHidden("Passphrase: ");
     const masterKey = await deriveMasterKey(passphrase, keys.kdfSalt, {
-      t: keys.kdfT,
-      m: keys.kdfM,
-      p: keys.kdfP,
+      alg: keys.kdfAlg,
+      iterations: keys.kdfIterations,
     });
     try {
       privateKey = await unwrapPrivateKey(

@@ -4,7 +4,7 @@
 var import_node_child_process = require("child_process");
 
 // src/action.ts
-var CLI_VERSION = "0.11.0";
+var CLI_VERSION = "0.12.0";
 var FORMATS = { env: "github-env", outputs: "github-output", dotenv: "dotenv" };
 function readInputs(env) {
   const get = (name) => (env[`INPUT_${name.toUpperCase()}`] ?? "").trim();

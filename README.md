@@ -126,7 +126,7 @@ ENVHQ_DEFAULT_URL=http://localhost:3000 pnpm build
 
 - `projects` — owned by an org; every account gets a personal org automatically
 - `environments` — belong to a project; unlimited; unique name per project
-- `env_vars` — key + client-encrypted `ciphertext`/`iv` (XChaCha20-Poly1305); unique key per
+- `env_vars` — key + client-encrypted `ciphertext`/`iv` (AES-256-GCM); unique key per
   environment; the server never holds a key that can decrypt it
 - `environment_versions` — full immutable snapshot per commit, for history/rollback
 - `user_keys` — a user's public key + their private key wrapped two ways (passphrase, recovery

@@ -67,6 +67,15 @@ async function loadAuth(): Promise<ResolvedAuth | null> {
   return null;
 }
 
+/**
+ * Tells the server this client speaks crypto suite v2 (docs/CRYPTO_SUITE.md).
+ * The server refuses bearer requests without it, because a CLI from before v2
+ * can't read anything stored today — and an old binary shows the server's
+ * `error` text, so it prints "update envhq" rather than a decryption failure.
+ */
+export const CRYPTO_HEADER = "X-EnvHQ-Crypto";
+export const CRYPTO_VERSION = "2";
+
 async function request<T>(path: string, options: Options = {}): Promise<T> {
   const auth: ResolvedAuth | null = options.auth
     ? { url: options.auth.url, token: options.auth.token, source: "override" }
@@ -82,6 +91,7 @@ async function request<T>(path: string, options: Options = {}): Promise<T> {
       headers: {
         ...options.headers,
         Authorization: `Bearer ${auth.token}`,
+        [CRYPTO_HEADER]: CRYPTO_VERSION,
         ...(options.body ? { "Content-Type": "application/json" } : {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
@@ -146,9 +156,8 @@ export interface EncryptedPair {
 export interface UserKeys {
   publicKey: string;
   kdfSalt: string;
-  kdfT: number;
-  kdfM: number;
-  kdfP: number;
+  kdfAlg: "pbkdf2-sha256";
+  kdfIterations: number;
   wrappedPrivateKey: string;
   wrappedPrivateKeyNonce: string;
   wrappedPrivateKeyByRecovery: string;

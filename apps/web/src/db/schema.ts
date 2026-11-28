@@ -130,25 +130,30 @@ export const orgInvites = pgTable(
 );
 
 /**
- * A user's zero-knowledge identity (M6 PR1) — one row per Clerk user, keyed
- * by `userId` like `personalOrgs`. Holds the X25519 User Keypair's public
- * key in the clear plus the private key wrapped two independent ways: under
- * the passphrase-derived Master Key (day-to-day unlock) and under a
- * separately generated Recovery Key (PLAN.md §6's mandatory Recovery Kit —
+ * A user's zero-knowledge identity (M6 PR1) — one row per user, keyed by
+ * `userId` like `personalOrgs`. Holds the ECDH P-256 User Keypair's public
+ * key in the clear plus the private key wrapped (AES-256-GCM) two independent
+ * ways: under the passphrase-derived Master Key (day-to-day unlock) and under
+ * a separately generated Recovery Key (PLAN.md §6's mandatory Recovery Kit —
  * the only other way in if the passphrase is lost). The server only ever
  * sees ciphertext here; wrapping/unwrapping happens client-side via
- * `@envhq/crypto`. `kdfT`/`kdfM`/`kdfP` are the Argon2id cost parameters
- * used for this user's Master Key derivation (`@envhq/crypto`'s
- * `KdfLimits`), persisted so re-deriving on a future unlock uses the same
- * work factor even if the app's own default later changes.
+ * `@envhq/crypto`. `kdfIterations` is the PBKDF2-HMAC-SHA256 cost used for
+ * this user's Master Key, persisted so a future unlock repeats it even if
+ * the app's default later rises.
+ *
+ * `kdf_t`/`kdf_m`/`kdf_p` are the retired Argon2id parameters, nullable since
+ * migration 0018 and never written; drop them in a later migration
+ * (docs/CRYPTO_SUITE.md).
  */
 export const userKeys = pgTable("user_keys", {
   userId: text("user_id").primaryKey(),
   publicKey: text("public_key").notNull(),
   kdfSalt: text("kdf_salt").notNull(),
-  kdfT: integer("kdf_t").notNull(),
-  kdfM: integer("kdf_m").notNull(),
-  kdfP: integer("kdf_p").notNull(),
+  kdfIterations: integer("kdf_iterations").notNull(),
+  /** Retired (Argon2id). Never written; see above. */
+  kdfT: integer("kdf_t"),
+  kdfM: integer("kdf_m"),
+  kdfP: integer("kdf_p"),
   wrappedPrivateKey: text("wrapped_private_key").notNull(),
   wrappedPrivateKeyNonce: text("wrapped_private_key_nonce").notNull(),
   wrappedPrivateKeyByRecovery: text("wrapped_private_key_by_recovery").notNull(),
@@ -191,7 +196,7 @@ export const projectKeys = pgTable(
 
 /**
  * A machine credential for a CI pipeline (RM-11, designed in
- * docs/DEPLOY_KEYS.md / ADR-020). An X25519 keypair generated **in the
+ * docs/DEPLOY_KEYS.md / ADR-020). An ECDH P-256 keypair generated **in the
  * browser**; only the public half is here. The private half is shown to the
  * customer once, at creation, and EnvHQ cannot show it again or recover it —
  * storing it, even "encrypted at rest", would mean the server could decrypt
@@ -227,7 +232,7 @@ export const deployKeys = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     /** NULL = the whole project. An authorization cap only — see above. */
     environmentId: uuid("environment_id").references(() => environments.id, { onDelete: "cascade" }),
-    /** Base64 X25519 public half. The private half never reaches the server. */
+    /** Base64 raw P-256 public point. The private half never reaches the server. */
     publicKey: text("public_key").notNull(),
     /** What this key is for, so nobody is afraid to revoke it. */
     label: text("label").notNull(),
@@ -279,12 +284,10 @@ export const environments = pgTable(
 /**
  * A single key/value pair inside an environment. The value is
  * zero-knowledge encrypted client-side (M6 PR4) under the project's DEK
- * (`project_keys`) with XChaCha20-Poly1305 (`@envhq/crypto`'s
- * `encryptValue`) — `valueCiphertext` (tag included) + per-value `iv`
- * (an AEAD nonce despite the legacy column name, kept to avoid a rename
- * migration). `authTag` is nullable and unused for new writes: unlike
- * AES-256-GCM, XChaCha20-Poly1305's tag is embedded in the ciphertext
- * output, so there's nothing separate to store. The server only ever
+ * (`project_keys`) with AES-256-GCM (`@envhq/crypto`'s `encryptValue`) —
+ * `valueCiphertext` (GCM tag appended, as WebCrypto returns it) + per-value
+ * 12-byte `iv`. `authTag` is nullable and unused: the tag travels inside
+ * `valueCiphertext`, so there's nothing separate to store. The server only ever
  * stores/returns this ciphertext blob; it cannot decrypt it. Key is unique
  * within its environment.
  */

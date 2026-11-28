@@ -32,8 +32,11 @@ export function loadCachedKeypair(url: string): CachedKeypair | null {
     const raw = entry.getPassword();
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedKeypair>;
-    if (parsed?.publicKey && parsed?.privateKey) return parsed as CachedKeypair;
-    return null;
+    if (!parsed?.publicKey || !parsed?.privateKey) return null;
+    // A keypair cached before crypto suite v2 is X25519 (a 32-byte public key);
+    // nothing it could open exists any more, so unlock again instead.
+    if (Buffer.from(parsed.publicKey, "base64").length !== 65) return null;
+    return parsed as CachedKeypair;
   } catch {
     return null;
   }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { publicKeyFingerprint } from "@envhq/crypto";
 import { toast } from "sonner";
 import { Check, Copy, Download, KeyRound, Lock, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -354,13 +355,24 @@ export function UnlockFlow({
   );
 }
 
-/** A short, comparable fingerprint of a public key: the first 16 base64 characters in groups of four. */
-export function keyFingerprint(publicKey: string | null): string {
-  if (!publicKey) return "—";
-  return (publicKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 16).match(/.{1,4}/g) ?? []).join(" ");
+/** A short, comparable fingerprint of a public key (`@envhq/crypto`'s `publicKeyFingerprint`), or "—" while it's computed. */
+export function useKeyFingerprint(publicKey: string | null): string {
+  const [fingerprint, setFingerprint] = useState<{ key: string; value: string } | null>(null);
+  useEffect(() => {
+    if (!publicKey) return;
+    let cancelled = false;
+    publicKeyFingerprint(publicKey)
+      .then((value) => !cancelled && setFingerprint({ key: publicKey, value }))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [publicKey]);
+  return publicKey && fingerprint?.key === publicKey ? fingerprint.value : "—";
 }
 
 export function UnlockedSummary({ publicKey, lock }: { publicKey: string | null; lock: () => void }) {
+  const fingerprint = useKeyFingerprint(publicKey);
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-3">
@@ -370,7 +382,7 @@ export function UnlockedSummary({ publicKey, lock }: { publicKey: string | null;
         <div>
           <p className="text-sm font-medium">Unlocked in this tab</p>
           <p className="text-xs text-muted-foreground">
-            Key fingerprint <span className="font-mono text-foreground">{keyFingerprint(publicKey)}</span>
+            Key fingerprint <span className="font-mono text-foreground">{fingerprint}</span>
           </p>
         </div>
       </div>

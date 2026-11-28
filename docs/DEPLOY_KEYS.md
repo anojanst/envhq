@@ -21,7 +21,7 @@ can already fetch an environment: `GET /api/environments/:id/export` returns
 ciphertext pairs, and a token is sufficient authorization for that route.
 
 It cannot decrypt them. Values are encrypted under a per-project Data Encryption
-Key (DEK), and every existing copy of that DEK is sealed to a *member's* X25519
+Key (DEK), and every existing copy of that DEK is sealed to a *member's* P-256
 public key. Unsealing needs that member's private key, which is wrapped under a
 passphrase-derived master key. In the CLI, this is
 [`resolveKeypair()`](../packages/cli/src/crypto-session.ts): it returns either
@@ -38,7 +38,7 @@ be read as superseded by this document.
 
 ## The decision
 
-Introduce a **deploy key**: an X25519 keypair generated in the browser, scoped to
+Introduce a **deploy key**: an ECDH P-256 keypair generated in the browser, scoped to
 one project, belonging to no human.
 
 - The keypair is generated **client-side**, in the same browser session that
@@ -313,7 +313,9 @@ key rotated during this job" instead of reporting a decryption failure.
 
 Two further notes on what exists:
 
-- **The deploy key secret is `envhq_dk_v1.<publicKey>.<privateKey>`**, both
+- **The deploy key secret is `envhq_dk_v2.<publicKey>.<privateKey>`** (a raw
+  P-256 public point and a PKCS#8 private key; `v1` keys were X25519 and
+  stopped working with crypto suite v2 — `docs/CRYPTO_SUITE.md`), both
   halves, because `unsealWithPrivateKey` binds the recipient's public key
   into the HKDF and cannot open anything without it. Shipping only the
   private half would make the credential depend on the server telling the

@@ -98,7 +98,7 @@ export default function TermsPage() {
                 encrypted and decrypted <strong>in your browser or the CLI on your machine</strong>{" "}
                 — never on our servers. Your passphrase derives a key that unlocks your personal
                 keypair, which in turn unwraps a per-project encryption key; values are encrypted
-                with that key using XChaCha20-Poly1305 before they&apos;re ever sent to us. We
+                with that key using AES-256-GCM before they&apos;re ever sent to us. We
                 only ever store and transmit ciphertext — EnvHQ&apos;s operator cannot decrypt
                 your values, with or without database access.
               </li>

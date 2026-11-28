@@ -58,6 +58,9 @@ before(async () => {
       res.writeHead(status, { "content-type": "application/json" });
       res.end(JSON.stringify(body));
     };
+    // Like the real server (apps/web lib/client-version.ts): a CLI that doesn't
+    // say it speaks crypto suite v2 is refused before anything else.
+    if (req.headers["x-envhq-crypto"] !== "2") return send(426, { error: "update envhq" });
     // A revoked deploy key's token is deleted with it, so the server sees an unknown token.
     if (req.headers.authorization !== `Bearer ${GOOD_TOKEN}`) return send(401, { error: "Unauthorized" });
 
@@ -96,7 +99,7 @@ function runner(extra: Record<string, string> = {}) {
     USERPROFILE: home,
     ENVHQ_URL: url,
     ENVHQ_TOKEN: GOOD_TOKEN,
-    ENVHQ_DEPLOY_KEY: `envhq_dk_v1.${deployKey.publicKey}.${deployKey.privateKey}`,
+    ENVHQ_DEPLOY_KEY: `envhq_dk_v2.${deployKey.publicKey}.${deployKey.privateKey}`,
     GITHUB_ACTIONS: "true",
     ...extra,
   };
@@ -196,7 +199,7 @@ test("a revoked deploy key fails the job loudly and says what to do", async () =
 test("a deploy key from another project is refused with the same advice", async () => {
   const other = await generateKeypair();
   await assert.rejects(
-    () => cli(["export", "-p", "shop", "-e", "staging", "-o", join(home, "x.env")], runner({ ENVHQ_DEPLOY_KEY: `envhq_dk_v1.${other.publicKey}.${other.privateKey}` })),
+    () => cli(["export", "-p", "shop", "-e", "staging", "-o", join(home, "x.env")], runner({ ENVHQ_DEPLOY_KEY: `envhq_dk_v2.${other.publicKey}.${other.privateKey}` })),
     (err: { code?: number; stderr?: string }) =>
       err.code === 1 && /not valid for this project/.test(err.stderr ?? "") && /Issue a new deploy key/.test(err.stderr ?? ""),
   );

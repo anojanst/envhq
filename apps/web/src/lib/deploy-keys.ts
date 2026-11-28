@@ -54,7 +54,7 @@ export interface CreateDeployKeyInput {
   /** NULL for the whole project. An authorization cap, not an isolation boundary. */
   environmentId: string | null;
   label: string;
-  /** Base64 X25519 public half, generated in the caller's browser. */
+  /** Base64 raw P-256 public point, generated in the caller's browser. */
   publicKey: string;
   /** The project DEK sealed to `publicKey`, also by the caller's browser. */
   wrappedDek: string;

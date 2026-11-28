@@ -28,7 +28,7 @@ import { api } from "@/lib/client";
  * Versioned so a future format change is a readable error rather than a
  * decryption failure.
  */
-const SECRET_PREFIX = "envhq_dk_v1";
+const SECRET_PREFIX = "envhq_dk_v2";
 
 export function formatDeployKeySecret(publicKey: string, privateKey: string): string {
   return `${SECRET_PREFIX}.${publicKey}.${privateKey}`;

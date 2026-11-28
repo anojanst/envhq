@@ -22,15 +22,23 @@ export default function SecurityDocsPage() {
       <P>
         Every variable value is encrypted and decrypted <strong>client-side</strong> — in your
         browser, or in the <Code>envhq</Code> CLI on your machine — using{" "}
-        <strong>XChaCha20-Poly1305</strong>. The server only ever stores and transmits ciphertext;
+        <strong>AES-256-GCM</strong>. The server only ever stores and transmits ciphertext;
         it never sees a plaintext value, and never holds a key capable of decrypting one.
+      </P>
+      <P>
+        EnvHQ uses only FIPS-approved algorithms (AES-256-GCM, ECDH P-256, HKDF-SHA256,
+        PBKDF2-HMAC-SHA256, HMAC-SHA256), and does no cryptography in its own code: every
+        operation goes through the platform&apos;s built-in Web Crypto module, which is your
+        browser&apos;s (BoringSSL in Chrome, NSS in Firefox) or Node&apos;s (OpenSSL). EnvHQ itself
+        isn&apos;t FIPS-certified. Web Crypto only runs on secure pages, so EnvHQ has to be served
+        over HTTPS (or on <Code>localhost</Code>).
       </P>
       <P>The key hierarchy, all derived and held client-side:</P>
       <UL>
         <li>
-          Your <strong>passphrase</strong> runs through <strong>Argon2id</strong> to derive a{" "}
-          <strong>Master Key</strong>, which unwraps your personal <strong>User Keypair</strong>{" "}
-          (X25519, generated once at setup).
+          Your <strong>passphrase</strong> runs through <strong>PBKDF2-HMAC-SHA256</strong>{" "}
+          (600,000 iterations) to derive a <strong>Master Key</strong>, which unwraps your personal{" "}
+          <strong>User Keypair</strong> (ECDH P-256, generated once at setup).
         </li>
         <li>
           Each <strong>project</strong> has its own randomly generated{" "}

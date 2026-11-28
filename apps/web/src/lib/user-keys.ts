@@ -27,9 +27,8 @@ export async function getUserKeysBatch(userIds: string[]): Promise<Record<string
 export interface CreateUserKeysInput {
   publicKey: string;
   kdfSalt: string;
-  kdfT: number;
-  kdfM: number;
-  kdfP: number;
+  /** PBKDF2-HMAC-SHA256 iterations (`@envhq/crypto`'s `KdfParams`). */
+  kdfIterations: number;
   wrappedPrivateKey: string;
   wrappedPrivateKeyNonce: string;
   wrappedPrivateKeyByRecovery: string;
